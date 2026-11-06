@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Craft.Parts;
+﻿using System.Collections.Generic;
+using Assets.Scripts.Craft.Parts;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
 using HarmonyLib;
 using UnityEngine;
@@ -9,14 +10,17 @@ namespace ArmorFragments
     [HarmonyPatch(typeof(CannonProjectileScript), "OnCollisionEnter")]
     internal static class CannonHitPatch
     {
+        private static readonly HashSet<int> Handled = new HashSet<int>();
+
         // Harmony fills this argument with the shell's private field
         // _previousFrameVelocity: three underscores + the field's name.
-        private static void Prefix(Collision collision, Vector3 ____previousFrameVelocity)
+        private static void Prefix(CannonProjectileScript __instance, Collision collision, Vector3 ____previousFrameVelocity)
         {
             if (collision.contactCount == 0) return;
 
             ContactPoint contact = collision.GetContact(0);
             PartScript part = contact.otherCollider.GetComponentInParent<PartScript>();
+            if (part == null) return;
             if (part.Part.Name == null || !part.Part.Name.StartsWith("ARM_")) return;
 
 
@@ -30,6 +34,9 @@ namespace ArmorFragments
             ArmorFragmentsPlugin.Log.LogInfo(
                 "Shell hit part '" + part.Part.Name + "' at " +
                 speed.ToString("F0") + " m/s, angle " + angle.ToString("F0") + " deg");
+
+            if (!Handled.Add(__instance.GetInstanceID())) return; // once per shell
+            FragmentSpawner.Spawn(part, contact.point, direction, false);
         }
     }
 }
