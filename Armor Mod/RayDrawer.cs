@@ -1,17 +1,36 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace ArmorFragments
 {
+    // What a ray ended on, or what an impact marker means.
     internal enum RayKind
     {
-        Hit,       // ended on a part (red)
-        Miss,      // ended in the air or on a non-part object (yellow)
-        Ricochet,  // segment that ended in a bounce (cyan)
+        None,        // no marker
+        Hit,         // a part took the hit (red)
+        Miss,        // ray ended in the air or on a non-part object (yellow)
+        Ricochet,    // the ray bounced here (cyan)
+        ArmorImpact, // the shell hit the armor (orange)
     }
 
-    // Draws a short-lived line in the world for each fragment ray.
-    // Earlier notes say LineRenderer shaders can be stripped from the built game,
-    // so we try several shaders and log which one worked (or that none did).
+    // The full route of one ray: a list of points, plus a marker at each point
+    // that gets a bubble when the animation reaches it.
+    internal sealed class RayPath
+    {
+        public readonly List<Vector3> Points = new List<Vector3>();
+        public readonly List<RayKind> Markers = new List<RayKind>();
+        public RayKind Final = RayKind.Miss;   // decides the line color
+
+        public void Add(Vector3 point, RayKind marker)
+        {
+            Points.Add(point);
+            Markers.Add(marker);
+        }
+    }
+
+    // Creates the visuals. Earlier notes say shaders can be stripped from the built
+    // game, so we try several and log which one worked (or that none did).
     internal static class RayDrawer
     {
         private static readonly string[] ShaderNames =
@@ -23,11 +42,21 @@ namespace ArmorFragments
             "UI/Default",
         };
 
-        private static Material hitMaterial;
-        private static Material missMaterial;
-        private static Material ricochetMaterial;
+        private static Material lineMaterial;                 // white: the color comes from the line itself
+        private static readonly Material[] BubbleMaterials = new Material[5];   // one per RayKind
         private static bool initialized;
         private static bool available;
+
+        public static Color ColorOf(RayKind kind)
+        {
+            switch (kind)
+            {
+                case RayKind.Hit: return new Color(1f, 0.15f, 0.1f, 1f);
+                case RayKind.Ricochet: return new Color(0.1f, 0.9f, 1f, 1f);
+                case RayKind.ArmorImpact: return new Color(1f, 0.55f, 0.1f, 1f);
+                default: return new Color(1f, 0.9f, 0.1f, 1f);
+            }
+        }
 
         private static void Init()
         {
@@ -37,9 +66,10 @@ namespace ArmorFragments
                 Shader shader = Shader.Find(name);
                 if (shader == null) continue;
 
-                hitMaterial = MakeMaterial(shader, new Color(1f, 0.1f, 0.1f, 1f));
-                missMaterial = MakeMaterial(shader, new Color(1f, 0.9f, 0.1f, 0.6f));
-                ricochetMaterial = MakeMaterial(shader, new Color(0.1f, 0.9f, 1f, 1f));
+                lineMaterial = MakeMaterial(shader, Color.white);
+                foreach (RayKind kind in System.Enum.GetValues(typeof(RayKind)))
+                    BubbleMaterials[(int)kind] = MakeMaterial(shader, ColorOf(kind));
+
                 available = true;
                 ArmorFragmentsPlugin.Log.LogInfo("Ray drawing uses shader '" + name + "'");
                 return;
@@ -55,26 +85,52 @@ namespace ArmorFragments
             return m;
         }
 
-        public static void Draw(Vector3 from, Vector3 to, RayKind kind)
+        // Animates a glowing head moving along the path, with a fading trail behind it.
+        // 'delay' (seconds) waits before starting, so rays can leave after the shell arrives.
+        public static void Animate(RayPath path, float delay)
         {
+            if (path.Points.Count < 2) return;
             if (!initialized) Init();
             if (!available) return;
 
             GameObject go = new GameObject("ArmorFragmentRay");
             LineRenderer lr = go.AddComponent<LineRenderer>();
             lr.useWorldSpace = true;
-            lr.positionCount = 2;
-            lr.SetPosition(0, from);
-            lr.SetPosition(1, to);
-            Material mat = kind == RayKind.Hit ? hitMaterial
-                         : kind == RayKind.Ricochet ? ricochetMaterial
-                         : missMaterial;
-            lr.startWidth = kind == RayKind.Miss ? 0.03f : 0.06f;
-            lr.endWidth = lr.startWidth;
-            lr.material = mat;
-            lr.startColor = lr.endColor = mat.color;
+            lr.positionCount = 0;
+            lr.startWidth = lr.endWidth = ArmorFragmentsPlugin.RayWidth.Value;
+            lr.sharedMaterial = lineMaterial;   // shared: no new material per ray
+            lr.shadowCastingMode = ShadowCastingMode.Off;
+            lr.receiveShadows = false;
+            lr.enabled = false;                 // the animation turns it on when it starts
 
-            Object.Destroy(go, ArmorFragmentsPlugin.RayLifetime.Value);
+            go.AddComponent<TracerAnimation>().Init(
+                path, lr, ColorOf(path.Final), delay,
+                ArmorFragmentsPlugin.RaySpeed.Value,
+                ArmorFragmentsPlugin.RayTrailLength.Value);
+        }
+
+        // A small colored ball that shrinks away.
+        public static void SpawnBubble(Vector3 position, RayKind kind)
+        {
+            if (!initialized) Init();
+            if (!available || kind == RayKind.None) return;
+
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "ArmorFragmentBubble";
+
+            // The primitive comes with a collider; remove it NOW or later rays would hit it.
+            Collider col = go.GetComponent<Collider>();
+            if (col != null) Object.DestroyImmediate(col);
+
+            Renderer r = go.GetComponent<Renderer>();
+            r.sharedMaterial = BubbleMaterials[(int)kind];
+            r.shadowCastingMode = ShadowCastingMode.Off;
+            r.receiveShadows = false;
+
+            go.transform.position = position;
+            go.AddComponent<BubbleAnimation>().Init(
+                ArmorFragmentsPlugin.BubbleSize.Value,
+                ArmorFragmentsPlugin.BubbleLifetime.Value);
         }
     }
 }

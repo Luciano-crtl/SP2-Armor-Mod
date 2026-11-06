@@ -10,6 +10,7 @@ namespace ArmorFragments
         private const float ConeHalfAngle = 35f;   // spread, in degrees
         private const float MaxRange = 30f;        // total path length of one ray, in meters
         private const float SurfaceOffset = 0.02f; // pushes a ricochet start point off the surface
+        private const float ShellLeadIn = 4f;      // length of the drawn shell track before the impact
 
         private static readonly RaycastHit[] Hits = new RaycastHit[64];
 
@@ -27,6 +28,9 @@ namespace ArmorFragments
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
             bool draw = ArmorFragmentsPlugin.DrawRays.Value;
 
+            // The drawn shell track: from behind the impact point up to it.
+            Vector3 shellStart = point - direction * ShellLeadIn;
+
             // 1) Grazing hit on the armor: no penetration, one ricocheted ray.
             float armorTolerated = ToleratedAngle(
                 ArmorFragmentsPlugin.ArmorRicochetAngle.Value,
@@ -38,9 +42,15 @@ namespace ArmorFragments
                 Vector3 n = Vector3.Dot(normal, direction) > 0f ? -normal : normal;
                 Vector3 reflected = Vector3.Reflect(direction, n).normalized;
 
+                // One path: shell -> armor impact -> ricochets.
+                RayPath path = new RayPath();
+                path.Add(shellStart, RayKind.None);
+                path.Add(point, RayKind.ArmorImpact);
+
                 // The armor bounce counts as the ray's first ricochet.
-                TraceResult r = TraceRay(point + n * SurfaceOffset, reflected, 0f, 1,
-                                         null, applyDamage, draw, mask);
+                TraceResult r = TraceRay(path, point + n * SurfaceOffset, reflected, 0f, 1,
+                                         null, applyDamage, mask);
+                if (draw) RayDrawer.Animate(path, 0f);
 
                 ArmorFragmentsPlugin.Log.LogInfo(
                     "Armor ricochet: angle " + angle.ToString("F0") + " >= tolerated " +
@@ -52,6 +62,18 @@ namespace ArmorFragments
             }
 
             // 2) Otherwise the shell "penetrates": fan of fragment rays behind the armor.
+            float rayDelay = 0f;
+            if (draw)
+            {
+                RayPath shell = new RayPath { Final = RayKind.ArmorImpact };
+                shell.Add(shellStart, RayKind.None);
+                shell.Add(point, RayKind.ArmorImpact);
+                RayDrawer.Animate(shell, 0f);
+
+                // Fragments leave once the shell has arrived.
+                rayDelay = ShellLeadIn / Mathf.Max(ArmorFragmentsPlugin.RaySpeed.Value, 0.1f);
+            }
+
             int partsHit = 0;
             int ricochets = 0;
             float totalDamage = 0f;
@@ -59,7 +81,12 @@ namespace ArmorFragments
             for (int i = 0; i < FragmentCount; i++)
             {
                 Vector3 dir = RandomInCone(direction, ConeHalfAngle);
-                TraceResult r = TraceRay(point, dir, 0f, 0, armor, applyDamage, draw, mask);
+
+                RayPath path = new RayPath();
+                path.Add(point, RayKind.None);
+                TraceResult r = TraceRay(path, point, dir, 0f, 0, armor, applyDamage, mask);
+                if (draw) RayDrawer.Animate(path, rayDelay);
+
                 if (r.HitPart) partsHit++;
                 ricochets += r.Ricochets;
                 totalDamage += r.Damage;
@@ -71,14 +98,16 @@ namespace ArmorFragments
                 (applyDamage ? "" : " (damage off)"));
         }
 
-        // Follows one ray. It stops at the first thing it hits, unless the hit is
-        // grazing enough to ricochet; then it bounces and keeps going. Each bounce
-        // consumes one of MaxRicochets, so the loop always ends.
+        // Follows one ray and records its route in 'path'. It stops at the first thing it
+        // hits, unless the hit is grazing enough to ricochet; then it bounces and keeps
+        // going. Each bounce consumes one of MaxRicochets, so the loop always ends.
+        //   origin:   where the first segment starts
         //   ignore:   a part to skip on the first segment only (the armor itself)
         //   bounces:  ricochets this ray already had
         //   traveled: distance already covered, counts toward MaxRange and damage falloff
-        private static TraceResult TraceRay(Vector3 origin, Vector3 dir, float traveled, int bounces,
-                                            PartScript ignore, bool applyDamage, bool draw, int mask)
+        private static TraceResult TraceRay(RayPath path, Vector3 origin, Vector3 dir,
+                                            float traveled, int bounces, PartScript ignore,
+                                            bool applyDamage, int mask)
         {
             TraceResult result = default;
             int maxBounces = ArmorFragmentsPlugin.MaxRicochets.Value;
@@ -89,7 +118,7 @@ namespace ArmorFragments
             while (true)
             {
                 float remaining = MaxRange - traveled;
-                if (remaining <= 0.01f) break;
+                if (remaining <= 0.01f) { path.Final = RayKind.Miss; break; }
 
                 int count = Physics.RaycastNonAlloc(
                     origin, dir, Hits, remaining, mask, QueryTriggerInteraction.Ignore);
@@ -111,7 +140,8 @@ namespace ArmorFragments
 
                 if (best < 0)
                 {
-                    if (draw) RayDrawer.Draw(origin, origin + dir * remaining, RayKind.Miss);
+                    path.Add(origin + dir * remaining, RayKind.None);   // fades out in the air
+                    path.Final = RayKind.Miss;
                     break;
                 }
 
@@ -122,7 +152,7 @@ namespace ArmorFragments
                 float angle = ImpactAngle(dir, hit.normal);
                 if (bounces < maxBounces && angle >= tolerated)
                 {
-                    if (draw) RayDrawer.Draw(origin, hit.point, RayKind.Ricochet);
+                    path.Add(hit.point, RayKind.Ricochet);
                     dir = Vector3.Reflect(dir, hit.normal).normalized;
                     origin = hit.point + hit.normal * SurfaceOffset;
                     bounces++;
@@ -131,10 +161,10 @@ namespace ArmorFragments
                 }
 
                 PartScript part = hit.collider.GetComponentInParent<PartScript>();
-                if (draw) RayDrawer.Draw(origin, hit.point, part != null ? RayKind.Hit : RayKind.Miss);
-
                 if (part != null)
                 {
+                    path.Add(hit.point, RayKind.Hit);
+                    path.Final = RayKind.Hit;
                     result.HitPart = true;
                     if (applyDamage)
                     {
@@ -143,6 +173,11 @@ namespace ArmorFragments
                         part.OnDamaged(null, damage, hit.point, dir);
                         result.Damage += damage;
                     }
+                }
+                else
+                {
+                    path.Add(hit.point, RayKind.Miss);
+                    path.Final = RayKind.Miss;
                 }
                 break;
             }

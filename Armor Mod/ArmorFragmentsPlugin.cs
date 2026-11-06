@@ -15,7 +15,11 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> ApplyDamage;
         internal static ConfigEntry<float> DamagePerFragment;
         internal static ConfigEntry<bool> DrawRays;
-        internal static ConfigEntry<float> RayLifetime;
+        internal static ConfigEntry<float> RayWidth;
+        internal static ConfigEntry<float> RaySpeed;
+        internal static ConfigEntry<float> RayTrailLength;
+        internal static ConfigEntry<float> BubbleSize;
+        internal static ConfigEntry<float> BubbleLifetime;
 
         // Ricochet. Angles: 0 = head-on, 90 = grazing.
         // A hit ricochets when its angle >= (base angle * multiplier).
@@ -35,8 +39,23 @@ namespace ArmorFragments
                 "Damage of one fragment at point-blank range. Falls off linearly to 0 at max range.");
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
-            RayLifetime = Config.Bind("Debug", "RayLifetime", 2f,
-                "Seconds the drawn rays stay visible.");
+            RayWidth = Config.Bind("Debug", "RayWidth", 0.02f,
+                new ConfigDescription("Thickness of the drawn rays, in meters.",
+                    new AcceptableValueRange<float>(0.001f, 1f)));
+            RaySpeed = Config.Bind("Debug", "RaySpeed", 40f,
+                new ConfigDescription(
+                    "How fast the drawn ray moves along its path, in meters per second. " +
+                    "Visual only: it does not change damage or physics.",
+                    new AcceptableValueRange<float>(1f, 500f)));
+            RayTrailLength = Config.Bind("Debug", "RayTrailLength", 6f,
+                new ConfigDescription("Length of the fading trail behind the moving ray, in meters.",
+                    new AcceptableValueRange<float>(0.1f, 50f)));
+            BubbleSize = Config.Bind("Debug", "BubbleSize", 0.15f,
+                new ConfigDescription("Diameter of the colored ball shown at each impact, in meters.",
+                    new AcceptableValueRange<float>(0.01f, 2f)));
+            BubbleLifetime = Config.Bind("Debug", "BubbleLifetime", 0.6f,
+                new ConfigDescription("Seconds an impact ball takes to shrink away.",
+                    new AcceptableValueRange<float>(0.05f, 10f)));
 
             MaxRicochets = Config.Bind("Ricochet", "MaxRicochets", 2,
                 new ConfigDescription(
