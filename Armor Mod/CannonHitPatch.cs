@@ -35,8 +35,21 @@ namespace ArmorFragments
                 "Shell hit part '" + part.Part.Name + "' at " +
                 speed.ToString("F0") + " m/s, angle " + angle.ToString("F0") + " deg");
 
-            if (!Handled.Add(__instance.GetInstanceID())) return; // once per shell
-            FragmentSpawner.Spawn(part, contact.point, direction, false);
+            if (!Handled.Add(__instance.GetInstanceID()))
+            {
+                ArmorFragmentsPlugin.Log.LogInfo("Shell already handled, skipping fragments");
+                return; // once per shell
+            }
+
+            ArmorFragmentsPlugin.Log.LogInfo("Calling FragmentSpawner.Spawn");
+            try
+            {
+                FragmentSpawner.Spawn(part, contact.point, direction, false);
+            }
+            catch (System.Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogError("Fragment spawn failed: " + e);
+            }
         }
     }
 }
