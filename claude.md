@@ -37,7 +37,7 @@ O mod será um plugin BepInEx em C# que escuta o impacto dos projéteis de canh�
 
 ## O que já sabemos e o que já funciona
 
-Nada foi executado no jogo ainda. Tudo abaixo vem da leitura do código decompilado do `Game.dll` ou é código rascunhado que ainda não compilou.
+Os fatos abaixo vêm da leitura do código decompilado do `Game.dll`. O código rascunhado a seguir foi a primeira versão: já compilou e roda no jogo, mas evoluiu (ver Estado atual e os arquivos em `Armor Mod/`).
 
 ### Fatos lidos no código do jogo
 
@@ -154,25 +154,23 @@ O erro mais caro até agora foi o tipo de projeto no Visual Studio; o resto são
 
 ## Estado atual
 
-O usuário está no passo de compilar o patch de log e ainda não conseguiu um build sem erro.
+Tudo abaixo foi testado no jogo pelo Luciano.
 
-- **Instalado:** BepInEx, Visual Studio e um projeto `ArmorFragments`. O jogo já foi aberto com o BepInEx, mas não se confirmou que o plugin de teste carregou.
-- **Erro encontrado:** CS0246 em `using Assets...` e em `CannonProjectileScript`, em `CannonHitPatch.cs`. A causa é o projeto .NET Framework. A referência `Game` aparecia em Referências com o caminho certo (`...\SimplePlanes 2_Data\Managed\Game.dll`), mas o Visual Studio a descartava.
-- **Correção entregue:** criar um novo projeto Class Library (.NET, não .NET Framework), apagar `Class1.cs`, abrir o `.csproj` e substituí-lo por um com `netstandard2.1` e as seis referências, e arrastar os dois `.cs` para o novo projeto. O resultado desse build ainda não foi relatado.
-- **Ainda não confirmado:** que o plugin carrega no jogo, que `Part.Name` é o nome editável da peça e que o patch dispara. Nenhum trecho de código chegou a gerar uma DLL.
-- **Documentos já feitos:** "Mod de blindagem para SimplePlanes 2: fragmentos para canhões" (o desenho do sistema) e "Beginner guide: your first SimplePlanes 2 armor mod" (passo a passo, já corrigido para `netstandard2.1`).
-- **Pergunta em aberto:** a explosão do projétil explosivo deve acontecer dentro da blindagem, como no War Thunder, ou ficar só nos fragmentos? O usuário ainda não respondeu.
+- **Funciona:** o plugin carrega; o patch em `CannonProjectileScript.OnCollisionEnter` registra o impacto, o ângulo (correto também em fuselagens curvas e esferas) e filtra pelo nome `ARM_`; o nome editável da peça (`Part.Name`) é o usado pelo filtro.
+- **Fragmentos:** cone de 20 raios atrás da armadura, com dano (`PartScript.OnDamaged`) e queda linear até 30 m. O dano está alto demais e será balanceado depois.
+- **Ricochete:** tiro raspando na armadura gera um único raio refletido; os raios dos fragmentos também ricocheteiam em qualquer objeto, com ângulo tolerado menor. Limite de ricochetes por raio configurável.
+- **Visual:** raios animados (cabeça com rastro que some) e bolhas coloridas nos impactos (laranja = armadura, ciano = ricochete, vermelho = peça atingida, amarelo = nada/objeto que não é peça). O `LineRenderer` funciona no jogo (um dos shaders testados existe).
+- **Painel próprio no jogo:** botão "Armor Fragments" no menu de voo abre uma janela feita com a biblioteca de UI da Jundroo (Juicy), com status do último impacto, sliders e toggles de todas as configurações, "Reset to defaults", "Clear rays" e as últimas linhas do log. Código em `Armor Mod/UI/`.
+- **Configuração:** `BepInEx/config/com.yourname.armorfragments.cfg` (seções Fragments, Ricochet, Debug).
+- **Decompilados usados (só estudo pessoal, não vão para o repositório):** `Game.dll`, `Jundroo.Packages.dll` (contém Juicy e `DevConsole`), `Jundroo.Common.dll` e o mod de referência GravyMenu. Peças-chave: `PanelDialogScript`, `UserInterface.CreateDialog<T>`, `Jundroo.Juicy.ResourceLoader.LoadXml/GetScriptType` (patchados para entregar nosso layout e script), `MenuPanelScript.OnWidgetInitialized` (botão no menu) e os controles `ToggleControl`/`SliderControl`/`TextControl`/`HeaderScript`.
+- **Estrutura do código:** `ArmorFragmentsPlugin` (configs e patches), `CannonHitPatch` (impacto), `FragmentSpawner` (raios, ricochete, dano), `RayDrawer`/`RayAnimation` (visual), `LastImpact`, `LogMirror`, `SafePatcher` (cada patch isolado) e `UI/`.
+- **Pergunta em aberto:** a explosão do projétil explosivo deve acontecer dentro da blindagem, como no War Thunder, ou ficar só nos fragmentos? O usuário ainda não respondeu. Hoje a explosão do jogo continua como está.
 
 ## Próximos passos
 
-Cada passo só vale depois que a verificação do anterior passa.
-
-1. **Refazer o projeto em `netstandard2.1`** e arrastar `ArmorFragmentsPlugin.cs` e `CannonHitPatch.cs` para ele. *Verificação:* Build Solution termina sem erros. Se aparecer CS0012, adicionar a DLL citada do `Managed`.
-2. **Carregar o plugin.** Copiar a DLL de `bin/Debug/netstandard2.1` para `BepInEx/plugins/ArmorFragments/` com o jogo fechado. *Verificação:* `Armor Fragments loaded!` aparece no console ou em `LogOutput.log`.
-3. **Testar o patch de log.** Atirar com um canhão em algo com peças, como um avião de IA do botão Spawn AI Craft. *Verificação:* uma linha `Shell hit part '...' at ... m/s, angle ... deg` por projétil. Se o projétil atravessar a própria aeronave sem log, afastar a peça do canhão ou usar uma segunda aeronave.
-4. **Confirmar o nome da peça.** Renomear uma fuselagem para `ARM_20` no painel de propriedades do construtor e atirar nela. *Verificação:* o log mostra `ARM_20`. Se mostrar um nome genérico, descobrir o campo certo. Depois, ligar o filtro `StartsWith("ARM_")`.
-5. **Contar fragmentos sem dano** (`applyDamage = false`). *Verificação:* `Fragments: N of 20` sobe quando há peças atrás da blindagem e fica perto de 0 sem nada atrás.
-6. **Ligar o dano** (`applyDamage = true`) e calibrar `DamagePerFragment` contra o dano direto do projétil (`0.3 * impacto * ImpactDamageScalar`) e contra `MaxHealth`.
-7. **Decidir a explosão interna.** Se o usuário quiser a explosão dentro da blindagem, suprimir o `Explode()` original e chamar `CreateExplosion` num ponto interno. Antes, ler como a explosão causa dano às peças no código do jogo.
-8. **Refinar.** Escalar o número e o dano dos fragmentos pela energia do projétil (`0.5 * massa * velocidade²`), pelo ângulo de impacto e pela espessura lida do nome (o `20` de `ARM_20`).
-9. **Mais tarde:** metralhadoras, multiplayer, e conferir o mod depois de cada atualização do jogo.
+1. **Balancear o dano** (`DamagePerFragment`) contra o dano direto do projétil e contra `MaxHealth`, usando o painel.
+2. **Materiais de blindagem pelo nome da peça** (por exemplo `ARM_<material>_<espessura>`): cada material com seus multiplicadores de ricochete e de dano, sem criar peças novas. Depois, configurações integradas ao designer, também só pelo nome.
+3. **Espessura:** ler o número do nome (`20` de `ARM_20`) e usá-lo para escalar fragmentos e dano com a energia do projétil (`0.5 * massa * velocidade²`) e o ângulo.
+4. **Explosão interna:** decidir a pergunta em aberto. Antes, ler no `Game.dll` como a explosão causa dano às peças e suprimir/mover o `Explode()` original.
+5. **Comandos no console nativo** (`DevConsoleApi.RegisterCommand`, no `Jundroo.Packages`), opcional.
+6. **Mais tarde:** feixe de raios no ricochete em vez de raio único, metralhadoras, multiplayer, e conferir o mod depois de cada atualização do jogo.
