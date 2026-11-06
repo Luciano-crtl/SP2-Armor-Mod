@@ -17,6 +17,14 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> DrawRays;
         internal static ConfigEntry<float> RayLifetime;
 
+        // Ricochet. Angles: 0 = head-on, 90 = grazing.
+        // A hit ricochets when its angle >= (base angle * multiplier).
+        internal static ConfigEntry<int> MaxRicochets;
+        internal static ConfigEntry<float> ArmorRicochetAngle;
+        internal static ConfigEntry<float> ArmorRicochetMultiplier;
+        internal static ConfigEntry<float> FragmentRicochetAngle;
+        internal static ConfigEntry<float> FragmentRicochetMultiplier;
+
         private void Awake()
         {
             Log = Logger;
@@ -29,6 +37,31 @@ namespace ArmorFragments
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
             RayLifetime = Config.Bind("Debug", "RayLifetime", 2f,
                 "Seconds the drawn rays stay visible.");
+
+            MaxRicochets = Config.Bind("Ricochet", "MaxRicochets", 2,
+                new ConfigDescription(
+                    "Max times one ray may bounce (the bounce off the armor counts as the first). " +
+                    "0 turns ricochets off. Keep it low to avoid stutters.",
+                    new AcceptableValueRange<int>(0, 10)));
+            ArmorRicochetAngle = Config.Bind("Ricochet", "ArmorRicochetAngle", 70f,
+                new ConfigDescription(
+                    "Base impact angle (degrees) at which a shell ricochets off an ARM_ part " +
+                    "instead of spawning fragments. 0 = head-on, 90 = grazing.",
+                    new AcceptableValueRange<float>(0f, 90f)));
+            ArmorRicochetMultiplier = Config.Bind("Ricochet", "ArmorRicochetMultiplier", 1f,
+                new ConfigDescription(
+                    "Multiplies the armor angle. Above 1 the armor tolerates steeper hits before " +
+                    "ricocheting; below 1 it ricochets sooner. The result is capped at 90.",
+                    new AcceptableValueRange<float>(0f, 10f)));
+            FragmentRicochetAngle = Config.Bind("Ricochet", "FragmentRicochetAngle", 60f,
+                new ConfigDescription(
+                    "Base impact angle (degrees) at which a fragment ray ricochets off any " +
+                    "object it hits. Lower than the armor angle by default.",
+                    new AcceptableValueRange<float>(0f, 90f)));
+            FragmentRicochetMultiplier = Config.Bind("Ricochet", "FragmentRicochetMultiplier", 1f,
+                new ConfigDescription(
+                    "Multiplies the fragment angle, same idea as ArmorRicochetMultiplier.",
+                    new AcceptableValueRange<float>(0f, 10f)));
 
             new Harmony("com.yourname.armorfragments").PatchAll();
             Log.LogInfo("Armor Fragments loaded!");
