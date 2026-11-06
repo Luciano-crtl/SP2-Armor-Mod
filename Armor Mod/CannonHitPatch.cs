@@ -44,7 +44,8 @@ namespace ArmorFragments
             ArmorFragmentsPlugin.Log.LogInfo("Calling FragmentSpawner.Spawn");
             try
             {
-                FragmentSpawner.Spawn(part, contact.point, direction, false);
+                FragmentSpawner.Spawn(part, contact.point, direction,
+                    ArmorFragmentsPlugin.ApplyDamage.Value);
             }
             catch (System.Exception e)
             {

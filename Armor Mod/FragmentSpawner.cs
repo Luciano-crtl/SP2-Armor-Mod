@@ -8,7 +8,6 @@ namespace ArmorFragments
         private const int FragmentCount = 20;      // rays per shell hit
         private const float ConeHalfAngle = 35f;   // spread, in degrees
         private const float MaxRange = 30f;         // meters
-        private const float DamagePerFragment = 5f; // tune this by testing
 
         private static readonly RaycastHit[] Hits = new RaycastHit[32];
 
@@ -16,6 +15,8 @@ namespace ArmorFragments
         {
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
             int partsHit = 0;
+            float totalDamage = 0f;
+            bool draw = ArmorFragmentsPlugin.DrawRays.Value;
 
             for (int i = 0; i < FragmentCount; i++)
             {
@@ -38,18 +39,26 @@ namespace ArmorFragments
                         targetPoint = Hits[h].point;
                     }
                 }
-                if (target == null) continue;
+                if (target == null)
+                {
+                    if (draw) RayDrawer.Draw(point, point + dir * MaxRange, false);
+                    continue;
+                }
 
                 partsHit++;
+                if (draw) RayDrawer.Draw(point, targetPoint, true);
                 if (applyDamage)
                 {
                     float falloff = 1f - best / MaxRange;
-                    target.OnDamaged(null, DamagePerFragment * falloff, targetPoint, dir);
+                    float damage = ArmorFragmentsPlugin.DamagePerFragment.Value * falloff;
+                    target.OnDamaged(null, damage, targetPoint, dir);
+                    totalDamage += damage;
                 }
             }
 
             ArmorFragmentsPlugin.Log.LogInfo(
-                "Fragments: " + partsHit + " of " + FragmentCount + " rays hit a part");
+                "Fragments: " + partsHit + " of " + FragmentCount + " rays hit a part, total damage " +
+                totalDamage.ToString("F1") + (applyDamage ? "" : " (damage off)"));
         }
 
         private static Vector3 RandomInCone(Vector3 axis, float halfAngle)
