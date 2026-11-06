@@ -9,6 +9,7 @@ namespace ArmorFragments
     public class ArmorFragmentsPlugin : BaseUnityPlugin
     {
         internal static ManualLogSource Log;
+        internal static ArmorFragmentsPlugin Instance;
 
         // These show up in BepInEx/config/com.yourname.armorfragments.cfg
         // after the first run, so you can tune them without rebuilding.
@@ -20,6 +21,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> RayTrailLength;
         internal static ConfigEntry<float> BubbleSize;
         internal static ConfigEntry<float> BubbleLifetime;
+        internal static ConfigEntry<bool> MirrorLogToGameConsole;
 
         // Ricochet. Angles: 0 = head-on, 90 = grazing.
         // A hit ricochets when its angle >= (base angle * multiplier).
@@ -32,11 +34,17 @@ namespace ArmorFragments
         private void Awake()
         {
             Log = Logger;
+            Instance = this;
+
+            // Keeps this plugin's latest log lines for the in-game panel.
+            BepInEx.Logging.Logger.Listeners.Add(new LogMirror());
 
             ApplyDamage = Config.Bind("Fragments", "ApplyDamage", true,
                 "If true, fragments damage the parts they hit.");
             DamagePerFragment = Config.Bind("Fragments", "DamagePerFragment", 5f,
-                "Damage of one fragment at point-blank range. Falls off linearly to 0 at max range.");
+                new ConfigDescription(
+                    "Damage of one fragment at point-blank range. Falls off linearly to 0 at max range.",
+                    new AcceptableValueRange<float>(0f, 100f)));
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
             RayWidth = Config.Bind("Debug", "RayWidth", 0.02f,
@@ -56,6 +64,9 @@ namespace ArmorFragments
             BubbleLifetime = Config.Bind("Debug", "BubbleLifetime", 0.6f,
                 new ConfigDescription("Seconds an impact ball takes to shrink away.",
                     new AcceptableValueRange<float>(0.05f, 10f)));
+            MirrorLogToGameConsole = Config.Bind("Debug", "MirrorLogToGameConsole", false,
+                "If true, also prints this plugin's log lines to the game's developer console. " +
+                "They then show up twice in LogOutput.log (once as 'Unity Log').");
 
             MaxRicochets = Config.Bind("Ricochet", "MaxRicochets", 2,
                 new ConfigDescription(
@@ -82,7 +93,8 @@ namespace ArmorFragments
                     "Multiplies the fragment angle, same idea as ArmorRicochetMultiplier.",
                     new AcceptableValueRange<float>(0f, 10f)));
 
-            new Harmony("com.yourname.armorfragments").PatchAll();
+            // One patch failing (for example after a game update) must not stop the others.
+            SafePatcher.PatchAll(new Harmony("com.yourname.armorfragments"), typeof(ArmorFragmentsPlugin).Assembly);
             Log.LogInfo("Armor Fragments loaded!");
         }
     }

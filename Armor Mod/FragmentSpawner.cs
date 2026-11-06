@@ -52,6 +52,9 @@ namespace ArmorFragments
                                          null, applyDamage, mask);
                 if (draw) RayDrawer.Animate(path, 0f);
 
+                LastImpact.Record("Armor ricochet (single ray)", angle, armorTolerated,
+                                  r.HitPart ? 1 : 0, 1 + r.Ricochets, r.Damage);
+
                 ArmorFragmentsPlugin.Log.LogInfo(
                     "Armor ricochet: angle " + angle.ToString("F0") + " >= tolerated " +
                     armorTolerated.ToString("F0") + " deg. Single ray: " +
@@ -91,6 +94,9 @@ namespace ArmorFragments
                 ricochets += r.Ricochets;
                 totalDamage += r.Damage;
             }
+
+            LastImpact.Record("Fragments (" + FragmentCount + " rays)", angle, armorTolerated,
+                              partsHit, ricochets, totalDamage);
 
             ArmorFragmentsPlugin.Log.LogInfo(
                 "Fragments: " + partsHit + " of " + FragmentCount + " rays hit a part, " +

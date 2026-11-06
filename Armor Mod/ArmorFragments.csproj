@@ -33,6 +33,36 @@
 			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
+
+		<!-- UI panel: the game's UI library (Juicy) and what it is built on -->
+		<Reference Include="Jundroo.Packages">
+			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Jundroo.Packages.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="Jundroo.Common">
+			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Jundroo.Common.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="UnityEngine.UIModule">
+			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="UnityEngine.UI">
+			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\UnityEngine.UI.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="Unity.TextMeshPro">
+			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="Unity.InputSystem">
+			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Unity.InputSystem.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="FishNet.Runtime">
+			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\FishNet.Runtime.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
 	</ItemGroup>
 
 </Project>
