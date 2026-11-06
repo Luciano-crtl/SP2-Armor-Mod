@@ -6,6 +6,8 @@ Nov 6, 2026 · @Luciano
 
 Criar um mod BepInEx para SimplePlanes 2 que simule blindagem ao estilo War Thunder: uma peça de blindagem (tipo fuselagem) que, ao ser atingida por um projétil de canhão, gera fragmentos que danificam as peças atrás dela.
 
+Outras repos de mods com BePinex: https://gravysp2mods.com, https://github.com/hahaha8459812/simpleplanes2-minimap-plugin, https://github.com/hahaha8459812/simpleplanes2-localization-plugin, https://github.com/hahaha8459812/simpleplanes2-mouse-flight-plugin, https://github.com/hahaha8459812/simpleplanes2-rangefinder-plugin, https://github.com/ScreamingMaggot/simpleplanes2-flight-control, https://github.com/NoraNekowww/SimplePlanes2-FlightAnalyzer
+
 Escopo da fase atual: só canhões, não metralhadoras. Só jogo local; multiplayer fica de fora por enquanto.
 
 **Quem é o usuário:** Luciano, iniciante total em programação e em Unity. Usa Windows e o Visual Studio em português, e conhece bem o SimplePlanes 2 como jogador. O jogo está em `C:\Program Files (x86)\Steam\steamapps\common\SimplePlanes 2`.
