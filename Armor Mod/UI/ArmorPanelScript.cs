@@ -209,6 +209,8 @@ namespace ArmorFragments.UI
                 "Off = proportional drag (exponential). On = constant force (linear).");
             ToggleSetting(ArmorFragmentsPlugin.SimpleFragments, "Simple fragments",
                 "Off = each fragment has its own mass, energy and speed. On = equal and fixed.");
+            FloatSetting(ArmorFragmentsPlugin.ShellFragmentShare, "Shell fragment share",
+                "Share of the leftover energy that becomes fragments even with an unbrittle plate (the shell breaking up).", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.SimpleFragmentArea, "Simple fragment area",
                 "Cross-section of every fragment in simple mode.", 0.1f, " cm2");
             IntSetting(ArmorFragmentsPlugin.MaxPartsPerFragment, "Parts per fragment",
@@ -324,6 +326,7 @@ namespace ArmorFragments.UI
 
         private void ClearRays()
         {
+            RayDrawer.ClearPersistent();
             foreach (TracerAnimation tracer in UnityEngine.Object.FindObjectsByType<TracerAnimation>(FindObjectsSortMode.None))
                 Destroy(tracer.gameObject);
             foreach (BubbleAnimation bubble in UnityEngine.Object.FindObjectsByType<BubbleAnimation>(FindObjectsSortMode.None))

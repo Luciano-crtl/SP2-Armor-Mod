@@ -12,6 +12,7 @@ namespace ArmorFragments
         Miss,        // ray ended in the air or on a non-part object (yellow)
         Ricochet,    // the ray bounced here (cyan)
         ArmorImpact, // the shell hit the armor (orange)
+        Landed,      // a fragment of a simulated shot stopped here (magenta); stays until the next test
     }
 
     // The full route of one ray: a list of points, plus a marker at each point
@@ -43,7 +44,7 @@ namespace ArmorFragments
         };
 
         private static Material lineMaterial;                 // white: the color comes from the line itself
-        private static readonly Material[] BubbleMaterials = new Material[5];   // one per RayKind
+        private static readonly Material[] BubbleMaterials = new Material[6];   // one per RayKind
         private static Shader shaderUsed;
         private static bool initialized;
         private static bool available;
@@ -55,6 +56,7 @@ namespace ArmorFragments
                 case RayKind.Hit: return new Color(1f, 0.15f, 0.1f, 1f);
                 case RayKind.Ricochet: return new Color(0.1f, 0.9f, 1f, 1f);
                 case RayKind.ArmorImpact: return new Color(1f, 0.55f, 0.1f, 1f);
+                case RayKind.Landed: return new Color(1f, 0.2f, 1f, 1f);
                 default: return new Color(1f, 0.9f, 0.1f, 1f);
             }
         }
@@ -121,7 +123,18 @@ namespace ArmorFragments
                 ArmorFragmentsPlugin.RayTrailLength.Value);
         }
 
-        // A small colored ball that shrinks away.
+        // Balls that stay (the stop points of a simulated shot) until the next test clears them.
+        private static readonly List<GameObject> PersistentBubbles = new List<GameObject>();
+
+        public static void ClearPersistent()
+        {
+            foreach (GameObject bubble in PersistentBubbles)
+                if (bubble != null) Object.Destroy(bubble);
+            PersistentBubbles.Clear();
+        }
+
+        // A small colored ball that shrinks away. The "Landed" kind does not shrink: it stays,
+        // a little smaller, until ClearPersistent is called.
         public static void SpawnBubble(Vector3 position, RayKind kind)
         {
             if (!initialized) Init();
@@ -140,6 +153,14 @@ namespace ArmorFragments
             r.receiveShadows = false;
 
             go.transform.position = position;
+
+            if (kind == RayKind.Landed)
+            {
+                go.AddComponent<BubbleAnimation>().Init(ArmorFragmentsPlugin.BubbleSize.Value * 0.6f, float.PositiveInfinity);
+                PersistentBubbles.Add(go);
+                return;
+            }
+
             go.AddComponent<BubbleAnimation>().Init(
                 ArmorFragmentsPlugin.BubbleSize.Value,
                 ArmorFragmentsPlugin.BubbleLifetime.Value);

@@ -74,6 +74,7 @@ namespace ArmorFragments
         public static void Fire()
         {
             Top.Clear();
+            RayDrawer.ClearPersistent();   // the previous test's stop points go away
 
             Vector3 origin;
             Vector3 direction;

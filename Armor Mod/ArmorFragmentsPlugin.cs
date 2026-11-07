@@ -52,6 +52,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> DensityModifier;
         internal static ConfigEntry<bool> ConstantForceLoss;
         internal static ConfigEntry<bool> SimpleFragments;
+        internal static ConfigEntry<float> ShellFragmentShare;
         internal static ConfigEntry<float> SimpleFragmentArea;
         internal static ConfigEntry<int> MaxPartsPerFragment;
         internal static ConfigEntry<float> SpreadBaseAngle;
@@ -188,6 +189,12 @@ namespace ArmorFragments
                 "Energy loss inside a part: off = proportional drag (exponential), on = constant force (linear)." + NotUsed);
             SimpleFragments = Config.Bind("Energy", "SimpleFragments", false,
                 "Off = fragments with their own mass, energy and speed (central ones carry more). On = equal energy and mass, fixed size (simpler).");
+            ShellFragmentShare = Config.Bind("Energy", "ShellFragmentShare", 0.2f,
+                new ConfigDescription(
+                    "Share of the energy left after the armor that becomes fragments even if the plate does not " +
+                    "shatter at all (the shell breaking up by itself). The plate's brittleness adds to it. " +
+                    "0 = only the plate makes fragments, 1 = all the leftover energy becomes fragments.",
+                    new AcceptableValueRange<float>(0f, 1f)));
             SimpleFragmentArea = Config.Bind("Energy", "SimpleFragmentAreaCm2", 0.5f,
                 new ConfigDescription("Cross-section (cm2) of every fragment in simple mode.",
                     new AcceptableValueRange<float>(0.01f, 20f)));

@@ -160,8 +160,8 @@ namespace ArmorFragments
             }
 
             if (fragments.Length == 0)
-                ArmorFragmentsPlugin.Log.LogInfo(tag + "The plate does not shatter (brittleness " +
-                                                 armorTag.Brittleness.ToString("F0") + "%): no fragments");
+                ArmorFragmentsPlugin.Log.LogInfo(tag + "No fragments: too little energy left over after the armor (" +
+                                                 EnergyModel.Kilojoules(shellEnergy - absorbed) + ")");
             else
                 ArmorFragmentsPlugin.Log.LogInfo(
                     tag + "Fragment cloud: " + fragments.Length + " fragments, " + EnergyModel.Kilojoules(cloud.TotalEnergy) +
@@ -247,7 +247,8 @@ namespace ArmorFragments
                 PartScript part = hit.collider.GetComponentInParent<PartScript>();
                 if (part != null)
                 {
-                    path.Add(hit.point, RayKind.Hit);
+                    // In a simulated shot the stop point stays on screen until the next test.
+                    path.Add(hit.point, DamageSink != null ? RayKind.Landed : RayKind.Hit);
                     path.Final = RayKind.Hit;
                     result.HitPart = true;
 
@@ -277,7 +278,7 @@ namespace ArmorFragments
                 }
                 else
                 {
-                    path.Add(hit.point, RayKind.Miss);
+                    path.Add(hit.point, DamageSink != null ? RayKind.Landed : RayKind.Miss);
                     path.Final = RayKind.Miss;
                 }
                 break;
