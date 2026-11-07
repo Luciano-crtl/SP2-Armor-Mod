@@ -175,7 +175,7 @@ namespace ArmorFragments
                 new ConfigDescription("Share of the sliding energy a shell loses in a ricochet (it keeps sin^2 of the angle, minus this).",
                     new AcceptableValueRange<float>(0f, 1f)));
             RicochetRandomness = Config.Bind("Energy", "RicochetRandomness", 50f,
-                new ConfigDescription("Small random shift of the critical ricochet angle at each impact. 0% = none (same result every time), 100% = up to 5 degrees either way.",
+                new ConfigDescription("Small random shift of the critical ricochet angle at each impact. 0% = none (same result every time), 100% = up to 10 degrees either way.",
                     new AcceptableValueRange<float>(0f, 100f)));
             DamagePerKiloJoule = Config.Bind("Energy", "DamagePerKiloJoule", 1f,
                 new ConfigDescription("Part damage per kilojoule of energy a fragment leaves in a part." + NotUsed,

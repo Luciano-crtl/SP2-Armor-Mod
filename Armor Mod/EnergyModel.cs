@@ -35,7 +35,7 @@ namespace ArmorFragments
         private const float HardnessStepDegrees = 12f; // critical angle drops by this per doubling of armor/shell hardness
         private const float SpeedStepDegrees = 5f;     // critical angle rises by this per doubling of speed
         private const float OvermatchLimit = 3f;       // caliber / thickness at which ricochet becomes impossible
-        private const float JitterMaxDegrees = 5f;     // size of the random shift at 100% randomness
+        private const float JitterMaxDegrees = 10f;    // size of the random shift at 100% randomness
 
         // Energy (joules) the armor takes from the shell, which opens a plug of its own cross-section:
         //     resistance x area of the shell x thickness the shell has to cross

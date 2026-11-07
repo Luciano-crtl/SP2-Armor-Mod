@@ -192,7 +192,7 @@ namespace ArmorFragments.UI
             FloatSetting(ArmorFragmentsPlugin.RicochetFriction, "Ricochet friction",
                 "Share of the sliding energy a shell loses in a ricochet.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.RicochetRandomness, "Ricochet randomness",
-                "Small random shift of the critical ricochet angle. 0% = none, 100% = up to 5 degrees.", 5f, " %");
+                "Small random shift of the critical ricochet angle. 0% = none, 100% = up to 10 degrees.", 5f, " %");
             FloatSetting(ArmorFragmentsPlugin.DamagePerKiloJoule, "Damage per kJ",
                 "Part damage per kilojoule left in a part.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.DensityModifier, "Density modifier",
