@@ -76,6 +76,21 @@ namespace ArmorFragments.UI
                 menuButton.SetStyle("color", IsOpen ? ButtonColorActive : ButtonColor);
         }
 
+        // A bare vertical list. It brings the game's control styles ("Xml/Styles") with it,
+        // so the same controls work inside the designer's own panels.
+        public static XElement BuildDesignerSectionLayout()
+        {
+            return XElement.Parse(@"
+<Xml>
+   <Stylesheets>
+      <Stylesheet path='Xml/Styles' />
+   </Stylesheets>
+   <Widgets>
+      <VerticalLayout id='armor-tags-root' class='vertical-layout' padding='0' spacing='@Spacing' />
+   </Widgets>
+</Xml>");
+        }
+
         // The panel layout. Single quotes keep the C# string readable.
         public static XElement BuildLayout()
         {

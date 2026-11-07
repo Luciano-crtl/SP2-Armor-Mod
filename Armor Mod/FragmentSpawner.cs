@@ -22,7 +22,8 @@ namespace ArmorFragments
         }
 
         // angle: 0 = head-on, 90 = grazing (same convention as the hit log).
-        public static void Spawn(PartScript armor, Vector3 point, Vector3 direction,
+        public static void Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag,
+                                 Vector3 point, Vector3 direction,
                                  Vector3 normal, float angle, bool applyDamage)
         {
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
@@ -64,7 +65,31 @@ namespace ArmorFragments
                 return;
             }
 
-            // 2) Otherwise the shell "penetrates": fan of fragment rays behind the armor.
+            // 2) Can the shell defeat the armor? Compare its penetration with the armor's
+            //    effective thickness, which grows as the hit gets more slanted.
+            float penetration = cannonTag != null
+                ? cannonTag.Penetration
+                : ArmorFragmentsPlugin.DefaultPenetration.Value;
+            float slant = Mathf.Max(Mathf.Cos(angle * Mathf.Deg2Rad), 0.1f);
+            float resistance = armorTag.Thickness * (armorTag.Hardness / 100f) / slant;
+            string comparison = penetration.ToString("F0") + " vs " + resistance.ToString("F0") + " mm";
+
+            if (penetration < resistance)
+            {
+                if (draw)
+                {
+                    RayPath blockedShell = new RayPath { Final = RayKind.ArmorImpact };
+                    blockedShell.Add(shellStart, RayKind.None);
+                    blockedShell.Add(point, RayKind.ArmorImpact);
+                    RayDrawer.Animate(blockedShell, 0f);
+                }
+
+                LastImpact.Record("Blocked (penetration " + comparison + ")", angle, armorTolerated, 0, 0, 0f);
+                ArmorFragmentsPlugin.Log.LogInfo("Shell blocked by armor: penetration " + comparison);
+                return;
+            }
+
+            // 3) It penetrates: fan of fragment rays behind the armor.
             float rayDelay = 0f;
             if (draw)
             {
@@ -95,7 +120,7 @@ namespace ArmorFragments
                 totalDamage += r.Damage;
             }
 
-            LastImpact.Record("Fragments (" + FragmentCount + " rays)", angle, armorTolerated,
+            LastImpact.Record("Penetrated (" + comparison + "), " + FragmentCount + " rays", angle, armorTolerated,
                               partsHit, ricochets, totalDamage);
 
             ArmorFragmentsPlugin.Log.LogInfo(
@@ -176,8 +201,14 @@ namespace ArmorFragments
                     {
                         float falloff = 1f - traveled / MaxRange;
                         float damage = ArmorFragmentsPlugin.DamagePerFragment.Value * falloff;
-                        part.OnDamaged(null, damage, hit.point, dir);
-                        result.Damage += damage;
+
+                        // A part marked [MOD d=...] ignores fragments weaker than that.
+                        ModuleTag module = TagCodec.Parse(part.Part.Name).Module;
+                        if (module == null || damage >= module.MinDamage)
+                        {
+                            part.OnDamaged(null, damage, hit.point, dir);
+                            result.Damage += damage;
+                        }
                     }
                 }
                 else

@@ -98,6 +98,8 @@ namespace ArmorFragments.UI
                 "If on, fragments damage the parts they hit.");
             FloatSetting(ArmorFragmentsPlugin.DamagePerFragment, "Damage per fragment",
                 "Damage of one fragment at point-blank range. Falls off with distance.", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.DefaultPenetration, "Default penetration",
+                "Penetration of shells from a cannon without a [CAN] tag in its name.", 1f, " mm");
         }
 
         private void BuildRicochet()

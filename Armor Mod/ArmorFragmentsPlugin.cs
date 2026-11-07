@@ -15,6 +15,7 @@ namespace ArmorFragments
         // after the first run, so you can tune them without rebuilding.
         internal static ConfigEntry<bool> ApplyDamage;
         internal static ConfigEntry<float> DamagePerFragment;
+        internal static ConfigEntry<float> DefaultPenetration;
         internal static ConfigEntry<bool> DrawRays;
         internal static ConfigEntry<float> RayWidth;
         internal static ConfigEntry<float> RaySpeed;
@@ -31,6 +32,11 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetAngle;
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
+        private void Update()
+        {
+            UI.DesignerSection.Tick();
+        }
+
         private void Awake()
         {
             Log = Logger;
@@ -45,6 +51,10 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "Damage of one fragment at point-blank range. Falls off linearly to 0 at max range.",
                     new AcceptableValueRange<float>(0f, 100f)));
+            DefaultPenetration = Config.Bind("Fragments", "DefaultPenetration", 100f,
+                new ConfigDescription(
+                    "Penetration (mm) of shells from a cannon that has no [CAN] tag in its name.",
+                    new AcceptableValueRange<float>(0f, 1000f)));
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
             RayWidth = Config.Bind("Debug", "RayWidth", 0.02f,

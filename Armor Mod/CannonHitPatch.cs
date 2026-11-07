@@ -14,15 +14,24 @@ namespace ArmorFragments
 
         // Harmony fills this argument with the shell's private field
         // _previousFrameVelocity: three underscores + the field's name.
-        private static void Prefix(CannonProjectileScript __instance, Collision collision, Vector3 ____previousFrameVelocity)
+        // ____cannonScript is the cannon that fired this shell (also a private field).
+        private static void Prefix(CannonProjectileScript __instance, Collision collision,
+                                   Vector3 ____previousFrameVelocity, CannonScript ____cannonScript)
         {
             if (collision.contactCount == 0) return;
 
             ContactPoint contact = collision.GetContact(0);
             PartScript part = contact.otherCollider.GetComponentInParent<PartScript>();
             if (part == null) return;
-            if (part.Part.Name == null || !part.Part.Name.StartsWith("ARM_")) return;
 
+            // Only parts whose name carries an [ARM ...] tag act as armor.
+            ArmorTag armor = TagCodec.Parse(part.Part.Name).Armor;
+            if (armor == null) return;
+
+            // The firing cannon's [CAN ...] tag, if it has one (it may be destroyed already).
+            CannonTag cannon = null;
+            if (____cannonScript != null && ____cannonScript.PartScript != null)
+                cannon = TagCodec.Parse(____cannonScript.PartScript.Part.Name).Cannon;
 
             Vector3 direction = ____previousFrameVelocity.normalized;
             float speed = ____previousFrameVelocity.magnitude;
@@ -44,7 +53,7 @@ namespace ArmorFragments
             ArmorFragmentsPlugin.Log.LogInfo("Calling FragmentSpawner.Spawn");
             try
             {
-                FragmentSpawner.Spawn(part, contact.point, direction,
+                FragmentSpawner.Spawn(part, armor, cannon, contact.point, direction,
                     contact.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value);
             }
             catch (System.Exception e)

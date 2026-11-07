@@ -32,10 +32,17 @@ namespace ArmorFragments.UI
     {
         private static bool Prefix(string path, ref XElement __result)
         {
-            if (path != ArmorPanel.PanelXmlPath) return true;   // not ours: run the original
-
-            __result = ArmorPanel.BuildLayout();
-            return false;                                        // skip the original
+            if (path == ArmorPanel.PanelXmlPath)
+            {
+                __result = ArmorPanel.BuildLayout();
+                return false;                                    // skip the original
+            }
+            if (path == DesignerSection.LayoutPath)
+            {
+                __result = ArmorPanel.BuildDesignerSectionLayout();
+                return false;
+            }
+            return true;                                         // not ours: run the original
         }
     }
 
