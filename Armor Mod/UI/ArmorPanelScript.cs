@@ -105,7 +105,7 @@ namespace ArmorFragments.UI
             for (int i = 0; i < 5; i++)
             {
                 int index = i;
-                Live("Most damaged #" + (i + 1), () =>
+                Live("#" + (i + 1), () =>
                 {
                     if (index >= ShotSimulator.Top.Count) return "-";
                     ShotSimulator.PartResult r = ShotSimulator.Top[index];

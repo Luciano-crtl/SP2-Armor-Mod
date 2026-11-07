@@ -158,21 +158,30 @@ namespace ArmorFragments
             HiddenRenderers.Add(renderer);
         }
 
+        // Transparent things are drawn in render queue order, later = on top. Giving
+        // more damaged levels a later queue draws them over the fainter parts.
+        private static Material MakeMaterial(Shader shader, Color color, int level)
+        {
+            Material material = new Material(shader) { color = color };
+            material.renderQueue = 3000 + level;
+            return material;
+        }
+
         private static void CreateMaterials(Shader shader)
         {
             normalMaterials = new Material[Levels];
             armorMaterials = new Material[Levels];
 
-            // From almost invisible (no damage) to dark and solid (a lot of damage).
-            Color normalLight = new Color(0.70f, 0.80f, 0.95f, 0.16f);
-            Color armorLight = new Color(0.45f, 0.85f, 1.00f, 0.30f);
-            Color dark = new Color(0.10f, 0.00f, 0.00f, 0.90f);
+            // From almost invisible (no damage) to dark and nearly solid (a lot of damage).
+            Color normalLight = new Color(0.70f, 0.80f, 0.95f, 0.04f);
+            Color armorLight = new Color(0.45f, 0.85f, 1.00f, 0.09f);
+            Color dark = new Color(0.10f, 0.00f, 0.00f, 0.92f);
 
             for (int i = 0; i < Levels; i++)
             {
                 float t = i / (float)(Levels - 1);
-                normalMaterials[i] = new Material(shader) { color = Color.Lerp(normalLight, dark, t) };
-                armorMaterials[i] = new Material(shader) { color = Color.Lerp(armorLight, dark, t) };
+                normalMaterials[i] = MakeMaterial(shader, Color.Lerp(normalLight, dark, t), i);
+                armorMaterials[i] = MakeMaterial(shader, Color.Lerp(armorLight, dark, t), i);
             }
         }
     }
