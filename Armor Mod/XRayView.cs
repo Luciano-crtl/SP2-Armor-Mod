@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Assets.Scripts.Craft;
 using Assets.Scripts.Craft.Parts;
+using Assets.Scripts.Flight.Cameras;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -19,9 +20,9 @@ namespace ArmorFragments
         private static Material[] normalMaterials;   // one per damage level
         private static Material[] armorMaterials;    // same, for parts tagged [ARM]
         private static Material[] whiteMaterials;    // for rim-lit ghosts: color comes from the mesh
+        private static readonly List<RimGhost> RimList = new List<RimGhost>();
         private static float hideAtTime;
-        private static int rimGhosts;    // ghosts with the rim-lit look (readable mesh)
-        private static int flatGhosts;   // ghosts with the flat fallback look
+        private static int rimRoundRobin;   // where the next frame continues in RimList
 
         public static bool IsOn
         {
@@ -42,6 +43,9 @@ namespace ArmorFragments
             if (normalMaterials == null) CreateMaterials(shader);
             if (whiteMaterials == null) CreateWhiteMaterials(shader);
 
+            System.Diagnostics.Stopwatch timer = System.Diagnostics.Stopwatch.StartNew();
+            XRayStats.ResetView();
+
             // Every part near the impact (and every part that took simulated damage).
             HashSet<PartScript> parts = new HashSet<PartScript>();
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
@@ -54,24 +58,45 @@ namespace ArmorFragments
             }
             foreach (PartScript part in damage.Keys) parts.Add(part);
 
-            float fullDark = Mathf.Max(ArmorFragmentsPlugin.XRayDarkPercent.Value / 100f, 0.01f);
-            HashSet<Renderer> alreadyHidden = new HashSet<Renderer>();
-            int ghostCount = 0;
-            rimGhosts = 0;
-            flatGhosts = 0;
-
+            // Most damaged first, then nearest first. When the vertex limit for the rim look is
+            // reached, the parts that matter least are the ones that get the cheap flat look.
+            List<PartEntry> entries = new List<PartEntry>();
             foreach (PartScript part in parts)
             {
                 if (part == null) continue;
+                float taken;
+                damage.TryGetValue(part, out taken);
+                entries.Add(new PartEntry
+                {
+                    Part = part,
+                    Taken = taken,
+                    DistanceSqr = (part.transform.position - center).sqrMagnitude,
+                });
+            }
+            entries.Sort((x, y) =>
+            {
+                int byDamage = y.Taken.CompareTo(x.Taken);
+                return byDamage != 0 ? byDamage : x.DistanceSqr.CompareTo(y.DistanceSqr);
+            });
+
+            float fullDark = Mathf.Max(ArmorFragmentsPlugin.XRayDarkPercent.Value / 100f, 0.01f);
+            bool rimLook = ArmorFragmentsPlugin.XRayRimLook.Value;
+            bool showUndamaged = ArmorFragmentsPlugin.XRayShowUndamaged.Value;
+            int rimVertexLimit = ArmorFragmentsPlugin.XRayMaxRimKiloVertices.Value * 1000;
+            HashSet<Renderer> alreadyHidden = new HashSet<Renderer>();
+
+            foreach (PartEntry entry in entries)
+            {
+                PartScript part = entry.Part;
+                bool isArmor = TagCodec.Parse(part.Part.Name).Armor != null;
+
+                // Optionally leave undamaged, non-armor parts alone (fewer ghosts to draw).
+                if (!showUndamaged && entry.Taken <= 0f && !isArmor) continue;
 
                 // How dark: damage as a fraction of the part's health, scaled so that
                 // 'fullDark' of the health lost means fully dark.
-                float taken;
-                damage.TryGetValue(part, out taken);
-                float t = Mathf.Clamp01(taken / Mathf.Max(part.MaxHealth, 1f) / fullDark);
+                float t = Mathf.Clamp01(entry.Taken / Mathf.Max(part.MaxHealth, 1f) / fullDark);
                 int level = Mathf.RoundToInt(t * (Levels - 1));
-
-                bool isArmor = TagCodec.Parse(part.Part.Name).Armor != null;
 
                 // Parts can be drawn as one combined mesh per group: hide that too.
                 PartGroupScript group = part.PartGroup;
@@ -82,15 +107,27 @@ namespace ArmorFragments
                     MeshFilter filter = source.GetComponent<MeshFilter>();
                     if (filter == null || filter.sharedMesh == null) continue;
 
-                    ghostCount += MakeGhost(source, filter.sharedMesh, level, t, isArmor);
+                    MakeGhost(source, filter.sharedMesh, level, t, isArmor, rimLook, rimVertexLimit);
                     HideRenderer(source, alreadyHidden);
                 }
             }
 
+            rimRoundRobin = 0;
             hideAtTime = Time.time + ArmorFragmentsPlugin.XRayDuration.Value;
+
+            XRayStats.BuildMs = (float)timer.Elapsed.TotalMilliseconds;
             ArmorFragmentsPlugin.Log.LogInfo(
-                "X-ray view on: " + parts.Count + " parts, " + ghostCount + " ghost meshes (" +
-                rimGhosts + " rim-lit, " + flatGhosts + " flat: unreadable mesh)");
+                "X-ray view on: " + entries.Count + " parts, " + XRayStats.Ghosts + " ghosts (" +
+                XRayStats.RimGhosts + " rim-lit, " + XRayStats.FlatGhosts + " flat), " +
+                XRayStats.TotalVertices + " vertices (" + XRayStats.RimVertices + " rim-lit), built in " +
+                XRayStats.BuildMs.ToString("F0") + " ms");
+        }
+
+        private struct PartEntry
+        {
+            public PartScript Part;
+            public float Taken;
+            public float DistanceSqr;
         }
 
         // Switches everything back. Safe to call at any time.
@@ -103,12 +140,64 @@ namespace ArmorFragments
             foreach (GameObject ghost in Ghosts)
                 if (ghost != null) Object.Destroy(ghost);
             Ghosts.Clear();
+
+            // The rim ghosts own copies of meshes: free them.
+            foreach (RimGhost rim in RimList)
+                if (rim.Mesh != null) Object.Destroy(rim.Mesh);
+            RimList.Clear();
         }
 
-        // Called every frame by the plugin: turns the view off when its time is up.
+        // Called every frame by the plugin: turns the view off when its time is up and
+        // spends a limited amount of work on rim colors.
         public static void Tick()
         {
-            if (IsOn && Time.time >= hideAtTime) Hide();
+            XRayStats.OnFrame();
+
+            if (!IsOn)
+            {
+                XRayStats.RimMs = 0f;
+                return;
+            }
+            if (Time.time >= hideAtTime)
+            {
+                Hide();
+                return;
+            }
+
+            UpdateRimColors();
+        }
+
+        // Gives this frame's vertex budget to the ghosts whose camera view has changed.
+        // Ghosts take turns, so one big mesh cannot starve the others.
+        private static void UpdateRimColors()
+        {
+            int ghostCount = RimList.Count;
+            if (ghostCount == 0) return;
+
+            CameraManagerScript manager = CameraManagerScript.Instance;
+            Camera camera = (manager != null && manager.MainCamera != null) ? manager.MainCamera : Camera.main;
+            if (camera == null) return;
+            Vector3 cameraPosition = camera.transform.position;
+
+            System.Diagnostics.Stopwatch timer = System.Diagnostics.Stopwatch.StartNew();
+            int budget = ArmorFragmentsPlugin.XRayBudgetKiloVertices.Value * 1000;
+            int next = rimRoundRobin;
+
+            for (int k = 0; k < ghostCount && budget > 0; k++)
+            {
+                int index = (rimRoundRobin + k) % ghostCount;
+                RimGhost ghost = RimList[index];
+                if (ghost.Transform == null) continue;   // destroyed with its part
+
+                if (ghost.NeedsWork(cameraPosition))
+                {
+                    budget -= ghost.Step(budget);
+                    next = (index + 1) % ghostCount;
+                }
+            }
+
+            rimRoundRobin = next;
+            XRayStats.OnRimCost((float)timer.Elapsed.TotalMilliseconds);
         }
 
         // The renderers that make up a part's visible mesh.
@@ -135,7 +224,8 @@ namespace ArmorFragments
 
         // A see-through copy of 'mesh', attached to the same transform as the real renderer.
         // t (0..1) is how much simulated damage the part takes: 0 = none, 1 = "fully dark".
-        private static int MakeGhost(MeshRenderer source, Mesh mesh, int level, float t, bool isArmor)
+        private static void MakeGhost(MeshRenderer source, Mesh mesh, int level, float t, bool isArmor,
+                                      bool rimLook, int rimVertexLimit)
         {
             GameObject ghost = new GameObject("ArmorXRayGhost");
             ghost.layer = source.gameObject.layer;
@@ -145,10 +235,14 @@ namespace ArmorFragments
             MeshRenderer renderer = ghost.AddComponent<MeshRenderer>();
             Material material;
 
-            if (mesh.isReadable)
+            // Rim-lit look needs a readable mesh and room left in the vertex limit.
+            bool useRim = rimLook && mesh.isReadable &&
+                          XRayStats.RimVertices + mesh.vertexCount <= rimVertexLimit;
+
+            if (useRim)
             {
-                // Rim-lit look: its own copy of the mesh, whose vertex colors are updated so that
-                // the edges (seen at a grazing angle) glow and the middle stays transparent.
+                // Its own copy of the mesh, whose vertex colors are updated so that the edges
+                // (seen at a grazing angle) glow and the middle stays transparent.
                 // Damaged parts get a dark red body and a bright red rim.
                 Mesh copy = Object.Instantiate(mesh);
                 filter.sharedMesh = copy;
@@ -159,26 +253,34 @@ namespace ArmorFragments
                 Color rim = Color.Lerp(new Color(0.90f, 0.95f, 1.00f), new Color(1.00f, 0.12f, 0.05f), t);
                 float rimAlpha = Mathf.Lerp(isArmor ? 0.45f : 0.22f, 0.95f, t);
 
-                ghost.AddComponent<XRayRimGhost>().Init(copy, body, bodyAlpha, rim, rimAlpha);
+                RimList.Add(new RimGhost(ghost.transform, copy, body, bodyAlpha, rim, rimAlpha));
                 material = whiteMaterials[level];
-                rimGhosts++;
+
+                XRayStats.RimGhosts++;
+                XRayStats.RimVertices += mesh.vertexCount;
             }
             else
             {
-                // The game keeps this mesh unreadable: fall back to a flat, uniform color.
+                // Flat, uniform color: shares the game's mesh, so no CPU work and no memory.
                 filter.sharedMesh = mesh;
                 material = (isArmor ? armorMaterials : normalMaterials)[level];
-                flatGhosts++;
+                XRayStats.FlatGhosts++;
             }
 
             Material[] materials = new Material[Mathf.Max(1, filter.sharedMesh.subMeshCount)];
             for (int i = 0; i < materials.Length; i++) materials[i] = material;
             renderer.sharedMaterials = materials;
+
+            // The material is unlit, so everything the renderer would do for lighting is wasted.
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
+            renderer.lightProbeUsage = LightProbeUsage.Off;
+            renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+            renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
 
             Ghosts.Add(ghost);
-            return 1;
+            XRayStats.Ghosts++;
+            XRayStats.TotalVertices += mesh.vertexCount;
         }
 
         // forceRenderingOff does not touch 'enabled', so the game's own show/hide logic

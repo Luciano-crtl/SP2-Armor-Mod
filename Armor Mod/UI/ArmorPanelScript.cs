@@ -60,6 +60,7 @@ namespace ArmorFragments.UI
             {
                 BuildStatus();
                 BuildSimulation();
+                BuildXRayPerformance();
                 BuildFragments();
                 BuildRicochet();
                 BuildRays();
@@ -126,6 +127,31 @@ namespace ArmorFragments.UI
                 "How long the X-ray view stays on.", 1f, " s");
             FloatSetting(ArmorFragmentsPlugin.XRayDarkPercent, "Fully dark at",
                 "A part losing this share of its health is shown fully dark.", 1f, " %");
+        }
+
+        // What the X-ray view costs, and the switches to find out which part is expensive.
+        private void BuildXRayPerformance()
+        {
+            builder.Header("X-ray performance", collapsed: true);
+
+            Live("Frame time", () => XRayStats.FrameMs <= 0f
+                ? "-"
+                : XRayStats.FrameMs.ToString("F1") + " ms (" + (1000f / XRayStats.FrameMs).ToString("F0") + " FPS)");
+            Live("Ghost meshes", () => XRayStats.Ghosts + " (" + XRayStats.RimGhosts + " rim-lit, " +
+                                       XRayStats.FlatGhosts + " flat)");
+            Live("Vertices", () => XRayStats.TotalVertices + " (" + XRayStats.RimVertices + " rim-lit)");
+            Live("Rim color update", () => XRayStats.RimMs.ToString("F2") + " ms/frame, " +
+                                           XRayStats.Passes + " passes done");
+            Live("Built in", () => XRayStats.BuildMs.ToString("F0") + " ms");
+
+            ToggleSetting(ArmorFragmentsPlugin.XRayRimLook, "Rim-lit look",
+                "Edge glow. Costs CPU time. Turn it off to see how much of the cost it is.");
+            ToggleSetting(ArmorFragmentsPlugin.XRayShowUndamaged, "Show undamaged parts",
+                "Off = only armor and damaged parts get a see-through copy. Fewer meshes to draw.");
+            IntSetting(ArmorFragmentsPlugin.XRayMaxRimKiloVertices, "Rim vertex limit (k)",
+                "Vertices (thousands) that may use the rim look. The rest use the flat look.");
+            IntSetting(ArmorFragmentsPlugin.XRayBudgetKiloVertices, "Rim work per frame (k)",
+                "Vertices (thousands) recalculated per frame at most. Lower = smoother, slower glow.");
         }
 
         private void BuildFragments()

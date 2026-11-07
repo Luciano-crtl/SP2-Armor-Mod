@@ -33,6 +33,10 @@ namespace ArmorFragments
         internal static ConfigEntry<float> XRayRadius;
         internal static ConfigEntry<float> XRayDuration;
         internal static ConfigEntry<float> XRayDarkPercent;
+        internal static ConfigEntry<bool> XRayRimLook;
+        internal static ConfigEntry<bool> XRayShowUndamaged;
+        internal static ConfigEntry<int> XRayMaxRimKiloVertices;
+        internal static ConfigEntry<int> XRayBudgetKiloVertices;
 
         // Ricochet. Angles: 0 = head-on, 90 = grazing.
         // A hit ricochets when its angle >= (base angle * multiplier).
@@ -117,6 +121,22 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "A part that would lose this percentage of its health is shown fully dark.",
                     new AcceptableValueRange<float>(1f, 100f)));
+
+            XRayRimLook = Config.Bind("Simulation", "XRayRimLook", true,
+                "Rim-lit X-ray look (edges glow). Costs CPU time. Off = flat colors, much cheaper.");
+            XRayShowUndamaged = Config.Bind("Simulation", "XRayShowUndamaged", true,
+                "If false, the X-ray view only shows armor and parts that would take damage; " +
+                "the rest stays as it is. Fewer extra meshes to draw.");
+            XRayMaxRimKiloVertices = Config.Bind("Simulation", "XRayMaxRimKiloVertices", 60,
+                new ConfigDescription(
+                    "Most vertices (in thousands) that get the rim-lit look. Beyond this, the least " +
+                    "important parts (least damage, farthest) use the cheap flat look.",
+                    new AcceptableValueRange<int>(0, 1000)));
+            XRayBudgetKiloVertices = Config.Bind("Simulation", "XRayBudgetKiloVertices", 20,
+                new ConfigDescription(
+                    "Most vertices (in thousands) the rim look may recalculate per frame. " +
+                    "Lower = smoother frame rate, but the glow follows the camera more slowly.",
+                    new AcceptableValueRange<int>(1, 500)));
 
             MaxRicochets = Config.Bind("Ricochet", "MaxRicochets", 2,
                 new ConfigDescription(
