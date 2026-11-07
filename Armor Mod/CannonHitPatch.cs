@@ -93,9 +93,14 @@ namespace ArmorFragments
                 ray.PassedThrough + " parts and met armor '" + ray.Part.Part.Name + "' at " +
                 ray.Hit.distance.ToString("F1") + " m");
 
-            BallisticRay.DrawTrack(from, ray);
+            // The initial ray: the shell's last meters, the stop point, then on to the armor.
+            float leadTime = BallisticRay.DrawInitialRay(new[]
+            {
+                from - direction * FragmentSpawner.ShellLeadIn, from, ray.Hit.point,
+            });
             FragmentSpawner.Spawn(ray.Part, ray.Armor, cannon, ray.Hit.point, direction,
-                ray.Hit.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value);
+                ray.Hit.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value,
+                simulated: false, leadTime: leadTime);
         }
     }
 }

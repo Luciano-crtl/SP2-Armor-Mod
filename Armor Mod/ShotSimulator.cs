@@ -29,10 +29,19 @@ namespace ArmorFragments
         {
             Top.Clear();
 
-            Camera camera = FindCamera();
+            // The shot starts exactly at the camera, so it only makes sense with the orbit camera
+            // (the one that can be moved around freely, away from the aircraft).
+            CameraManagerScript manager = CameraManagerScript.Instance;
+            Camera camera = manager != null && manager.MainCamera != null ? manager.MainCamera : Camera.main;
             if (camera == null)
             {
                 Message = "No camera found";
+                return;
+            }
+            if (manager == null || !(manager.Controller is OrbitCameraController))
+            {
+                Message = "Switch to the orbit camera to simulate a shot";
+                XRayView.Hide();
                 return;
             }
 
@@ -57,14 +66,17 @@ namespace ArmorFragments
             PartScript part = ray.Part;
             ArmorTag armor = ray.Armor;
             RaycastHit hit = ray.Hit;
-            BallisticRay.DrawTrack(ray.FirstPoint, ray);
+
+            // The initial ray: from the exact camera position to the armor, thicker than the rest.
+            // The fragments leave once it has arrived.
+            float leadTime = BallisticRay.DrawInitialRay(new[] { origin, hit.point });
 
             float angle = Vector3.Angle(direction, hit.normal);
             angle = Mathf.Min(angle, 180f - angle);
 
             // The same code a real shell goes through, with damage switched off. Every
             // fragment's would-be damage is collected per part.
-            Dictionary<PartScript, float> sink = new Dictionary<PartScript, float>();
+            Dictionary<PartScript, DamageRecord> sink = new Dictionary<PartScript, DamageRecord>();
             FragmentSpawner.DamageSink = sink;
             try
             {
@@ -74,20 +86,20 @@ namespace ArmorFragments
                     Fragments = ArmorFragmentsPlugin.SimFragmentCount.Value,
                 };
                 FragmentSpawner.Spawn(part, armor, shell, hit.point, direction, hit.normal, angle,
-                                      false, true);
+                                      false, true, leadTime);
             }
             finally
             {
                 FragmentSpawner.DamageSink = null;
             }
 
-            foreach (KeyValuePair<PartScript, float> pair in sink.OrderByDescending(p => p.Value).Take(TopCount))
+            foreach (KeyValuePair<PartScript, DamageRecord> pair in sink.OrderByDescending(p => p.Value.Total).Take(TopCount))
             {
                 Top.Add(new PartResult
                 {
                     Name = Label(pair.Key),
-                    Damage = pair.Value,
-                    Fraction = pair.Value / Mathf.Max(pair.Key.MaxHealth, 1f),
+                    Damage = pair.Value.Total,
+                    Fraction = pair.Value.Total / Mathf.Max(pair.Key.MaxHealth, 1f),
                 });
             }
 
@@ -96,13 +108,6 @@ namespace ArmorFragments
 
             if (ArmorFragmentsPlugin.XRayAfterSimulation.Value)
                 XRayView.Show(hit.point, sink);
-        }
-
-        private static Camera FindCamera()
-        {
-            CameraManagerScript manager = CameraManagerScript.Instance;
-            if (manager != null && manager.MainCamera != null) return manager.MainCamera;
-            return Camera.main;
         }
 
         // The player's own label, without our [..] blocks.

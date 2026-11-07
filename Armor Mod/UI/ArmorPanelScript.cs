@@ -191,6 +191,10 @@ namespace ArmorFragments.UI
                 "Shows each fragment ray and impact in the world.");
             FloatSetting(ArmorFragmentsPlugin.RayWidth, "Ray width",
                 "Thickness of the drawn rays.", 0.005f, " m");
+            FloatSetting(ArmorFragmentsPlugin.InitialRayWidth, "Initial ray width",
+                "Thickness of the initial ray (the shell, or the simulated shot).", 0.005f, " m");
+            FloatSetting(ArmorFragmentsPlugin.InitialRaySpeed, "Initial ray speed",
+                "How fast the initial ray travels. Visual only; fragments leave once it arrives.", 5f, " m/s");
             FloatSetting(ArmorFragmentsPlugin.RaySpeed, "Ray speed",
                 "How fast the drawn ray travels. Visual only.", 1f, " m/s");
             FloatSetting(ArmorFragmentsPlugin.RayTrailLength, "Trail length",

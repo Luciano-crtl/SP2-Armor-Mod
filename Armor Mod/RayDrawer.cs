@@ -97,7 +97,7 @@ namespace ArmorFragments
 
         // Animates a glowing head moving along the path, with a fading trail behind it.
         // 'delay' (seconds) waits before starting, so rays can leave after the shell arrives.
-        public static void Animate(RayPath path, float delay)
+        public static void Animate(RayPath path, float delay, bool initial = false)
         {
             if (path.Points.Count < 2) return;
             if (!initialized) Init();
@@ -107,7 +107,9 @@ namespace ArmorFragments
             LineRenderer lr = go.AddComponent<LineRenderer>();
             lr.useWorldSpace = true;
             lr.positionCount = 0;
-            lr.startWidth = lr.endWidth = ArmorFragmentsPlugin.RayWidth.Value;
+            lr.startWidth = lr.endWidth = initial
+                ? ArmorFragmentsPlugin.InitialRayWidth.Value
+                : ArmorFragmentsPlugin.RayWidth.Value;
             lr.sharedMaterial = lineMaterial;   // shared: no new material per ray
             lr.shadowCastingMode = ShadowCastingMode.Off;
             lr.receiveShadows = false;
@@ -115,7 +117,7 @@ namespace ArmorFragments
 
             go.AddComponent<TracerAnimation>().Init(
                 path, lr, ColorOf(path.Final), delay,
-                ArmorFragmentsPlugin.RaySpeed.Value,
+                initial ? ArmorFragmentsPlugin.InitialRaySpeed.Value : ArmorFragmentsPlugin.RaySpeed.Value,
                 ArmorFragmentsPlugin.RayTrailLength.Value);
         }
 

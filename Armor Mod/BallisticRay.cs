@@ -73,17 +73,23 @@ namespace ArmorFragments
             return result;
         }
 
-        // Draws the ray's flight from 'from' to the armor it met (only if it passed through something,
-        // otherwise the armor impact's own shell track already shows it).
-        public static void DrawTrack(Vector3 from, Result result)
+        // Draws the initial ray (the shell) along 'points', thicker and faster than the fragment
+        // rays, with an impact bubble at the last point. Returns how many seconds it takes to
+        // arrive: the fragments are drawn to leave after that.
+        public static float DrawInitialRay(Vector3[] points)
         {
-            if (result.Armor == null || result.PassedThrough == 0) return;
-            if (!ArmorFragmentsPlugin.DrawRays.Value) return;
+            float length = 0f;
+            for (int i = 1; i < points.Length; i++)
+                length += Vector3.Distance(points[i - 1], points[i]);
+
+            float duration = length / Mathf.Max(ArmorFragmentsPlugin.InitialRaySpeed.Value, 0.1f);
+            if (!ArmorFragmentsPlugin.DrawRays.Value) return duration;
 
             RayPath path = new RayPath { Final = RayKind.ArmorImpact };
-            path.Add(from, RayKind.None);
-            path.Add(result.Hit.point, RayKind.None);
-            RayDrawer.Animate(path, 0f);
+            for (int i = 0; i < points.Length; i++)
+                path.Add(points[i], i == points.Length - 1 ? RayKind.ArmorImpact : RayKind.None);
+            RayDrawer.Animate(path, 0f, true);
+            return duration;
         }
     }
 }

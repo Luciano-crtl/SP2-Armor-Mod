@@ -5,18 +5,28 @@ using UnityEngine;
 
 namespace ArmorFragments
 {
+    // What a simulated shot did to one part.
+    internal struct DamageRecord
+    {
+        public float Total;       // damage all fragments together would do
+        public float FirstTime;   // seconds after the shot starts until the first fragment touches it
+    }
+
     internal static class FragmentSpawner
     {
+        // Length of the drawn shell track before the impact, in meters.
+        public const float ShellLeadIn = 4f;
+
         private const float ConeHalfAngle = 35f;   // spread, in degrees
         private const float MaxRange = 30f;        // total path length of one ray, in meters
         private const float SurfaceOffset = 0.02f; // pushes a ricochet start point off the surface
-        private const float ShellLeadIn = 4f;      // length of the drawn shell track before the impact
 
         private static readonly RaycastHit[] Hits = new RaycastHit[64];
 
-        // While not null, the damage every fragment WOULD do is added up per part here.
+        // While not null, the damage every fragment WOULD do is added up per part here,
+        // together with the moment the first fragment touches the part.
         // The shot simulator sets it for one shot, then clears it.
-        public static Dictionary<PartScript, float> DamageSink;
+        public static Dictionary<PartScript, DamageRecord> DamageSink;
 
         private struct TraceResult
         {
@@ -26,10 +36,12 @@ namespace ArmorFragments
         }
 
         // angle: 0 = head-on, 90 = grazing (same convention as the hit log).
+        // leadTime: seconds the initial ray (the shell) takes to reach the armor, when the caller
+        //           has already drawn it. Negative = draw the usual short shell track here.
         public static void Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag,
                                  Vector3 point, Vector3 direction,
                                  Vector3 normal, float angle, bool applyDamage,
-                                 bool simulated = false)
+                                 bool simulated = false, float leadTime = -1f)
         {
             string tag = simulated ? "[SIM] " : "";
 
@@ -40,8 +52,12 @@ namespace ArmorFragments
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
             bool draw = ArmorFragmentsPlugin.DrawRays.Value;
 
-            // The drawn shell track: from behind the impact point up to it.
-            Vector3 shellStart = point - direction * ShellLeadIn;
+            // The shell's last few meters before the impact, drawn as the (thicker) initial ray.
+            // Everything that happens after the impact waits for it to arrive.
+            if (leadTime < 0f)
+            {
+                leadTime = BallisticRay.DrawInitialRay(new[] { point - direction * ShellLeadIn, point });
+            }
 
             // 1) Grazing hit on the armor: no penetration, one ricocheted ray.
             float armorTolerated = ToleratedAngle(
@@ -54,15 +70,14 @@ namespace ArmorFragments
                 Vector3 n = Vector3.Dot(normal, direction) > 0f ? -normal : normal;
                 Vector3 reflected = Vector3.Reflect(direction, n).normalized;
 
-                // One path: shell -> armor impact -> ricochets.
+                // The ricocheted ray starts at the impact point.
                 RayPath path = new RayPath();
-                path.Add(shellStart, RayKind.None);
-                path.Add(point, RayKind.ArmorImpact);
+                path.Add(point, RayKind.None);
 
                 // The armor bounce counts as the ray's first ricochet.
                 TraceResult r = TraceRay(path, point + n * SurfaceOffset, reflected, 0f, 1,
-                                         null, applyDamage, mask);
-                if (draw) RayDrawer.Animate(path, 0f);
+                                         null, applyDamage, mask, leadTime);
+                if (draw) RayDrawer.Animate(path, leadTime);
 
                 LastImpact.Record(tag + "Armor ricochet (single ray)", angle, armorTolerated,
                                   r.HitPart ? 1 : 0, 1 + r.Ricochets, r.Damage);
@@ -87,32 +102,12 @@ namespace ArmorFragments
 
             if (penetration < resistance)
             {
-                if (draw)
-                {
-                    RayPath blockedShell = new RayPath { Final = RayKind.ArmorImpact };
-                    blockedShell.Add(shellStart, RayKind.None);
-                    blockedShell.Add(point, RayKind.ArmorImpact);
-                    RayDrawer.Animate(blockedShell, 0f);
-                }
-
                 LastImpact.Record(tag + "Blocked (penetration " + comparison + ")", angle, armorTolerated, 0, 0, 0f);
                 ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell blocked by armor: penetration " + comparison);
                 return;
             }
 
             // 3) It penetrates: fan of fragment rays behind the armor.
-            float rayDelay = 0f;
-            if (draw)
-            {
-                RayPath shell = new RayPath { Final = RayKind.ArmorImpact };
-                shell.Add(shellStart, RayKind.None);
-                shell.Add(point, RayKind.ArmorImpact);
-                RayDrawer.Animate(shell, 0f);
-
-                // Fragments leave once the shell has arrived.
-                rayDelay = ShellLeadIn / Mathf.Max(ArmorFragmentsPlugin.RaySpeed.Value, 0.1f);
-            }
-
             int partsHit = 0;
             int ricochets = 0;
             float totalDamage = 0f;
@@ -123,8 +118,8 @@ namespace ArmorFragments
 
                 RayPath path = new RayPath();
                 path.Add(point, RayKind.None);
-                TraceResult r = TraceRay(path, point, dir, 0f, 0, armor, applyDamage, mask);
-                if (draw) RayDrawer.Animate(path, rayDelay);
+                TraceResult r = TraceRay(path, point, dir, 0f, 0, armor, applyDamage, mask, leadTime);
+                if (draw) RayDrawer.Animate(path, leadTime);
 
                 if (r.HitPart) partsHit++;
                 ricochets += r.Ricochets;
@@ -147,9 +142,11 @@ namespace ArmorFragments
         //   ignore:   a part to skip on the first segment only (the armor itself)
         //   bounces:  ricochets this ray already had
         //   traveled: distance already covered, counts toward MaxRange and damage falloff
+        //   timeOffset: seconds from the start of the shot until this ray starts moving; with the
+        //               distance flown it gives the moment each part is touched (for the X-ray view)
         private static TraceResult TraceRay(RayPath path, Vector3 origin, Vector3 dir,
                                             float traveled, int bounces, PartScript ignore,
-                                            bool applyDamage, int mask)
+                                            bool applyDamage, int mask, float timeOffset)
         {
             TraceResult result = default;
             int maxBounces = ArmorFragmentsPlugin.MaxRicochets.Value;
@@ -221,9 +218,15 @@ namespace ArmorFragments
 
                         if (DamageSink != null)
                         {
-                            float sum;
-                            DamageSink.TryGetValue(part, out sum);
-                            DamageSink[part] = sum + damage;
+                            // When the drawn ray's head reaches this point (same speed as drawn).
+                            float arrival = timeOffset + traveled / Mathf.Max(ArmorFragmentsPlugin.RaySpeed.Value, 0.1f);
+
+                            DamageRecord record;
+                            if (!DamageSink.TryGetValue(part, out record))
+                                record.FirstTime = arrival;
+                            record.Total += damage;
+                            record.FirstTime = Mathf.Min(record.FirstTime, arrival);
+                            DamageSink[part] = record;
                         }
                     }
                 }

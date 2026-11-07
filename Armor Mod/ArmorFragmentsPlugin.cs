@@ -21,6 +21,8 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> DrawRays;
         internal static ConfigEntry<float> RayWidth;
         internal static ConfigEntry<float> RaySpeed;
+        internal static ConfigEntry<float> InitialRayWidth;
+        internal static ConfigEntry<float> InitialRaySpeed;
         internal static ConfigEntry<float> RayTrailLength;
         internal static ConfigEntry<float> BubbleSize;
         internal static ConfigEntry<float> BubbleLifetime;
@@ -88,6 +90,15 @@ namespace ArmorFragments
                     "How fast the drawn ray moves along its path, in meters per second. " +
                     "Visual only: it does not change damage or physics.",
                     new AcceptableValueRange<float>(1f, 500f)));
+            InitialRayWidth = Config.Bind("Debug", "InitialRayWidth", 0.06f,
+                new ConfigDescription(
+                    "Thickness of the initial ray (the shell, or the simulated shot from the camera), in meters.",
+                    new AcceptableValueRange<float>(0.001f, 1f)));
+            InitialRaySpeed = Config.Bind("Debug", "InitialRaySpeed", 150f,
+                new ConfigDescription(
+                    "How fast the initial ray travels, in meters per second. Visual only. " +
+                    "Fragments leave once it has arrived.",
+                    new AcceptableValueRange<float>(1f, 2000f)));
             RayTrailLength = Config.Bind("Debug", "RayTrailLength", 6f,
                 new ConfigDescription("Length of the fading trail behind the moving ray, in meters.",
                     new AcceptableValueRange<float>(0.1f, 50f)));

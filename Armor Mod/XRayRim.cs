@@ -24,8 +24,8 @@ namespace ArmorFragments
         private readonly int count;
 
         // Body and rim colors as 0..255 floats: r, g, b, a.
-        private readonly float br, bg, bb, ba;
-        private readonly float rr, rg, rb, ra;
+        private float br, bg, bb, ba;
+        private float rr, rg, rb, ra;
 
         private readonly float moveThresholdSqr;
 
@@ -33,6 +33,7 @@ namespace ArmorFragments
         private int cursor;                  // next vertex of the pass in progress
         private float cx, cy, cz;            // camera position (in the ghost's space) for this pass
         private bool hasLast;
+        private bool restartPass;            // the look changed during a pass: do it again
         private Vector3 lastCamera;
 
         public int VertexCount
@@ -54,8 +55,7 @@ namespace ArmorFragments
             }
             count = vertices.Length;
 
-            br = body.r * 255f; bg = body.g * 255f; bb = body.b * 255f; ba = bodyAlpha * 255f;
-            rr = rim.r * 255f; rg = rim.g * 255f; rb = rim.b * 255f; ra = rimAlpha * 255f;
+            SetColors(body, bodyAlpha, rim, rimAlpha);
 
             // Recalculate only when the camera has moved a bit relative to the part's size.
             float radius = copy.bounds.extents.magnitude;
@@ -68,6 +68,21 @@ namespace ArmorFragments
             for (int i = 0; i < count; i++) colors[i] = flat;
             copy.MarkDynamic();   // it will be re-uploaded: tell Unity
             copy.colors32 = colors;
+        }
+
+        private void SetColors(Color body, float bodyAlpha, Color rim, float rimAlpha)
+        {
+            br = body.r * 255f; bg = body.g * 255f; bb = body.b * 255f; ba = bodyAlpha * 255f;
+            rr = rim.r * 255f; rg = rim.g * 255f; rb = rim.b * 255f; ra = rimAlpha * 255f;
+        }
+
+        // Changes the colors (a part that has just been damaged). The mesh is recalculated with
+        // them on the next frames, even if the camera does not move.
+        public void SetLook(Color body, float bodyAlpha, Color rim, float rimAlpha)
+        {
+            SetColors(body, bodyAlpha, rim, rimAlpha);
+            if (passActive) restartPass = true;
+            else hasLast = false;
         }
 
         // True if this ghost has (more) work to do for a camera at 'cameraWorld'.
@@ -120,7 +135,12 @@ namespace ArmorFragments
             }
 
             cursor = end;
-            if (cursor >= count)
+            if (cursor >= count && restartPass)
+            {
+                restartPass = false;   // the look changed while this pass ran: go around again
+                cursor = 0;
+            }
+            else if (cursor >= count)
             {
                 Mesh.colors32 = colors;
                 passActive = false;
