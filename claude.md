@@ -171,7 +171,9 @@ Tudo abaixo foi testado no jogo pelo Luciano.
 - **Estrutura do código:** `ArmorFragmentsPlugin` (configs e patches), `CannonHitPatch` (impacto), `FragmentSpawner` (raios, ricochete, dano), `RayDrawer`/`RayAnimation` (visual), `LastImpact`, `LogMirror`, `SafePatcher` (cada patch isolado) e `UI/`.
 - **Pergunta em aberto:** a explosão do projétil explosivo deve acontecer dentro da blindagem, como no War Thunder, ou ficar só nos fragmentos? O usuário ainda não respondeu. Hoje a explosão do jogo continua como está.
 
-## Plano: modelo de energia (decidido, ainda NÃO implementado)
+## Plano: modelo de energia (decidido; fases 1 e 2 implementadas, sem teste ainda)
+
+**Progresso:** fase 1 (diagnóstico do método A: `ChordProbe.cs`, linhas `[CHORD]` no log a cada tiro simulado, opção `LogChordDiagnostics`) e fase 2 (tags `b` e `k`, sliders no designer, seção "Energy" no `.cfg` e "Energy model (not active yet)" no painel) escritas. O cálculo ainda é o antigo (usa `p` e o cone); as novas propriedades e configs ainda não são lidas. Próxima: esperar a verificação do Luciano das fases 1 e 2 e seguir para a fase 3.
 
 Decidido em conversa com o Luciano. Substitui a penetração em mm e o cone fixo. Quando uma fase for implementada, mover o que ela descreve para "Estado atual".
 

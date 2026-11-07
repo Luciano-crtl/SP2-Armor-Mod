@@ -39,6 +39,26 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> XRayShowUndamaged;
         internal static ConfigEntry<int> XRayMaxRimKiloVertices;
         internal static ConfigEntry<int> XRayBudgetKiloVertices;
+        internal static ConfigEntry<bool> LogChordDiagnostics;
+
+        // Energy model (phase 2: defined and editable, not used by the calculation yet).
+        internal static ConfigEntry<float> DefaultShellHardness;
+        internal static ConfigEntry<float> SimShellHardness;
+        internal static ConfigEntry<float> SimCaliber;
+        internal static ConfigEntry<float> SimShellMass;
+        internal static ConfigEntry<float> SimShellVelocity;
+        internal static ConfigEntry<float> ArmorStrength;
+        internal static ConfigEntry<float> RicochetFriction;
+        internal static ConfigEntry<float> RicochetRandomness;
+        internal static ConfigEntry<float> DamagePerKiloJoule;
+        internal static ConfigEntry<float> DensityModifier;
+        internal static ConfigEntry<bool> ConstantForceLoss;
+        internal static ConfigEntry<bool> SimpleFragments;
+        internal static ConfigEntry<int> MaxPartsPerFragment;
+        internal static ConfigEntry<float> SpreadBaseAngle;
+        internal static ConfigEntry<float> AxisTilt;
+        internal static ConfigEntry<float> SpreadAnisotropy;
+        internal static ConfigEntry<float> VisualSpeedMultiplier;
 
         // Ricochet. Angles: 0 = head-on, 90 = grazing.
         // A hit ricochets when its angle >= (base angle * multiplier).
@@ -132,6 +152,61 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "A part that would lose this percentage of its health is shown fully dark.",
                     new AcceptableValueRange<float>(1f, 100f)));
+
+            LogChordDiagnostics = Config.Bind("Simulation", "LogChordDiagnostics", true,
+                "Each simulated shot also writes to the log how far the line travels inside every part " +
+                "(lines starting with [CHORD]). Diagnostic for the energy model; changes nothing.");
+
+            const string NotUsed = " (Energy model: not used by the calculation yet.)";
+            DefaultShellHardness = Config.Bind("Energy", "DefaultShellHardness", 100f,
+                new ConfigDescription("Shell hardness (%) for cannons without a [CAN k=] tag." + NotUsed,
+                    new AcceptableValueRange<float>(10f, 300f)));
+            SimShellHardness = Config.Bind("Energy", "SimulatedShellHardness", 100f,
+                new ConfigDescription("Shell hardness (%) of the simulated shot." + NotUsed,
+                    new AcceptableValueRange<float>(10f, 300f)));
+            SimCaliber = Config.Bind("Energy", "SimulatedCaliber", 100f,
+                new ConfigDescription("Caliber (mm) of the simulated shell." + NotUsed,
+                    new AcceptableValueRange<float>(5f, 500f)));
+            SimShellMass = Config.Bind("Energy", "SimulatedShellMass", 10f,
+                new ConfigDescription("Mass of the simulated shell (game units)." + NotUsed,
+                    new AcceptableValueRange<float>(0.01f, 1000f)));
+            SimShellVelocity = Config.Bind("Energy", "SimulatedShellVelocity", 800f,
+                new ConfigDescription("Speed (m/s) of the simulated shell." + NotUsed,
+                    new AcceptableValueRange<float>(10f, 3000f)));
+            ArmorStrength = Config.Bind("Energy", "ArmorStrength", 1f,
+                new ConfigDescription("Reference resistance of armor material: how much energy a plate takes per unit of thickness and shell area." + NotUsed,
+                    new AcceptableValueRange<float>(0.01f, 100f)));
+            RicochetFriction = Config.Bind("Energy", "RicochetFriction", 0.2f,
+                new ConfigDescription("Share of the sliding energy lost in a ricochet." + NotUsed,
+                    new AcceptableValueRange<float>(0f, 1f)));
+            RicochetRandomness = Config.Bind("Energy", "RicochetRandomness", 50f,
+                new ConfigDescription("Small random shift of the ricochet angle, 0% = none (same result every time), 100% = about 5 degrees." + NotUsed,
+                    new AcceptableValueRange<float>(0f, 100f)));
+            DamagePerKiloJoule = Config.Bind("Energy", "DamagePerKiloJoule", 1f,
+                new ConfigDescription("Part damage per kilojoule of energy a fragment leaves in a part." + NotUsed,
+                    new AcceptableValueRange<float>(0.001f, 1000f)));
+            DensityModifier = Config.Bind("Energy", "DensityModifier", 1f,
+                new ConfigDescription("Multiplies the density used for parts without tags." + NotUsed,
+                    new AcceptableValueRange<float>(0.1f, 10f)));
+            ConstantForceLoss = Config.Bind("Energy", "ConstantForceLoss", false,
+                "Energy loss inside a part: off = proportional drag (exponential), on = constant force (linear)." + NotUsed);
+            SimpleFragments = Config.Bind("Energy", "SimpleFragments", false,
+                "Off = fragments with their own mass, energy and speed. On = equal energy and fixed size (simpler)." + NotUsed);
+            MaxPartsPerFragment = Config.Bind("Energy", "MaxPartsPerFragment", 3,
+                new ConfigDescription("Most parts one fragment may cross before it stops." + NotUsed,
+                    new AcceptableValueRange<int>(1, 10)));
+            SpreadBaseAngle = Config.Bind("Energy", "SpreadBaseAngle", 15f,
+                new ConfigDescription("Base spread of the fragment directions (degrees)." + NotUsed,
+                    new AcceptableValueRange<float>(1f, 60f)));
+            AxisTilt = Config.Bind("Energy", "AxisTilt", 0.5f,
+                new ConfigDescription("How much the fragment cone leans from the shell's path toward the plate's normal on slanted hits (0 = none, 1 = strong)." + NotUsed,
+                    new AcceptableValueRange<float>(0f, 1f)));
+            SpreadAnisotropy = Config.Bind("Energy", "SpreadAnisotropy", 1.5f,
+                new ConfigDescription("How much wider the cone is along the plane of incidence on slanted hits (1 = round)." + NotUsed,
+                    new AcceptableValueRange<float>(1f, 4f)));
+            VisualSpeedMultiplier = Config.Bind("Energy", "VisualSpeedMultiplier", 0.05f,
+                new ConfigDescription("Drawn rays move at their real speed (from energy) times this, so they can be followed." + NotUsed,
+                    new AcceptableValueRange<float>(0.001f, 1f)));
 
             XRayRimLook = Config.Bind("Simulation", "XRayRimLook", true,
                 "Rim-lit X-ray look (edges glow). Costs CPU time. Off = flat colors, much cheaper.");

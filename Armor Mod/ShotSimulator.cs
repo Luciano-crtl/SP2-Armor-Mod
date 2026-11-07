@@ -125,6 +125,19 @@ namespace ArmorFragments
             ArmorTag armor = ray.Armor;
             RaycastHit hit = ray.Hit;
 
+            // Diagnostic: how far the line travels inside each part (method A), in the log.
+            if (ArmorFragmentsPlugin.LogChordDiagnostics.Value)
+            {
+                try
+                {
+                    ChordProbe.Report(origin, direction, Mathf.Min(MaxDistance, hit.distance + 15f));
+                }
+                catch (System.Exception e)
+                {
+                    ArmorFragmentsPlugin.Log.LogWarning("Chord probe failed: " + e.Message);
+                }
+            }
+
             // The initial ray: from the exact camera position to the armor, thicker than the rest.
             // The fragments leave once it has arrived.
             float leadTime = BallisticRay.DrawInitialRay(new[] { origin, hit.point });

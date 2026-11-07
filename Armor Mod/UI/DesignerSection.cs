@@ -116,6 +116,8 @@ namespace ArmorFragments.UI
                         1f, 500f, 1f, tags.Armor.Thickness, " mm", v => tags.Armor.Thickness = v);
                     Slider(builder, tags, "Hardness", "How hard the armor is. 100% = reference steel.",
                         10f, 300f, 5f, tags.Armor.Hardness, " %", v => tags.Armor.Hardness = v);
+                    Slider(builder, tags, "Brittleness", "How easily the plate shatters into fragments. (Not used yet: energy model.)",
+                        0f, 100f, 5f, tags.Armor.Brittleness, " %", v => tags.Armor.Brittleness = v);
                 }
             }
 
@@ -131,6 +133,8 @@ namespace ArmorFragments.UI
                         1f, 1000f, 1f, tags.Cannon.Penetration, " mm", v => tags.Cannon.Penetration = v);
                     Slider(builder, tags, "Fragments", "How many fragment rays a shell makes when it penetrates armor.",
                         1f, 200f, 1f, tags.Cannon.Fragments, "", v => tags.Cannon.Fragments = Mathf.RoundToInt(v));
+                    Slider(builder, tags, "Shell hardness", "Hardness of the shell: harder shells ricochet less. 100% = reference. (Not used yet: energy model.)",
+                        10f, 300f, 5f, tags.Cannon.ShellHardness, " %", v => tags.Cannon.ShellHardness = v);
                 }
             }
 

@@ -61,6 +61,7 @@ namespace ArmorFragments.UI
                 BuildStatus();
                 BuildSimulation();
                 BuildXRayPerformance();
+                BuildEnergyModel();
                 BuildFragments();
                 BuildRicochet();
                 BuildRays();
@@ -164,6 +165,48 @@ namespace ArmorFragments.UI
                 "Vertices (thousands) that may use the rim look. The rest use the flat look.");
             IntSetting(ArmorFragmentsPlugin.XRayBudgetKiloVertices, "Rim work per frame (k)",
                 "Vertices (thousands) recalculated per frame at most. Lower = smoother, slower glow.");
+        }
+
+        // Settings of the energy model (phase 2: they can be edited, the calculation does not use them yet).
+        private void BuildEnergyModel()
+        {
+            builder.Header("Energy model (not active yet)", collapsed: true);
+            builder.Text("Status", "Settings only: the calculation does not use them yet");
+
+            ToggleSetting(ArmorFragmentsPlugin.LogChordDiagnostics, "Log chord diagnostics",
+                "Each simulated shot writes how far the line travels inside every part to the log ([CHORD] lines).");
+
+            FloatSetting(ArmorFragmentsPlugin.DefaultShellHardness, "Default shell hardness",
+                "Shell hardness for cannons without a [CAN k=] tag.", 5f, " %");
+            FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Sim shell hardness",
+                "Shell hardness of the simulated shot.", 5f, " %");
+            FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Sim caliber", "Caliber of the simulated shell.", 1f, " mm");
+            FloatSetting(ArmorFragmentsPlugin.SimShellMass, "Sim shell mass", "Mass of the simulated shell.", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Sim shell speed", "Speed of the simulated shell.", 10f, " m/s");
+            FloatSetting(ArmorFragmentsPlugin.ArmorStrength, "Armor strength",
+                "Reference resistance of armor material.", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.RicochetFriction, "Ricochet friction",
+                "Share of the sliding energy lost in a ricochet.", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.RicochetRandomness, "Ricochet randomness",
+                "Small random shift of the ricochet angle. 0% = none.", 5f, " %");
+            FloatSetting(ArmorFragmentsPlugin.DamagePerKiloJoule, "Damage per kJ",
+                "Part damage per kilojoule left in a part.", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.DensityModifier, "Density modifier",
+                "Multiplies the density of parts without tags.", 0.1f, "x");
+            ToggleSetting(ArmorFragmentsPlugin.ConstantForceLoss, "Constant force loss",
+                "Off = proportional drag (exponential). On = constant force (linear).");
+            ToggleSetting(ArmorFragmentsPlugin.SimpleFragments, "Simple fragments",
+                "Off = each fragment has its own mass, energy and speed. On = equal and fixed.");
+            IntSetting(ArmorFragmentsPlugin.MaxPartsPerFragment, "Parts per fragment",
+                "Most parts one fragment may cross.");
+            FloatSetting(ArmorFragmentsPlugin.SpreadBaseAngle, "Spread",
+                "Base spread of the fragment directions.", 1f, " deg");
+            FloatSetting(ArmorFragmentsPlugin.AxisTilt, "Axis tilt",
+                "How much the cone leans toward the plate's normal on slanted hits.", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.SpreadAnisotropy, "Spread anisotropy",
+                "How much wider the cone is along the plane of incidence (1 = round).", 0.1f, "x");
+            FloatSetting(ArmorFragmentsPlugin.VisualSpeedMultiplier, "Visual speed multiplier",
+                "Drawn rays move at real speed times this.", 0.005f, "x");
         }
 
         private void BuildFragments()
