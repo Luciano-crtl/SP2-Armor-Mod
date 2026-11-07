@@ -38,12 +38,17 @@ namespace ArmorFragments
         // angle: 0 = head-on, 90 = grazing (same convention as the hit log).
         // leadTime: seconds the initial ray (the shell) takes to reach the armor, when the caller
         //           has already drawn it. Negative = draw the usual short shell track here.
-        public static void Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag,
+        public static void Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag, ShellInfo shell,
                                  Vector3 point, Vector3 direction,
                                  Vector3 normal, float angle, bool applyDamage,
                                  bool simulated = false, float leadTime = -1f)
         {
             string tag = simulated ? "[SIM] " : "";
+
+            // Energy bookkeeping shown in the panel.
+            LastImpact.ShellEnergy = shell.Energy;
+            LastImpact.Absorbed = 0f;
+            LastImpact.Residual = 0f;
 
             // How many fragment rays a penetrating shell makes: from the cannon's [CAN f=] tag.
             int fragmentCount = Mathf.Clamp(
@@ -91,21 +96,23 @@ namespace ArmorFragments
                 return;
             }
 
-            // 2) Can the shell defeat the armor? Compare its penetration with the armor's
-            //    effective thickness, which grows as the hit gets more slanted.
-            float penetration = cannonTag != null
-                ? cannonTag.Penetration
-                : ArmorFragmentsPlugin.DefaultPenetration.Value;
-            float slant = Mathf.Max(Mathf.Cos(angle * Mathf.Deg2Rad), 0.1f);
-            float resistance = armorTag.Thickness * (armorTag.Hardness / 100f) / slant;
-            string comparison = penetration.ToString("F0") + " vs " + resistance.ToString("F0") + " mm";
+            // 2) Does the shell have the energy to get through? The armor takes energy in proportion
+            //    to its thickness (which grows as the hit gets more slanted) and to the shell's
+            //    cross-section. What the armor does not take is left for the fragments.
+            float shellEnergy = shell.Energy;
+            float effectiveThickness;
+            float absorbed = EnergyModel.ArmorAbsorption(armorTag, shell, angle, out effectiveThickness);
+            string comparison = "shell " + EnergyModel.Kilojoules(shellEnergy) + " vs armor " +
+                                EnergyModel.Kilojoules(absorbed) + " (" + effectiveThickness.ToString("F0") + " mm effective)";
+            LastImpact.Absorbed = Mathf.Min(absorbed, shellEnergy);
 
-            if (penetration < resistance)
+            if (shellEnergy < absorbed)
             {
-                LastImpact.Record(tag + "Blocked (penetration " + comparison + ")", angle, armorTolerated, 0, 0, 0f);
-                ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell blocked by armor: penetration " + comparison);
+                LastImpact.Record(tag + "Blocked (" + comparison + ")", angle, armorTolerated, 0, 0, 0f);
+                ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell blocked by armor: " + comparison);
                 return;
             }
+            LastImpact.Residual = shellEnergy - absorbed;
 
             // 3) It penetrates: fan of fragment rays behind the armor.
             int partsHit = 0;

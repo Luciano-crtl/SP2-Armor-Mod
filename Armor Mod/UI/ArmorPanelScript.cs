@@ -87,6 +87,9 @@ namespace ArmorFragments.UI
                 ? LastImpact.Angle.ToString("F0") + " deg (armor ricochets from " +
                   LastImpact.Tolerated.ToString("F0") + " deg)"
                 : "-");
+            Live("Shell energy", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.ShellEnergy) : "-");
+            Live("Absorbed by armor", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Absorbed) : "-");
+            Live("Left for fragments", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Residual) : "-");
             Live("Rays that hit a part", () => LastImpact.HasData ? LastImpact.RaysHit.ToString() : "-");
             Live("Ricochets", () => LastImpact.HasData ? LastImpact.Ricochets.ToString() : "-");
             Live("Total damage", () => LastImpact.HasData ? LastImpact.Damage.ToString("F1") : "-");
@@ -128,8 +131,12 @@ namespace ArmorFragments.UI
                 });
             }
 
-            FloatSetting(ArmorFragmentsPlugin.SimPenetration, "Simulated penetration",
-                "Penetration of the imaginary shell. Compared with the armor's effective thickness.", 1f, " mm");
+            FloatSetting(ArmorFragmentsPlugin.SimShellMass, "Sim shell mass",
+                "Mass of the imaginary shell. With its speed it gives the shell's energy.", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Sim shell speed",
+                "Speed of the imaginary shell.", 10f, " m/s");
+            FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Sim caliber",
+                "Caliber of the imaginary shell: sets the area the armor has to open.", 1f, " mm");
             IntSetting(ArmorFragmentsPlugin.SimFragmentCount, "Simulated fragments",
                 "Fragment rays made by the simulated shell when it penetrates.");
             ToggleSetting(ArmorFragmentsPlugin.XRayAfterSimulation, "X-ray after shot",
@@ -170,8 +177,8 @@ namespace ArmorFragments.UI
         // Settings of the energy model (phase 2: they can be edited, the calculation does not use them yet).
         private void BuildEnergyModel()
         {
-            builder.Header("Energy model (not active yet)", collapsed: true);
-            builder.Text("Status", "Settings only: the calculation does not use them yet");
+            builder.Header("Energy model (partly active)", collapsed: true);
+            builder.Text("Status", "Armor resistance is active; the rest is not used yet");
 
             ToggleSetting(ArmorFragmentsPlugin.LogChordDiagnostics, "Log chord diagnostics",
                 "Each simulated shot writes how far the line travels inside every part to the log ([CHORD] lines).");
@@ -180,11 +187,8 @@ namespace ArmorFragments.UI
                 "Shell hardness for cannons without a [CAN k=] tag.", 5f, " %");
             FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Sim shell hardness",
                 "Shell hardness of the simulated shot.", 5f, " %");
-            FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Sim caliber", "Caliber of the simulated shell.", 1f, " mm");
-            FloatSetting(ArmorFragmentsPlugin.SimShellMass, "Sim shell mass", "Mass of the simulated shell.", 0.1f, "");
-            FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Sim shell speed", "Speed of the simulated shell.", 10f, " m/s");
-            FloatSetting(ArmorFragmentsPlugin.ArmorStrength, "Armor strength",
-                "Reference resistance of armor material.", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.ArmorResistance, "Armor resistance",
+                "Energy armor takes: joules per mm of thickness crossed per cm2 of shell area (about 40 for steel).", 1f, " J/mm/cm2");
             FloatSetting(ArmorFragmentsPlugin.RicochetFriction, "Ricochet friction",
                 "Share of the sliding energy lost in a ricochet.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.RicochetRandomness, "Ricochet randomness",
@@ -220,8 +224,6 @@ namespace ArmorFragments.UI
                 "Fragment rays made when a shell penetrates, for cannons without a [CAN f=] tag.");
             FloatSetting(ArmorFragmentsPlugin.BallisticRayRange, "Ballistic ray range",
                 "When a real shell stops in a non-armor part, a ray carries on this far looking for armor.", 1f, " m");
-            FloatSetting(ArmorFragmentsPlugin.DefaultPenetration, "Default penetration",
-                "Penetration of shells from a cannon without a [CAN] tag in its name.", 1f, " mm");
         }
 
         private void BuildRicochet()

@@ -151,12 +151,17 @@ namespace ArmorFragments
             FragmentSpawner.DamageSink = sink;
             try
             {
-                CannonTag shell = new CannonTag
+                CannonTag cannon = new CannonTag
                 {
-                    Penetration = ArmorFragmentsPlugin.SimPenetration.Value,
                     Fragments = ArmorFragmentsPlugin.SimFragmentCount.Value,
                 };
-                FragmentSpawner.Spawn(part, armor, shell, hit.point, direction, hit.normal, angle,
+                ShellInfo shell = new ShellInfo
+                {
+                    Mass = ArmorFragmentsPlugin.SimShellMass.Value,
+                    Speed = ArmorFragmentsPlugin.SimShellVelocity.Value,
+                    CaliberMm = ArmorFragmentsPlugin.SimCaliber.Value,
+                };
+                FragmentSpawner.Spawn(part, armor, cannon, shell, hit.point, direction, hit.normal, angle,
                                       false, true, leadTime);
             }
             finally

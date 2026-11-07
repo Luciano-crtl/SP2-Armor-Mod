@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Assets.Scripts.Craft.Parts;
+using Assets.Scripts.Craft.Parts.Modifiers;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
 using HarmonyLib;
 using UnityEngine;
@@ -39,9 +40,14 @@ namespace ArmorFragments
             float angle = Vector3.Angle(direction, contact.normal);
             angle = Mathf.Min(angle, 180f - angle);
 
+            // The shell as the energy model sees it: its real mass and speed, and its caliber.
+            ShellInfo shell = BuildShell(__instance, ____cannonScript, speed);
+
             ArmorFragmentsPlugin.Log.LogInfo(
                 "Shell hit part '" + part.Part.Name + "' at " +
-                speed.ToString("F0") + " m/s, angle " + angle.ToString("F0") + " deg");
+                speed.ToString("F0") + " m/s, angle " + angle.ToString("F0") + " deg, energy " +
+                EnergyModel.Kilojoules(shell.Energy) + " (mass " + shell.Mass.ToString("F2") +
+                ", caliber " + shell.CaliberMm.ToString("F0") + " mm)");
 
             if (!Handled.Add(__instance.GetInstanceID()))
             {
@@ -55,11 +61,11 @@ namespace ArmorFragments
                 {
                     // Not armor: the game stops the shell here (damage, explosion...).
                     // A ballistic ray carries on in its place, until it meets armor.
-                    ContinueAsBallisticRay(part, cannon, contact.point, direction);
+                    ContinueAsBallisticRay(part, cannon, shell, contact.point, direction);
                     return;
                 }
 
-                FragmentSpawner.Spawn(part, armor, cannon, contact.point, direction,
+                FragmentSpawner.Spawn(part, armor, cannon, shell, contact.point, direction,
                     contact.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value);
             }
             catch (System.Exception e)
@@ -68,10 +74,39 @@ namespace ArmorFragments
             }
         }
 
+        // Mass: the shell's own Rigidbody (the game sets it from the cannon's projectile volume).
+        // Caliber: from the cannon that fired it; if that cannon is gone, from the shell's own size
+        // (the game scales the shell to half the cannon's diameter, and caliber = scale x 1000 mm).
+        private static ShellInfo BuildShell(CannonProjectileScript projectile, CannonScript cannon, float speed)
+        {
+            Rigidbody body = projectile.GetComponent<Rigidbody>();
+
+            float caliber = projectile.transform.localScale.x * 1000f;
+            if (cannon != null && cannon.PartScript != null)
+            {
+                foreach (PartModifierData modifier in cannon.PartScript.Part.Modifiers)
+                {
+                    CannonData data = modifier as CannonData;
+                    if (data != null)
+                    {
+                        caliber = data.CaliberInMilimeters;
+                        break;
+                    }
+                }
+            }
+
+            return new ShellInfo
+            {
+                Mass = body != null ? body.mass : 1f,
+                Speed = speed,
+                CaliberMm = caliber,
+            };
+        }
+
         // The shell has stopped in 'stoppedIn', which is not armor. The ray goes on in the shell's
         // direction, flying through other non-armor parts, and meets the first armor part with the
         // same rules (and the same damage) as a real shell that had hit it directly.
-        private static void ContinueAsBallisticRay(PartScript stoppedIn, CannonTag cannon,
+        private static void ContinueAsBallisticRay(PartScript stoppedIn, CannonTag cannon, ShellInfo shell,
                                                    Vector3 from, Vector3 direction)
         {
             BallisticRay.Result ray = BallisticRay.Trace(
@@ -98,7 +133,7 @@ namespace ArmorFragments
             {
                 from - direction * FragmentSpawner.ShellLeadIn, from, ray.Hit.point,
             });
-            FragmentSpawner.Spawn(ray.Part, ray.Armor, cannon, ray.Hit.point, direction,
+            FragmentSpawner.Spawn(ray.Part, ray.Armor, cannon, shell, ray.Hit.point, direction,
                 ray.Hit.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value,
                 simulated: false, leadTime: leadTime);
         }

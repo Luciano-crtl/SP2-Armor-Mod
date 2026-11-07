@@ -15,7 +15,6 @@ namespace ArmorFragments
         // after the first run, so you can tune them without rebuilding.
         internal static ConfigEntry<bool> ApplyDamage;
         internal static ConfigEntry<float> DamagePerFragment;
-        internal static ConfigEntry<float> DefaultPenetration;
         internal static ConfigEntry<int> DefaultFragmentCount;
         internal static ConfigEntry<float> BallisticRayRange;
         internal static ConfigEntry<bool> DrawRays;
@@ -29,7 +28,6 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> MirrorLogToGameConsole;
 
         // Shot simulation and X-ray view.
-        internal static ConfigEntry<float> SimPenetration;
         internal static ConfigEntry<int> SimFragmentCount;
         internal static ConfigEntry<bool> XRayAfterSimulation;
         internal static ConfigEntry<float> XRayRadius;
@@ -47,7 +45,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SimCaliber;
         internal static ConfigEntry<float> SimShellMass;
         internal static ConfigEntry<float> SimShellVelocity;
-        internal static ConfigEntry<float> ArmorStrength;
+        internal static ConfigEntry<float> ArmorResistance;
         internal static ConfigEntry<float> RicochetFriction;
         internal static ConfigEntry<float> RicochetRandomness;
         internal static ConfigEntry<float> DamagePerKiloJoule;
@@ -88,10 +86,6 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "Damage of one fragment at point-blank range. Falls off linearly to 0 at max range.",
                     new AcceptableValueRange<float>(0f, 100f)));
-            DefaultPenetration = Config.Bind("Fragments", "DefaultPenetration", 100f,
-                new ConfigDescription(
-                    "Penetration (mm) of shells from a cannon that has no [CAN] tag in its name.",
-                    new AcceptableValueRange<float>(0f, 1000f)));
             DefaultFragmentCount = Config.Bind("Fragments", "DefaultFragmentCount", 20,
                 new ConfigDescription(
                     "Fragment rays made when a shell penetrates armor, for cannons without a [CAN f=] tag.",
@@ -132,10 +126,6 @@ namespace ArmorFragments
                 "If true, also prints this plugin's log lines to the game's developer console. " +
                 "They then show up twice in LogOutput.log (once as 'Unity Log').");
 
-            SimPenetration = Config.Bind("Simulation", "SimulatedPenetration", 100f,
-                new ConfigDescription(
-                    "Penetration (mm) of the imaginary shell fired by the 'Simulate shot' button.",
-                    new AcceptableValueRange<float>(1f, 1000f)));
             SimFragmentCount = Config.Bind("Simulation", "SimulatedFragmentCount", 20,
                 new ConfigDescription(
                     "Fragment rays made by the simulated shell when it penetrates armor.",
@@ -165,17 +155,20 @@ namespace ArmorFragments
                 new ConfigDescription("Shell hardness (%) of the simulated shot." + NotUsed,
                     new AcceptableValueRange<float>(10f, 300f)));
             SimCaliber = Config.Bind("Energy", "SimulatedCaliber", 100f,
-                new ConfigDescription("Caliber (mm) of the simulated shell." + NotUsed,
+                new ConfigDescription("Caliber (mm) of the simulated shell. With its mass and speed it gives the shell's energy.",
                     new AcceptableValueRange<float>(5f, 500f)));
             SimShellMass = Config.Bind("Energy", "SimulatedShellMass", 10f,
-                new ConfigDescription("Mass of the simulated shell (game units)." + NotUsed,
+                new ConfigDescription("Mass of the simulated shell (same units as a real shell's mass).",
                     new AcceptableValueRange<float>(0.01f, 1000f)));
             SimShellVelocity = Config.Bind("Energy", "SimulatedShellVelocity", 800f,
-                new ConfigDescription("Speed (m/s) of the simulated shell." + NotUsed,
+                new ConfigDescription("Speed (m/s) of the simulated shell.",
                     new AcceptableValueRange<float>(10f, 3000f)));
-            ArmorStrength = Config.Bind("Energy", "ArmorStrength", 1f,
-                new ConfigDescription("Reference resistance of armor material: how much energy a plate takes per unit of thickness and shell area." + NotUsed,
-                    new AcceptableValueRange<float>(0.01f, 100f)));
+            ArmorResistance = Config.Bind("Energy", "ArmorResistance", 40f,
+                new ConfigDescription(
+                    "How much energy armor takes, in joules per mm of thickness crossed per cm2 of shell area. " +
+                    "About 40 for steel (its shear strength). The shell is blocked if its energy is lower than " +
+                    "resistance x thickness (divided by cos of the angle) x shell area.",
+                    new AcceptableValueRange<float>(0.1f, 2000f)));
             RicochetFriction = Config.Bind("Energy", "RicochetFriction", 0.2f,
                 new ConfigDescription("Share of the sliding energy lost in a ricochet." + NotUsed,
                     new AcceptableValueRange<float>(0f, 1f)));

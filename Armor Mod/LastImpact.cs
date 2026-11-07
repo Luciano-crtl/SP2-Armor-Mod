@@ -12,6 +12,11 @@ namespace ArmorFragments
         public static float Damage;
         public static float Time;            // UnityEngine.Time.time when it happened
 
+        // Energy model, joules.
+        public static float ShellEnergy;     // what the shell carried
+        public static float Absorbed;        // what the armor took
+        public static float Residual;        // what is left for the fragments
+
         public static void Record(string kind, float angle, float tolerated,
                                   int raysHit, int ricochets, float damage)
         {

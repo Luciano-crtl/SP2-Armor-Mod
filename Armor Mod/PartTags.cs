@@ -18,10 +18,10 @@ namespace ArmorFragments
         public float Brittleness = 50f; // b: percent, how easily the plate shatters into fragments
     }
 
-    // Cannon: describes the shells it fires.
+    // Cannon: describes the shells it fires. (The shell's energy comes from its real mass and
+    // speed, so there is no penetration value any more; an old p= in a name is simply ignored.)
     internal sealed class CannonTag
     {
-        public float Penetration = 100f;   // p: millimeters of armor the shell can defeat
         public int Fragments = 20;         // f: fragment rays created when the shell penetrates
         public float ShellHardness = 100f; // k: percent, 100 = reference (ricochet)
     }
@@ -89,7 +89,6 @@ namespace ArmorFragments
                 {
                     tags.Cannon = new CannonTag
                     {
-                        Penetration = Get(values, "p", 100f),
                         Fragments = Mathf.Clamp(Mathf.RoundToInt(Get(values, "f", 20f)), 1, 500),
                         ShellHardness = Get(values, "k", 100f),
                     };
@@ -114,7 +113,7 @@ namespace ArmorFragments
                 Append(name, "[ARM t=" + Number(tags.Armor.Thickness) + " h=" + Number(tags.Armor.Hardness) +
                        " b=" + Number(tags.Armor.Brittleness) + "]");
             if (tags.Cannon != null)
-                Append(name, "[CAN p=" + Number(tags.Cannon.Penetration) + " f=" + tags.Cannon.Fragments +
+                Append(name, "[CAN f=" + tags.Cannon.Fragments +
                        " k=" + Number(tags.Cannon.ShellHardness) + "]");
             if (tags.Module != null)
                 Append(name, "[MOD d=" + Number(tags.Module.MinDamage) + "]");
