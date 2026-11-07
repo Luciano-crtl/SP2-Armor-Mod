@@ -39,49 +39,58 @@ namespace ArmorFragments
             Vector3 origin = camera.transform.position;
             Vector3 direction = camera.transform.forward;
 
-            // The first thing the shell would hit (ignoring real shells in flight).
+            // Everything along the line, nearest first (real shells in flight are ignored).
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
             RaycastHit[] hits = Physics.RaycastAll(
                 origin, direction, MaxDistance, mask, QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (x, y) => x.distance.CompareTo(y.distance));
 
-            bool found = false;
+            // The shell flies through every part that is not armor and stops at the first
+            // armor part. It also stops at anything that is not a part (the ground, for example).
+            HashSet<PartScript> passedThrough = new HashSet<PartScript>();
             RaycastHit hit = default(RaycastHit);
+            PartScript part = null;
+            ArmorTag armor = null;
+            string stoppedBy = null;
+
             foreach (RaycastHit candidate in hits)
             {
                 if (candidate.collider.GetComponentInParent<CannonProjectileScript>() != null) continue;
-                if (!found || candidate.distance < hit.distance)
+
+                PartScript candidatePart = candidate.collider.GetComponentInParent<PartScript>();
+                if (candidatePart == null)
                 {
-                    hit = candidate;
-                    found = true;
+                    stoppedBy = "'" + candidate.collider.name + "' at " +
+                                candidate.distance.ToString("F0") + " m (not a part)";
+                    break;
                 }
+
+                ArmorTag candidateArmor = TagCodec.Parse(candidatePart.Part.Name).Armor;
+                if (candidateArmor == null)
+                {
+                    passedThrough.Add(candidatePart);   // no [ARM] tag: the shell goes through
+                    continue;
+                }
+
+                hit = candidate;
+                part = candidatePart;
+                armor = candidateArmor;
+                break;
             }
 
-            if (!found)
-            {
-                Message = "Nothing in front of the camera";
-                XRayView.Hide();
-                return;
-            }
+            string passed = passedThrough.Count == 0
+                ? ""
+                : "Passed through " + passedThrough.Count + " non-armor parts. ";
 
-            PartScript part = hit.collider.GetComponentInParent<PartScript>();
-            if (part == null)
+            if (armor == null)
             {
-                Message = "Hit '" + hit.collider.name + "' at " + hit.distance.ToString("F0") + " m (not a part)";
+                Message = passed + (stoppedBy != null ? "Stopped by " + stoppedBy : "No armor on the way");
                 XRayView.Hide();
                 return;
             }
 
             float angle = Vector3.Angle(direction, hit.normal);
             angle = Mathf.Min(angle, 180f - angle);
-
-            ArmorTag armor = TagCodec.Parse(part.Part.Name).Armor;
-            if (armor == null)
-            {
-                Message = "Hit '" + Label(part) + "' at " + hit.distance.ToString("F0") +
-                          " m: it has no [ARM] tag, so no fragments";
-                XRayView.Hide();
-                return;
-            }
 
             // The same code a real shell goes through, with damage switched off. Every
             // fragment's would-be damage is collected per part.
@@ -108,7 +117,7 @@ namespace ArmorFragments
                 });
             }
 
-            Message = "Hit '" + Label(part) + "' at " + hit.distance.ToString("F0") + " m, angle " +
+            Message = passed + "Hit '" + Label(part) + "' at " + hit.distance.ToString("F0") + " m, angle " +
                       angle.ToString("F0") + " deg: " + sink.Count + " parts would be damaged";
 
             if (ArmorFragmentsPlugin.XRayAfterSimulation.Value)
