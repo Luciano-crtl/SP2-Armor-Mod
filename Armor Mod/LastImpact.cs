@@ -17,6 +17,27 @@ namespace ArmorFragments
         public static float Absorbed;        // what the armor took
         public static float Residual;        // what is left for the fragments
 
+        // Fragment cloud of the last penetrating shot (zero when there was none).
+        public static float SigmaX, SigmaY, AxisTilt;   // degrees
+        public static float FragmentEnergy;             // joules, all fragments together
+        public static float FragmentMass;               // kilograms, all fragments together
+        public static float FragmentSpeed;              // m/s (rms)
+
+        public static void ClearCloud()
+        {
+            SigmaX = SigmaY = AxisTilt = FragmentEnergy = FragmentMass = FragmentSpeed = 0f;
+        }
+
+        internal static void SetCloud(CloudSummary cloud)
+        {
+            SigmaX = cloud.SigmaX;
+            SigmaY = cloud.SigmaY;
+            AxisTilt = cloud.AxisTiltDegrees;
+            FragmentEnergy = cloud.TotalEnergy;
+            FragmentMass = cloud.TotalMass;
+            FragmentSpeed = cloud.Speed;
+        }
+
         public static void Record(string kind, float angle, float tolerated,
                                   int raysHit, int ricochets, float damage)
         {

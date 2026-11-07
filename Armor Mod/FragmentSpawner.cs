@@ -25,7 +25,6 @@ namespace ArmorFragments
         // Length of the drawn shell track before the impact, in meters.
         public const float ShellLeadIn = 4f;
 
-        private const float ConeHalfAngle = 35f;   // spread, in degrees
         private const float MaxRange = 30f;        // total path length of one ray, in meters
         private const float SurfaceOffset = 0.02f; // pushes a ricochet start point off the surface
 
@@ -57,6 +56,7 @@ namespace ArmorFragments
             LastImpact.ShellEnergy = shell.Energy;
             LastImpact.Absorbed = 0f;
             LastImpact.Residual = 0f;
+            LastImpact.ClearCloud();
 
             // How many fragment rays a penetrating shell makes: from the cannon's [CAN f=] tag.
             int fragmentCount = Mathf.Clamp(
@@ -92,7 +92,7 @@ namespace ArmorFragments
 
                 // The armor bounce counts as the ray's first ricochet.
                 TraceResult r = TraceRay(path, point + n * SurfaceOffset, reflected, 0f, 1,
-                                         null, applyDamage, mask, leadTime);
+                                         null, applyDamage, mask, leadTime, 1f);
                 if (draw) RayDrawer.Animate(path, leadTime);
 
                 // What the shell keeps after the bounce; the rest stays in the armor.
@@ -131,18 +131,27 @@ namespace ArmorFragments
             }
             LastImpact.Residual = shellEnergy - absorbed;
 
-            // 3) It penetrates: fan of fragment rays behind the armor.
+            // 3) It penetrates. The plate's brittleness decides how much of the leftover energy becomes
+            //    fragments; the cloud decides where they go, how heavy each is, and how much each carries.
+            CloudSummary cloud;
+            FragmentSpec[] fragments = FragmentCloud.Generate(
+                fragmentCount, armorTag, shell, direction, normal, angle, shellEnergy - absorbed,
+                absorbed, effectiveThickness, ArmorFragmentsPlugin.SimpleFragments.Value, out cloud);
+            LastImpact.SetCloud(cloud);
+
             int partsHit = 0;
             int ricochets = 0;
             float totalDamage = 0f;
 
-            for (int i = 0; i < fragmentCount; i++)
+            for (int i = 0; i < fragments.Length; i++)
             {
-                Vector3 dir = RandomInCone(direction, ConeHalfAngle);
-
                 RayPath path = new RayPath();
                 path.Add(point, RayKind.None);
-                TraceResult r = TraceRay(path, point, dir, 0f, 0, armor, applyDamage, mask, leadTime);
+
+                // (Until fragments carry their energy through parts, the damage is the old flat value,
+                // scaled by the fragment's share of the cloud.)
+                TraceResult r = TraceRay(path, point, fragments[i].Direction, 0f, 0, armor, applyDamage,
+                                         mask, leadTime, fragments[i].Weight);
                 if (draw) RayDrawer.Animate(path, leadTime);
 
                 if (r.HitPart) partsHit++;
@@ -150,11 +159,21 @@ namespace ArmorFragments
                 totalDamage += r.Damage;
             }
 
-            LastImpact.Record(tag + "Penetrated (" + comparison + "), " + fragmentCount + " rays", angle, Mathf.Min(armorTolerated, 90f),
+            if (fragments.Length == 0)
+                ArmorFragmentsPlugin.Log.LogInfo(tag + "The plate does not shatter (brittleness " +
+                                                 armorTag.Brittleness.ToString("F0") + "%): no fragments");
+            else
+                ArmorFragmentsPlugin.Log.LogInfo(
+                    tag + "Fragment cloud: " + fragments.Length + " fragments, " + EnergyModel.Kilojoules(cloud.TotalEnergy) +
+                    " and " + (cloud.TotalMass * 1000f).ToString("F0") + " g in total, speed ~" + cloud.Speed.ToString("F0") +
+                    " m/s, spread " + cloud.SigmaX.ToString("F1") + " x " + cloud.SigmaY.ToString("F1") +
+                    " deg, axis leaning " + cloud.AxisTiltDegrees.ToString("F1") + " deg");
+
+            LastImpact.Record(tag + "Penetrated (" + comparison + "), " + fragments.Length + " rays", angle, Mathf.Min(armorTolerated, 90f),
                               partsHit, ricochets, totalDamage);
 
             ArmorFragmentsPlugin.Log.LogInfo(
-                tag + "Fragments: " + partsHit + " of " + fragmentCount + " rays hit a part, " +
+                tag + "Fragments: " + partsHit + " of " + fragments.Length + " rays hit a part, " +
                 ricochets + " ricochets, total damage " + totalDamage.ToString("F1") +
                 (applyDamage ? "" : " (not applied)"));
             return ImpactOutcome.Penetrated;
@@ -167,11 +186,12 @@ namespace ArmorFragments
         //   ignore:   a part to skip on the first segment only (the armor itself)
         //   bounces:  ricochets this ray already had
         //   traveled: distance already covered, counts toward MaxRange and damage falloff
+        //   damageWeight: this fragment's share of the cloud (1 = average); scales its damage for now
         //   timeOffset: seconds from the start of the shot until this ray starts moving; with the
         //               distance flown it gives the moment each part is touched (for the X-ray view)
         private static TraceResult TraceRay(RayPath path, Vector3 origin, Vector3 dir,
                                             float traveled, int bounces, PartScript ignore,
-                                            bool applyDamage, int mask, float timeOffset)
+                                            bool applyDamage, int mask, float timeOffset, float damageWeight)
         {
             TraceResult result = default;
             int maxBounces = ArmorFragmentsPlugin.MaxRicochets.Value;
@@ -232,7 +252,7 @@ namespace ArmorFragments
                     result.HitPart = true;
 
                     float falloff = 1f - traveled / MaxRange;
-                    float damage = ArmorFragmentsPlugin.DamagePerFragment.Value * falloff;
+                    float damage = ArmorFragmentsPlugin.DamagePerFragment.Value * damageWeight * falloff;
 
                     // A part marked [MOD d=...] ignores fragments weaker than that.
                     ModuleTag module = TagCodec.Parse(part.Part.Name).Module;
@@ -277,12 +297,6 @@ namespace ArmorFragments
         private static float ToleratedAngle(float baseAngle, float multiplier)
         {
             return Mathf.Clamp(baseAngle * multiplier, 0f, 90f);
-        }
-
-        private static Vector3 RandomInCone(Vector3 axis, float halfAngle)
-        {
-            Vector3 side = Vector3.Cross(axis, Random.onUnitSphere).normalized;
-            return (Quaternion.AngleAxis(Random.Range(0f, halfAngle), side) * axis).normalized;
         }
     }
 }

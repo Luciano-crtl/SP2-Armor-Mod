@@ -52,6 +52,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> DensityModifier;
         internal static ConfigEntry<bool> ConstantForceLoss;
         internal static ConfigEntry<bool> SimpleFragments;
+        internal static ConfigEntry<float> SimpleFragmentArea;
         internal static ConfigEntry<int> MaxPartsPerFragment;
         internal static ConfigEntry<float> SpreadBaseAngle;
         internal static ConfigEntry<float> AxisTilt;
@@ -186,18 +187,21 @@ namespace ArmorFragments
             ConstantForceLoss = Config.Bind("Energy", "ConstantForceLoss", false,
                 "Energy loss inside a part: off = proportional drag (exponential), on = constant force (linear)." + NotUsed);
             SimpleFragments = Config.Bind("Energy", "SimpleFragments", false,
-                "Off = fragments with their own mass, energy and speed. On = equal energy and fixed size (simpler)." + NotUsed);
+                "Off = fragments with their own mass, energy and speed (central ones carry more). On = equal energy and mass, fixed size (simpler).");
+            SimpleFragmentArea = Config.Bind("Energy", "SimpleFragmentAreaCm2", 0.5f,
+                new ConfigDescription("Cross-section (cm2) of every fragment in simple mode.",
+                    new AcceptableValueRange<float>(0.01f, 20f)));
             MaxPartsPerFragment = Config.Bind("Energy", "MaxPartsPerFragment", 3,
                 new ConfigDescription("Most parts one fragment may cross before it stops." + NotUsed,
                     new AcceptableValueRange<int>(1, 10)));
             SpreadBaseAngle = Config.Bind("Energy", "SpreadBaseAngle", 15f,
-                new ConfigDescription("Base spread of the fragment directions (degrees)." + NotUsed,
+                new ConfigDescription("Base spread of the fragment directions (degrees, one standard deviation). Brittle and thick plates widen it; leftover energy narrows it.",
                     new AcceptableValueRange<float>(1f, 60f)));
             AxisTilt = Config.Bind("Energy", "AxisTilt", 0.5f,
-                new ConfigDescription("How much the fragment cone leans from the shell's path toward the plate's normal on slanted hits (0 = none, 1 = strong)." + NotUsed,
+                new ConfigDescription("How much the fragment cone leans from the shell's path toward the plate's normal on slanted hits (0 = none, 1 = strong). Harder plates lean it more.",
                     new AcceptableValueRange<float>(0f, 1f)));
             SpreadAnisotropy = Config.Bind("Energy", "SpreadAnisotropy", 1.5f,
-                new ConfigDescription("How much wider the cone is along the plane of incidence on slanted hits (1 = round)." + NotUsed,
+                new ConfigDescription("How much wider the cone is along the plane of incidence on a fully grazing hit (1 = round).",
                     new AcceptableValueRange<float>(1f, 4f)));
             VisualSpeedMultiplier = Config.Bind("Energy", "VisualSpeedMultiplier", 0.05f,
                 new ConfigDescription("Drawn rays move at their real speed (from energy) times this, so they can be followed." + NotUsed,

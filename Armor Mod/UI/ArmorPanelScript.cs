@@ -90,6 +90,14 @@ namespace ArmorFragments.UI
             Live("Shell energy", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.ShellEnergy) : "-");
             Live("Absorbed by armor", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Absorbed) : "-");
             Live("Energy left", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Residual) : "-");
+            Live("Fragment budget", () => LastImpact.FragmentEnergy <= 0f
+                ? "-"
+                : EnergyModel.Kilojoules(LastImpact.FragmentEnergy) + ", " + (LastImpact.FragmentMass * 1000f).ToString("F0") +
+                  " g, ~" + LastImpact.FragmentSpeed.ToString("F0") + " m/s");
+            Live("Fragment cloud", () => LastImpact.FragmentEnergy <= 0f
+                ? "-"
+                : "spread " + LastImpact.SigmaX.ToString("F1") + " x " + LastImpact.SigmaY.ToString("F1") +
+                  " deg, axis leaning " + LastImpact.AxisTilt.ToString("F1") + " deg");
             Live("Rays that hit a part", () => LastImpact.HasData ? LastImpact.RaysHit.ToString() : "-");
             Live("Ricochets", () => LastImpact.HasData ? LastImpact.Ricochets.ToString() : "-");
             Live("Total damage", () => LastImpact.HasData ? LastImpact.Damage.ToString("F1") : "-");
@@ -178,7 +186,7 @@ namespace ArmorFragments.UI
         private void BuildEnergyModel()
         {
             builder.Header("Energy model (partly active)", collapsed: true);
-            builder.Text("Status", "Armor resistance and ricochet are active; the rest is not used yet");
+            builder.Text("Status", "Armor, ricochet and the fragment cloud are active; the rest is not used yet");
 
             ToggleSetting(ArmorFragmentsPlugin.LogChordDiagnostics, "Log chord diagnostics",
                 "Each simulated shot writes how far the line travels inside every part to the log ([CHORD] lines).");
@@ -201,6 +209,8 @@ namespace ArmorFragments.UI
                 "Off = proportional drag (exponential). On = constant force (linear).");
             ToggleSetting(ArmorFragmentsPlugin.SimpleFragments, "Simple fragments",
                 "Off = each fragment has its own mass, energy and speed. On = equal and fixed.");
+            FloatSetting(ArmorFragmentsPlugin.SimpleFragmentArea, "Simple fragment area",
+                "Cross-section of every fragment in simple mode.", 0.1f, " cm2");
             IntSetting(ArmorFragmentsPlugin.MaxPartsPerFragment, "Parts per fragment",
                 "Most parts one fragment may cross.");
             FloatSetting(ArmorFragmentsPlugin.SpreadBaseAngle, "Spread",
