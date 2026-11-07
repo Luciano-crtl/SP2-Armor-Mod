@@ -102,6 +102,18 @@ namespace ArmorFragments.UI
                 new KeyValuePair<string, Action>("Hide X-ray", XRayView.Hide),
             });
 
+            // Lock: the shot keeps the camera's position and direction from the moment it is switched on.
+            ToggleControl lockToggle = null;
+            lockToggle = builder.Toggle("Lock shot to camera",
+                "Saves the orbit camera's position and direction now. Simulated shots start from there, so you can move the camera and watch them from elsewhere.",
+                ShotSimulator.IsLocked,
+                on =>
+                {
+                    // If it could not be locked (wrong camera), put the switch back.
+                    if (!ShotSimulator.SetLocked(on)) lockToggle.IsOn = false;
+                });
+            Live("Locked shot", () => ShotSimulator.LockText);
+
             Live("Result", () => ShotSimulator.Message);
             for (int i = 0; i < 5; i++)
             {

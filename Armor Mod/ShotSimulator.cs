@@ -25,28 +25,86 @@ namespace ArmorFragments
         public static string Message = "No shot simulated yet";
         public static readonly List<PartResult> Top = new List<PartResult>();
 
-        public static void Fire()
-        {
-            Top.Clear();
+        // "Lock shot to camera": the shot starts from the camera pose saved when the lock was
+        // switched on, so the player can move the camera and watch it from somewhere else.
+        public static bool IsLocked { get; private set; }
+        private static Vector3 lockedOrigin;
+        private static Vector3 lockedDirection;
 
-            // The shot starts exactly at the camera, so it only makes sense with the orbit camera
-            // (the one that can be moved around freely, away from the aircraft).
+        public static string LockText
+        {
+            get
+            {
+                if (!IsLocked) return "Off";
+                return "At " + lockedOrigin.x.ToString("F0") + ", " + lockedOrigin.y.ToString("F0") + ", " +
+                       lockedOrigin.z.ToString("F0") + " (world position)";
+            }
+        }
+
+        // Switches the lock on or off. Switching on needs the orbit camera, because that is the
+        // pose being saved. Returns false if the lock could not be switched on.
+        public static bool SetLocked(bool locked)
+        {
+            if (!locked)
+            {
+                IsLocked = false;
+                return true;
+            }
+
             CameraManagerScript manager = CameraManagerScript.Instance;
             Camera camera = manager != null && manager.MainCamera != null ? manager.MainCamera : Camera.main;
             if (camera == null)
             {
                 Message = "No camera found";
-                return;
+                return false;
             }
             if (manager == null || !(manager.Controller is OrbitCameraController))
             {
-                Message = "Switch to the orbit camera to simulate a shot";
-                XRayView.Hide();
-                return;
+                Message = "Switch to the orbit camera to lock the shot";
+                return false;
             }
 
-            Vector3 origin = camera.transform.position;
-            Vector3 direction = camera.transform.forward;
+            lockedOrigin = camera.transform.position;
+            lockedDirection = camera.transform.forward;
+            IsLocked = true;
+            Message = "Shot locked: it will start from where the camera is now";
+            return true;
+        }
+
+        public static void Fire()
+        {
+            Top.Clear();
+
+            Vector3 origin;
+            Vector3 direction;
+
+            if (IsLocked)
+            {
+                // The saved pose: the camera is free to be anywhere.
+                origin = lockedOrigin;
+                direction = lockedDirection;
+            }
+            else
+            {
+                // The shot starts exactly at the camera, so it only makes sense with the orbit
+                // camera (the one that can be moved around freely, away from the aircraft).
+                CameraManagerScript manager = CameraManagerScript.Instance;
+                Camera camera = manager != null && manager.MainCamera != null ? manager.MainCamera : Camera.main;
+                if (camera == null)
+                {
+                    Message = "No camera found";
+                    return;
+                }
+                if (manager == null || !(manager.Controller is OrbitCameraController))
+                {
+                    Message = "Switch to the orbit camera to simulate a shot";
+                    XRayView.Hide();
+                    return;
+                }
+
+                origin = camera.transform.position;
+                direction = camera.transform.forward;
+            }
 
             // The shell flies through every part that is not armor and stops at the first
             // armor part (or at anything that is not a part, like the ground).
