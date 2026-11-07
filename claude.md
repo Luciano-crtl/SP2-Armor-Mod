@@ -171,9 +171,43 @@ Tudo abaixo foi testado no jogo pelo Luciano.
 - **Estrutura do código:** `ArmorFragmentsPlugin` (configs e patches), `CannonHitPatch` (impacto), `FragmentSpawner` (raios, ricochete, dano), `RayDrawer`/`RayAnimation` (visual), `LastImpact`, `LogMirror`, `SafePatcher` (cada patch isolado) e `UI/`.
 - **Pergunta em aberto:** a explosão do projétil explosivo deve acontecer dentro da blindagem, como no War Thunder, ou ficar só nos fragmentos? O usuário ainda não respondeu. Hoje a explosão do jogo continua como está.
 
+## Plano: modelo de energia (decidido, ainda NÃO implementado)
+
+Decidido em conversa com o Luciano. Substitui a penetração em mm e o cone fixo. Quando uma fase for implementada, mover o que ela descreve para "Estado atual".
+
+### Modelo físico (ordem de cálculo)
+1. **Energia do projétil:** `E = ½·m·v²`. Massa do jogo (`ProjectileVolume × 11342 × 0,01`), velocidade de `_previousFrameVelocity`, calibre do `CannonData.CaliberInMilimeters` do canhão que atirou (via `_cannonScript`). Conferir as unidades (massa escalada) antes de fixar valores absolutos.
+2. **Armadura cobra energia:** `E_armadura = resistência × área do calibre × (espessura ÷ cos θ)` (θ medido da normal, `cos` com piso 0,1). A resistência é um valor global de referência (a dureza não entra aqui). `E < E_armadura` = bloqueado: toda a energia fica na placa. Não existe "ângulo de bloqueio".
+3. **Ricochete:** ângulo crítico `θc = base(dureza da armadura)` ajustado pela velocidade e pelo **overmatch** (razão `calibre ÷ espessura`; acima de um limite fixo no código o ricochete é impossível; sem modificador global). A dureza do projétil (`[CAN k=]`) entra na dureza relativa. **Aleatoriedade (só no ricochete):** modificador global 0–100% (padrão 50%) que desloca o `θc` a cada impacto por um pequeno tremor (100% ≈ ±5°, 50% ≈ ±2,5°, 0% = determinístico). Energia de saída: `E × sen²θ × (1 − atrito)`; o resto fica na armadura (parte pode virar fragmentos, conforme a fragilidade).
+4. **Orçamento dos fragmentos:** `E_frag = fragilidade × (E − E_armadura)`. Modo físico (padrão): cada fragmento tem massa própria (parte do projétil + massa de "spall" da placa, dada por fragilidade e espessura), energia ponderada pela direção (fragmentos centrais levam mais; pesos normalizados para a soma bater o orçamento), velocidade e área derivadas. Modo simples (opção): energia igual e área fixa configurável.
+5. **Direção dos fragmentos (substitui o cone):** desvios angulares `(x, y)` sorteados de uma gaussiana 2D `N(μ, Σ)` num plano perpendicular a um eixo central. O eixo começa na trajetória e **se inclina para a normal da placa** quanto mais oblíqua a batida e mais dura a placa. `x` fica no plano de incidência e `y` é perpendicular; em batida oblíqua `σx > σy` (elipse). Largura σ: maior com mais fragilidade e mais espessura, menor com mais energia residual. Amostragem **estratificada** (faixas iguais de probabilidade) para cobertura estável com poucos fragmentos. A mesma máquina serve ao ricochete (distribuição estreita em volta da reflexão; prepara o "feixe de raios"). Parâmetros globais de teste: largura base, fator de inclinação para a normal, anisotropia. O painel mostra `σx`, `σy` e o desvio do eixo no último impacto.
+6. **Cada fragmento é um tiro (sem sub-fragmentos por enquanto):** atravessa peças e perde energia em cada uma. Distância dentro da peça pelo **método A**: pares entrada/saída por collider (raycast para a frente e outro de trás para frente a partir de um ponto fora da peça), unindo os trechos para não contar duas vezes. Lei de perda: **arrasto proporcional por padrão** (`E_saída = E_entrada × e^(−2x/λ)`, `λ = 2m ÷ (ρ·A)`); opção **força constante** (`E_perdida = resistência × área × x`). Densidade das peças = massa ÷ volume estimado (malha legível, senão bounds do collider), com modificador global. Teto de peças atravessadas por fragmento.
+7. **Dano de uma peça = energia dissipada nela × fator de calibração** (joules → vida do jogo), via `OnDamaged`. `[MOD d=]` continua como dano mínimo. O dano do jogo nas peças `[ARM]` é ignorado por enquanto: patch em `OnDamaged` que o suprime quando a chamada não é nossa (o Luciano também tira o dano do canhão ou aumenta a vida nos testes). O projétil real bloqueado continua por conta do jogo.
+8. **Raio balístico:** no tiro simulado (e no real depois que o jogo para o projétil), perde energia em cada peça sem tag pela mesma lei dos fragmentos e chega mais fraco à armadura. No simulado aplica e mostra o dano estimado nessas peças; no real, a primeira peça já levou o dano direto do jogo, então só se desconta a energia (sem somar dano nosso).
+9. **Velocidade visual vinculada à física:** a velocidade desenhada de cada raio é a velocidade real (calculada da energia: `v = √(2E/m)`) × um multiplicador global menor que 1, para dar para acompanhar. Ela diminui ao longo do caminho conforme o raio perde energia (velocidade por trecho), e o instante em que cada peça é tocada (raio-X) passa a sair dessas velocidades.
+10. **Onde parou:** quando um projétil ou fragmento fica sem energia dentro de uma armadura ou peça, um marcador visual indica o ponto (novo tipo de marcador de parada, cor própria).
+
+### Propriedades (tags no nome)
+- `[ARM t= h= b=]`: `t` espessura (mm), `h` dureza (só ricochete), `b` fragilidade (quanto a placa estilhaça; o inverso de ductilidade).
+- `[CAN f= k=]`: `f` fragmentos, `k` dureza do projétil. O antigo `p` (penetração) sai.
+- `[MOD d=]`: dano mínimo (mantém).
+- Globais (`.cfg` e painel de voo): dureza do projétil para canhões sem tag e **outra** para o tiro de teste; calibre, massa e velocidade do tiro simulado (substituem `SimulatedPenetration`); resistência de referência da armadura; atrito do ricochete; aleatoriedade; fator joules→dano; modificador de densidade; lei de perda (arrasto ou força constante); modo de fragmentos (físico ou simples); teto de peças por fragmento; parâmetros da distribuição direcional; multiplicador de velocidade visual.
+
+### Fases (cada uma só vale depois da verificação)
+1. **Diagnóstico do método A**, sem mudar comportamento: log de pares entrada/saída por peça no tiro simulado. *Verificação:* o Luciano manda o log numa fuselagem dele (peças sólidas ou cascas? colliders batem com a malha?).
+2. **Propriedades e interface:** novas tags, controles no designer, configs e painel. Nada muda no cálculo. *Verificação:* as tags sobrevivem a salvar e carregar.
+3. **Energia do projétil e absorção da armadura** (substitui a penetração); painel mostra energia, energia absorvida e resultado. *Verificação:* bloqueio e penetração coerentes com ângulo e espessura.
+4. **Ricochete novo:** ângulo crítico, overmatch, tremor e energia de saída. *Verificação:* placa fina contra calibre grande nunca ricocheteia; tremor 0% repete o resultado.
+5. **Distribuição direcional e orçamento dos fragmentos** (modos físico e simples). *Verificação:* a soma das energias bate com o orçamento; a nuvem de direções reage à obliquidade e à fragilidade.
+6. **Propagação:** método A, densidade, as duas leis de perda, travessia de várias peças, dano por energia dissipada, raio balístico com perda de energia. *Verificação:* um fragmento atravessa duas peças e a segunda recebe menos dano.
+7. **Dano do jogo na armadura suprimido; visual:** velocidade por trecho, marcadores nas peças atravessadas e nos pontos de parada, raio-X atualizado; atualizar este arquivo.
+
+### Riscos e incertezas
+Unidades de massa e velocidade; fidelidade dos colliders e peças ocas; volume das peças (aproximado); calibração do fator joules→dano e da resistência de referência (chutes iniciais); custo do método A (dois raycasts por peça por fragmento; o teto de peças e a medição de FPS são os controles); explosão de projéteis explosivos dentro da armadura continua adiada.
+
 ## Próximos passos
 
-1. **Balancear o dano** (`DamagePerFragment`) contra o dano direto do projétil e contra `MaxHealth`, usando o painel.
+1. **Implementar o modelo de energia** (seção "Plano: modelo de energia"), fase por fase, começando pelo diagnóstico do método A. O balanceamento do dano (`DamagePerFragment`) passa a ser a calibração do fator joules→dano.
 2. **Materiais de blindagem pelo nome da peça** (por exemplo `ARM_<material>_<espessura>`): cada material com seus multiplicadores de ricochete e de dano, sem criar peças novas. Depois, configurações integradas ao designer, também só pelo nome.
 3. **Espessura:** ler o número do nome (`20` de `ARM_20`) e usá-lo para escalar fragmentos e dano com a energia do projétil (`0.5 * massa * velocidade²`) e o ângulo.
 4. **Explosão interna:** decidir a pergunta em aberto. Antes, ler no `Game.dll` como a explosão causa dano às peças e suprimir/mover o `Explode()` original.
