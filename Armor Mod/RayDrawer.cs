@@ -44,6 +44,7 @@ namespace ArmorFragments
 
         private static Material lineMaterial;                 // white: the color comes from the line itself
         private static readonly Material[] BubbleMaterials = new Material[5];   // one per RayKind
+        private static Shader shaderUsed;
         private static bool initialized;
         private static bool available;
 
@@ -66,6 +67,7 @@ namespace ArmorFragments
                 Shader shader = Shader.Find(name);
                 if (shader == null) continue;
 
+                shaderUsed = shader;
                 lineMaterial = MakeMaterial(shader, Color.white);
                 foreach (RayKind kind in System.Enum.GetValues(typeof(RayKind)))
                     BubbleMaterials[(int)kind] = MakeMaterial(shader, ColorOf(kind));
@@ -76,6 +78,14 @@ namespace ArmorFragments
             }
             ArmorFragmentsPlugin.Log.LogWarning(
                 "Ray drawing disabled: none of the tried shaders exist in this build");
+        }
+
+        // The see-through shader that was found, for other visuals (the X-ray view).
+        // Null if none of the tried shaders exists in this build.
+        public static Shader GetShader()
+        {
+            if (!initialized) Init();
+            return available ? shaderUsed : null;
         }
 
         private static Material MakeMaterial(Shader shader, Color color)

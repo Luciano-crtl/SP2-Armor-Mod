@@ -59,6 +59,7 @@ namespace ArmorFragments.UI
             try
             {
                 BuildStatus();
+                BuildSimulation();
                 BuildFragments();
                 BuildRicochet();
                 BuildRays();
@@ -89,6 +90,40 @@ namespace ArmorFragments.UI
             Live("Total damage", () => LastImpact.HasData ? LastImpact.Damage.ToString("F1") : "-");
             Live("Time since impact", () => LastImpact.HasData
                 ? (Time.time - LastImpact.Time).ToString("F0") + " s" : "-");
+        }
+
+        private void BuildSimulation()
+        {
+            builder.Header("Simulate shot");
+            builder.Buttons(new List<KeyValuePair<string, Action>>
+            {
+                new KeyValuePair<string, Action>("Simulate shot", ShotSimulator.Fire),
+                new KeyValuePair<string, Action>("Hide X-ray", XRayView.Hide),
+            });
+
+            Live("Result", () => ShotSimulator.Message);
+            for (int i = 0; i < 5; i++)
+            {
+                int index = i;
+                Live("Most damaged #" + (i + 1), () =>
+                {
+                    if (index >= ShotSimulator.Top.Count) return "-";
+                    ShotSimulator.PartResult r = ShotSimulator.Top[index];
+                    return r.Name + ": " + r.Damage.ToString("F1") + " (" +
+                           (r.Fraction * 100f).ToString("F0") + "% of its health)";
+                });
+            }
+
+            FloatSetting(ArmorFragmentsPlugin.SimPenetration, "Simulated penetration",
+                "Penetration of the imaginary shell. Compared with the armor's effective thickness.", 1f, " mm");
+            ToggleSetting(ArmorFragmentsPlugin.XRayAfterSimulation, "X-ray after shot",
+                "Switch on the X-ray view after each simulated shot.");
+            FloatSetting(ArmorFragmentsPlugin.XRayRadius, "X-ray radius",
+                "Parts within this distance of the impact are shown.", 1f, " m");
+            FloatSetting(ArmorFragmentsPlugin.XRayDuration, "X-ray duration",
+                "How long the X-ray view stays on.", 1f, " s");
+            FloatSetting(ArmorFragmentsPlugin.XRayDarkPercent, "Fully dark at",
+                "A part losing this share of its health is shown fully dark.", 1f, " %");
         }
 
         private void BuildFragments()

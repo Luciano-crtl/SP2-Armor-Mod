@@ -24,6 +24,13 @@ namespace ArmorFragments
         internal static ConfigEntry<float> BubbleLifetime;
         internal static ConfigEntry<bool> MirrorLogToGameConsole;
 
+        // Shot simulation and X-ray view.
+        internal static ConfigEntry<float> SimPenetration;
+        internal static ConfigEntry<bool> XRayAfterSimulation;
+        internal static ConfigEntry<float> XRayRadius;
+        internal static ConfigEntry<float> XRayDuration;
+        internal static ConfigEntry<float> XRayDarkPercent;
+
         // Ricochet. Angles: 0 = head-on, 90 = grazing.
         // A hit ricochets when its angle >= (base angle * multiplier).
         internal static ConfigEntry<int> MaxRicochets;
@@ -35,6 +42,7 @@ namespace ArmorFragments
         private void Update()
         {
             UI.DesignerSection.Tick();
+            XRayView.Tick();
         }
 
         private void Awake()
@@ -77,6 +85,23 @@ namespace ArmorFragments
             MirrorLogToGameConsole = Config.Bind("Debug", "MirrorLogToGameConsole", false,
                 "If true, also prints this plugin's log lines to the game's developer console. " +
                 "They then show up twice in LogOutput.log (once as 'Unity Log').");
+
+            SimPenetration = Config.Bind("Simulation", "SimulatedPenetration", 100f,
+                new ConfigDescription(
+                    "Penetration (mm) of the imaginary shell fired by the 'Simulate shot' button.",
+                    new AcceptableValueRange<float>(1f, 1000f)));
+            XRayAfterSimulation = Config.Bind("Simulation", "XRayAfterSimulation", true,
+                "If true, a simulated shot switches on the X-ray view.");
+            XRayRadius = Config.Bind("Simulation", "XRayRadius", 40f,
+                new ConfigDescription("Parts within this distance (m) of the impact are shown in the X-ray view.",
+                    new AcceptableValueRange<float>(5f, 200f)));
+            XRayDuration = Config.Bind("Simulation", "XRayDuration", 8f,
+                new ConfigDescription("Seconds the X-ray view stays on.",
+                    new AcceptableValueRange<float>(1f, 120f)));
+            XRayDarkPercent = Config.Bind("Simulation", "XRayDarkPercent", 30f,
+                new ConfigDescription(
+                    "A part that would lose this percentage of its health is shown fully dark.",
+                    new AcceptableValueRange<float>(1f, 100f)));
 
             MaxRicochets = Config.Bind("Ricochet", "MaxRicochets", 2,
                 new ConfigDescription(

@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Craft.Parts;
+﻿using System.Collections.Generic;
+using Assets.Scripts.Craft.Parts;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
 using UnityEngine;
 
@@ -14,6 +15,10 @@ namespace ArmorFragments
 
         private static readonly RaycastHit[] Hits = new RaycastHit[64];
 
+        // While not null, the damage every fragment WOULD do is added up per part here.
+        // The shot simulator sets it for one shot, then clears it.
+        public static Dictionary<PartScript, float> DamageSink;
+
         private struct TraceResult
         {
             public bool HitPart;
@@ -24,8 +29,10 @@ namespace ArmorFragments
         // angle: 0 = head-on, 90 = grazing (same convention as the hit log).
         public static void Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag,
                                  Vector3 point, Vector3 direction,
-                                 Vector3 normal, float angle, bool applyDamage)
+                                 Vector3 normal, float angle, bool applyDamage,
+                                 bool simulated = false)
         {
+            string tag = simulated ? "[SIM] " : "";
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
             bool draw = ArmorFragmentsPlugin.DrawRays.Value;
 
@@ -53,15 +60,15 @@ namespace ArmorFragments
                                          null, applyDamage, mask);
                 if (draw) RayDrawer.Animate(path, 0f);
 
-                LastImpact.Record("Armor ricochet (single ray)", angle, armorTolerated,
+                LastImpact.Record(tag + "Armor ricochet (single ray)", angle, armorTolerated,
                                   r.HitPart ? 1 : 0, 1 + r.Ricochets, r.Damage);
 
                 ArmorFragmentsPlugin.Log.LogInfo(
-                    "Armor ricochet: angle " + angle.ToString("F0") + " >= tolerated " +
+                    tag + "Armor ricochet: angle " + angle.ToString("F0") + " >= tolerated " +
                     armorTolerated.ToString("F0") + " deg. Single ray: " +
                     (r.HitPart ? "hit a part" : "hit no part") + ", extra ricochets " +
                     r.Ricochets + ", total damage " + r.Damage.ToString("F1") +
-                    (applyDamage ? "" : " (damage off)"));
+                    (applyDamage ? "" : " (not applied)"));
                 return;
             }
 
@@ -84,8 +91,8 @@ namespace ArmorFragments
                     RayDrawer.Animate(blockedShell, 0f);
                 }
 
-                LastImpact.Record("Blocked (penetration " + comparison + ")", angle, armorTolerated, 0, 0, 0f);
-                ArmorFragmentsPlugin.Log.LogInfo("Shell blocked by armor: penetration " + comparison);
+                LastImpact.Record(tag + "Blocked (penetration " + comparison + ")", angle, armorTolerated, 0, 0, 0f);
+                ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell blocked by armor: penetration " + comparison);
                 return;
             }
 
@@ -120,13 +127,13 @@ namespace ArmorFragments
                 totalDamage += r.Damage;
             }
 
-            LastImpact.Record("Penetrated (" + comparison + "), " + FragmentCount + " rays", angle, armorTolerated,
+            LastImpact.Record(tag + "Penetrated (" + comparison + "), " + FragmentCount + " rays", angle, armorTolerated,
                               partsHit, ricochets, totalDamage);
 
             ArmorFragmentsPlugin.Log.LogInfo(
-                "Fragments: " + partsHit + " of " + FragmentCount + " rays hit a part, " +
+                tag + "Fragments: " + partsHit + " of " + FragmentCount + " rays hit a part, " +
                 ricochets + " ricochets, total damage " + totalDamage.ToString("F1") +
-                (applyDamage ? "" : " (damage off)"));
+                (applyDamage ? "" : " (not applied)"));
         }
 
         // Follows one ray and records its route in 'path'. It stops at the first thing it
@@ -197,17 +204,22 @@ namespace ArmorFragments
                     path.Add(hit.point, RayKind.Hit);
                     path.Final = RayKind.Hit;
                     result.HitPart = true;
-                    if (applyDamage)
-                    {
-                        float falloff = 1f - traveled / MaxRange;
-                        float damage = ArmorFragmentsPlugin.DamagePerFragment.Value * falloff;
 
-                        // A part marked [MOD d=...] ignores fragments weaker than that.
-                        ModuleTag module = TagCodec.Parse(part.Part.Name).Module;
-                        if (module == null || damage >= module.MinDamage)
+                    float falloff = 1f - traveled / MaxRange;
+                    float damage = ArmorFragmentsPlugin.DamagePerFragment.Value * falloff;
+
+                    // A part marked [MOD d=...] ignores fragments weaker than that.
+                    ModuleTag module = TagCodec.Parse(part.Part.Name).Module;
+                    if (module == null || damage >= module.MinDamage)
+                    {
+                        if (applyDamage) part.OnDamaged(null, damage, hit.point, dir);
+                        result.Damage += damage;   // counted even when not applied: "would-be" damage
+
+                        if (DamageSink != null)
                         {
-                            part.OnDamaged(null, damage, hit.point, dir);
-                            result.Damage += damage;
+                            float sum;
+                            DamageSink.TryGetValue(part, out sum);
+                            DamageSink[part] = sum + damage;
                         }
                     }
                 }
