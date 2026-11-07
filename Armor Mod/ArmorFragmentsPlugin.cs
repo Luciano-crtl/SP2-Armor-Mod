@@ -158,15 +158,17 @@ namespace ArmorFragments
                 new ConfigDescription("Caliber (mm) of the simulated shell. With its mass and speed it gives the shell's energy.",
                     new AcceptableValueRange<float>(5f, 500f)));
             SimShellMass = Config.Bind("Energy", "SimulatedShellMass", 10f,
-                new ConfigDescription("Mass of the simulated shell (same units as a real shell's mass).",
+                new ConfigDescription("Mass (kg) of the simulated shell. A 40 mm shell is about 0.9 kg.",
                     new AcceptableValueRange<float>(0.01f, 1000f)));
             SimShellVelocity = Config.Bind("Energy", "SimulatedShellVelocity", 800f,
                 new ConfigDescription("Speed (m/s) of the simulated shell.",
                     new AcceptableValueRange<float>(10f, 3000f)));
-            ArmorResistance = Config.Bind("Energy", "ArmorResistance", 40f,
+            ArmorResistance = Config.Bind("Energy", "ArmorResistance", 600f,
                 new ConfigDescription(
                     "How much energy armor takes, in joules per mm of thickness crossed per cm2 of shell area. " +
-                    "About 40 for steel (its shear strength). The shell is blocked if its energy is lower than " +
+                    "Opening a plug of steel only needs about 40, but real shells lose most of their energy to " +
+                    "deformation and heat, so about 600 matches real penetration (a 40 mm shell at 1000 m/s " +
+                    "goes through roughly 50-60 mm of steel). The shell is blocked if its energy is lower than " +
                     "resistance x thickness (divided by cos of the angle) x shell area.",
                     new AcceptableValueRange<float>(0.1f, 2000f)));
             RicochetFriction = Config.Bind("Energy", "RicochetFriction", 0.2f,

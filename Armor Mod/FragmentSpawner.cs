@@ -12,6 +12,14 @@ namespace ArmorFragments
         public float FirstTime;   // seconds after the shot starts until the first fragment touches it
     }
 
+    // How an impact on armor was resolved.
+    internal enum ImpactOutcome
+    {
+        Ricochet,    // the shell bounced off (its own physics can carry it on)
+        Blocked,     // the armor stopped it
+        Penetrated,  // it went through and made fragments
+    }
+
     internal static class FragmentSpawner
     {
         // Length of the drawn shell track before the impact, in meters.
@@ -38,7 +46,7 @@ namespace ArmorFragments
         // angle: 0 = head-on, 90 = grazing (same convention as the hit log).
         // leadTime: seconds the initial ray (the shell) takes to reach the armor, when the caller
         //           has already drawn it. Negative = draw the usual short shell track here.
-        public static void Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag, ShellInfo shell,
+        public static ImpactOutcome Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag, ShellInfo shell,
                                  Vector3 point, Vector3 direction,
                                  Vector3 normal, float angle, bool applyDamage,
                                  bool simulated = false, float leadTime = -1f)
@@ -93,7 +101,7 @@ namespace ArmorFragments
                     (r.HitPart ? "hit a part" : "hit no part") + ", extra ricochets " +
                     r.Ricochets + ", total damage " + r.Damage.ToString("F1") +
                     (applyDamage ? "" : " (not applied)"));
-                return;
+                return ImpactOutcome.Ricochet;
             }
 
             // 2) Does the shell have the energy to get through? The armor takes energy in proportion
@@ -110,7 +118,7 @@ namespace ArmorFragments
             {
                 LastImpact.Record(tag + "Blocked (" + comparison + ")", angle, armorTolerated, 0, 0, 0f);
                 ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell blocked by armor: " + comparison);
-                return;
+                return ImpactOutcome.Blocked;
             }
             LastImpact.Residual = shellEnergy - absorbed;
 
@@ -140,6 +148,7 @@ namespace ArmorFragments
                 tag + "Fragments: " + partsHit + " of " + fragmentCount + " rays hit a part, " +
                 ricochets + " ricochets, total damage " + totalDamage.ToString("F1") +
                 (applyDamage ? "" : " (not applied)"));
+            return ImpactOutcome.Penetrated;
         }
 
         // Follows one ray and records its route in 'path'. It stops at the first thing it

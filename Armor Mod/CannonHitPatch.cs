@@ -16,9 +16,15 @@ namespace ArmorFragments
         // Harmony fills this argument with the shell's private field
         // _previousFrameVelocity: three underscores + the field's name.
         // ____cannonScript is the cannon that fired this shell (also a private field).
+        //
+        // __state tells the Postfix whether this impact was resolved by our model, in which case the
+        // physical shell has done its job and must go (otherwise the game's physics keeps bouncing it
+        // around, which looks like a ricochet no matter what the model decided).
         private static void Prefix(CannonProjectileScript __instance, Collision collision,
-                                   Vector3 ____previousFrameVelocity, CannonScript ____cannonScript)
+                                   Vector3 ____previousFrameVelocity, CannonScript ____cannonScript,
+                                   out bool __state)
         {
+            __state = false;
             if (collision.contactCount == 0) return;
 
             ContactPoint contact = collision.GetContact(0);
@@ -62,17 +68,42 @@ namespace ArmorFragments
                     // Not armor: the game stops the shell here (damage, explosion...).
                     // A ballistic ray carries on in its place, until it meets armor.
                     ContinueAsBallisticRay(part, cannon, shell, contact.point, direction);
+                    __state = true;   // the ray replaces the shell
                     return;
                 }
 
-                FragmentSpawner.Spawn(part, armor, cannon, shell, contact.point, direction,
+                ImpactOutcome outcome = FragmentSpawner.Spawn(part, armor, cannon, shell, contact.point, direction,
                     contact.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value);
+
+                // Blocked or penetrated: the energy has been accounted for. Only a ricochet leaves
+                // the physical shell flying (it really does bounce away).
+                __state = outcome != ImpactOutcome.Ricochet;
             }
             catch (System.Exception e)
             {
                 ArmorFragmentsPlugin.Log.LogError("Fragment spawn failed: " + e);
             }
         }
+
+        // After the game has handled the collision (damage, explosion if it is an explosive shell):
+        // a shell that is still alive and was resolved by our model is stopped dead and retired by the
+        // game's own end-of-life path (the self-destruct timer), so it cannot bounce on.
+        private static void Postfix(CannonProjectileScript __instance, bool __state)
+        {
+            if (!__state || __instance == null || __instance.IsDead || __instance.HasExploded) return;
+
+            Rigidbody body = __instance.Rigidbody;
+            if (body != null)
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
+            __instance.SelfDestructTimer = 0f;
+        }
+
+        // The game keeps every mass at 1/100 of its real value (the designer divides by 0.01 to show
+        // kilograms, and the cannon sets a shell's mass as volume x density x 0.01).
+        private const float GameMassScale = 0.01f;
 
         // Mass: the shell's own Rigidbody (the game sets it from the cannon's projectile volume).
         // Caliber: from the cannon that fired it; if that cannon is gone, from the shell's own size
@@ -97,7 +128,7 @@ namespace ArmorFragments
 
             return new ShellInfo
             {
-                Mass = body != null ? body.mass : 1f,
+                Mass = body != null ? body.mass / GameMassScale : 1f,   // kilograms
                 Speed = speed,
                 CaliberMm = caliber,
             };

@@ -132,7 +132,7 @@ namespace ArmorFragments.UI
             }
 
             FloatSetting(ArmorFragmentsPlugin.SimShellMass, "Sim shell mass",
-                "Mass of the imaginary shell. With its speed it gives the shell's energy.", 0.1f, "");
+                "Mass of the imaginary shell. With its speed it gives the shell's energy.", 0.1f, " kg");
             FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Sim shell speed",
                 "Speed of the imaginary shell.", 10f, " m/s");
             FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Sim caliber",
@@ -188,7 +188,7 @@ namespace ArmorFragments.UI
             FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Sim shell hardness",
                 "Shell hardness of the simulated shot.", 5f, " %");
             FloatSetting(ArmorFragmentsPlugin.ArmorResistance, "Armor resistance",
-                "Energy armor takes: joules per mm of thickness crossed per cm2 of shell area (about 40 for steel).", 1f, " J/mm/cm2");
+                "Energy armor takes, per mm of thickness crossed per cm2 of shell area. About 600 matches real steel.", 5f, " J/mm/cm2");
             FloatSetting(ArmorFragmentsPlugin.RicochetFriction, "Ricochet friction",
                 "Share of the sliding energy lost in a ricochet.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.RicochetRandomness, "Ricochet randomness",
