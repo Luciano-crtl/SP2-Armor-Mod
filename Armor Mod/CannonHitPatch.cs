@@ -47,7 +47,7 @@ namespace ArmorFragments
             angle = Mathf.Min(angle, 180f - angle);
 
             // The shell as the energy model sees it: its real mass and speed, and its caliber.
-            ShellInfo shell = BuildShell(__instance, ____cannonScript, speed);
+            ShellInfo shell = BuildShell(__instance, ____cannonScript, cannon, speed);
 
             ArmorFragmentsPlugin.Log.LogInfo(
                 "Shell hit part '" + part.Part.Name + "' at " +
@@ -108,14 +108,15 @@ namespace ArmorFragments
         // Mass: the shell's own Rigidbody (the game sets it from the cannon's projectile volume).
         // Caliber: from the cannon that fired it; if that cannon is gone, from the shell's own size
         // (the game scales the shell to half the cannon's diameter, and caliber = scale x 1000 mm).
-        private static ShellInfo BuildShell(CannonProjectileScript projectile, CannonScript cannon, float speed)
+        private static ShellInfo BuildShell(CannonProjectileScript projectile, CannonScript cannonScript,
+                                            CannonTag cannonTag, float speed)
         {
             Rigidbody body = projectile.GetComponent<Rigidbody>();
 
             float caliber = projectile.transform.localScale.x * 1000f;
-            if (cannon != null && cannon.PartScript != null)
+            if (cannonScript != null && cannonScript.PartScript != null)
             {
-                foreach (PartModifierData modifier in cannon.PartScript.Part.Modifiers)
+                foreach (PartModifierData modifier in cannonScript.PartScript.Part.Modifiers)
                 {
                     CannonData data = modifier as CannonData;
                     if (data != null)
@@ -131,6 +132,7 @@ namespace ArmorFragments
                 Mass = body != null ? body.mass / GameMassScale : 1f,   // kilograms
                 Speed = speed,
                 CaliberMm = caliber,
+                Hardness = cannonTag != null ? cannonTag.ShellHardness : ArmorFragmentsPlugin.DefaultShellHardness.Value,
             };
         }
 

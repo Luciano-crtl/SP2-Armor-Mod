@@ -160,6 +160,7 @@ namespace ArmorFragments
                     Mass = ArmorFragmentsPlugin.SimShellMass.Value,
                     Speed = ArmorFragmentsPlugin.SimShellVelocity.Value,
                     CaliberMm = ArmorFragmentsPlugin.SimCaliber.Value,
+                    Hardness = ArmorFragmentsPlugin.SimShellHardness.Value,
                 };
                 FragmentSpawner.Spawn(part, armor, cannon, shell, hit.point, direction, hit.normal, angle,
                                       false, true, leadTime);

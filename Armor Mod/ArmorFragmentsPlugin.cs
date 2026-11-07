@@ -149,10 +149,10 @@ namespace ArmorFragments
 
             const string NotUsed = " (Energy model: not used by the calculation yet.)";
             DefaultShellHardness = Config.Bind("Energy", "DefaultShellHardness", 100f,
-                new ConfigDescription("Shell hardness (%) for cannons without a [CAN k=] tag." + NotUsed,
+                new ConfigDescription("Shell hardness (%) for cannons without a [CAN k=] tag. Compared with the armor's hardness for the ricochet angle.",
                     new AcceptableValueRange<float>(10f, 300f)));
             SimShellHardness = Config.Bind("Energy", "SimulatedShellHardness", 100f,
-                new ConfigDescription("Shell hardness (%) of the simulated shot." + NotUsed,
+                new ConfigDescription("Shell hardness (%) of the simulated shot. Compared with the armor's hardness for the ricochet angle.",
                     new AcceptableValueRange<float>(10f, 300f)));
             SimCaliber = Config.Bind("Energy", "SimulatedCaliber", 100f,
                 new ConfigDescription("Caliber (mm) of the simulated shell. With its mass and speed it gives the shell's energy.",
@@ -172,10 +172,10 @@ namespace ArmorFragments
                     "resistance x thickness (divided by cos of the angle) x shell area.",
                     new AcceptableValueRange<float>(0.1f, 2000f)));
             RicochetFriction = Config.Bind("Energy", "RicochetFriction", 0.2f,
-                new ConfigDescription("Share of the sliding energy lost in a ricochet." + NotUsed,
+                new ConfigDescription("Share of the sliding energy a shell loses in a ricochet (it keeps sin^2 of the angle, minus this).",
                     new AcceptableValueRange<float>(0f, 1f)));
             RicochetRandomness = Config.Bind("Energy", "RicochetRandomness", 50f,
-                new ConfigDescription("Small random shift of the ricochet angle, 0% = none (same result every time), 100% = about 5 degrees." + NotUsed,
+                new ConfigDescription("Small random shift of the critical ricochet angle at each impact. 0% = none (same result every time), 100% = up to 5 degrees either way.",
                     new AcceptableValueRange<float>(0f, 100f)));
             DamagePerKiloJoule = Config.Bind("Energy", "DamagePerKiloJoule", 1f,
                 new ConfigDescription("Part damage per kilojoule of energy a fragment leaves in a part." + NotUsed,
@@ -226,13 +226,15 @@ namespace ArmorFragments
                     new AcceptableValueRange<int>(0, 10)));
             ArmorRicochetAngle = Config.Bind("Ricochet", "ArmorRicochetAngle", 70f,
                 new ConfigDescription(
-                    "Base impact angle (degrees) at which a shell ricochets off an ARM_ part " +
-                    "instead of spawning fragments. 0 = head-on, 90 = grazing.",
+                    "Impact angle (degrees) from which a shell ricochets off armor when armor and shell have " +
+                    "the same hardness and the shell flies at 800 m/s. Harder armor, a slower shell lower it; " +
+                    "softer armor, a faster shell raise it; a shell much bigger than the plate is thick never " +
+                    "ricochets. 0 = head-on, 90 = grazing.",
                     new AcceptableValueRange<float>(0f, 90f)));
             ArmorRicochetMultiplier = Config.Bind("Ricochet", "ArmorRicochetMultiplier", 1f,
                 new ConfigDescription(
-                    "Multiplies the armor angle. Above 1 the armor tolerates steeper hits before " +
-                    "ricocheting; below 1 it ricochets sooner. The result is capped at 90.",
+                    "Multiplies the armor's critical ricochet angle (for testing). Above 1 the armor tolerates " +
+                    "steeper hits before ricocheting; below 1 it ricochets sooner. The result is capped at 90.",
                     new AcceptableValueRange<float>(0f, 10f)));
             FragmentRicochetAngle = Config.Bind("Ricochet", "FragmentRicochetAngle", 60f,
                 new ConfigDescription(

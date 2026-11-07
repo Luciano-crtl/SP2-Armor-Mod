@@ -89,7 +89,7 @@ namespace ArmorFragments.UI
                 : "-");
             Live("Shell energy", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.ShellEnergy) : "-");
             Live("Absorbed by armor", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Absorbed) : "-");
-            Live("Left for fragments", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Residual) : "-");
+            Live("Energy left", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Residual) : "-");
             Live("Rays that hit a part", () => LastImpact.HasData ? LastImpact.RaysHit.ToString() : "-");
             Live("Ricochets", () => LastImpact.HasData ? LastImpact.Ricochets.ToString() : "-");
             Live("Total damage", () => LastImpact.HasData ? LastImpact.Damage.ToString("F1") : "-");
@@ -178,21 +178,21 @@ namespace ArmorFragments.UI
         private void BuildEnergyModel()
         {
             builder.Header("Energy model (partly active)", collapsed: true);
-            builder.Text("Status", "Armor resistance is active; the rest is not used yet");
+            builder.Text("Status", "Armor resistance and ricochet are active; the rest is not used yet");
 
             ToggleSetting(ArmorFragmentsPlugin.LogChordDiagnostics, "Log chord diagnostics",
                 "Each simulated shot writes how far the line travels inside every part to the log ([CHORD] lines).");
 
             FloatSetting(ArmorFragmentsPlugin.DefaultShellHardness, "Default shell hardness",
-                "Shell hardness for cannons without a [CAN k=] tag.", 5f, " %");
+                "Shell hardness for cannons without a [CAN k=] tag. Used for the ricochet angle.", 5f, " %");
             FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Sim shell hardness",
-                "Shell hardness of the simulated shot.", 5f, " %");
+                "Shell hardness of the simulated shot. Used for the ricochet angle.", 5f, " %");
             FloatSetting(ArmorFragmentsPlugin.ArmorResistance, "Armor resistance",
                 "Energy armor takes, per mm of thickness crossed per cm2 of shell area. About 600 matches real steel.", 5f, " J/mm/cm2");
             FloatSetting(ArmorFragmentsPlugin.RicochetFriction, "Ricochet friction",
-                "Share of the sliding energy lost in a ricochet.", 0.05f, "");
+                "Share of the sliding energy a shell loses in a ricochet.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.RicochetRandomness, "Ricochet randomness",
-                "Small random shift of the ricochet angle. 0% = none.", 5f, " %");
+                "Small random shift of the critical ricochet angle. 0% = none, 100% = up to 5 degrees.", 5f, " %");
             FloatSetting(ArmorFragmentsPlugin.DamagePerKiloJoule, "Damage per kJ",
                 "Part damage per kilojoule left in a part.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.DensityModifier, "Density modifier",
@@ -232,7 +232,7 @@ namespace ArmorFragments.UI
             IntSetting(ArmorFragmentsPlugin.MaxRicochets, "Max ricochets",
                 "How many times one ray may bounce. The bounce off the armor counts as the first. 0 turns ricochets off.");
             FloatSetting(ArmorFragmentsPlugin.ArmorRicochetAngle, "Armor angle",
-                "Impact angle (0 = head-on, 90 = grazing) from which a shell ricochets off the armor.", 1f, " deg");
+                "Reference critical angle (equal hardness, 800 m/s). Hardness, speed and overmatch move it.", 1f, " deg");
             FloatSetting(ArmorFragmentsPlugin.ArmorRicochetMultiplier, "Armor multiplier",
                 "Multiplies the armor angle. Above 1 the armor takes steeper hits before ricocheting.", 0.05f, "x");
             FloatSetting(ArmorFragmentsPlugin.FragmentRicochetAngle, "Fragment angle",

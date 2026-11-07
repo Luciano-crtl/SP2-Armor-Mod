@@ -72,10 +72,13 @@ namespace ArmorFragments
                 leadTime = BallisticRay.DrawInitialRay(new[] { point - direction * ShellLeadIn, point });
             }
 
-            // 1) Grazing hit on the armor: no penetration, one ricocheted ray.
-            float armorTolerated = ToleratedAngle(
-                ArmorFragmentsPlugin.ArmorRicochetAngle.Value,
-                ArmorFragmentsPlugin.ArmorRicochetMultiplier.Value);
+            // 1) Ricochet: does this shell bounce off this armor at this angle? The critical angle
+            //    depends on the hardnesses, the speed and the caliber against the thickness.
+            string criticalBreakdown;
+            float armorTolerated = EnergyModel.RicochetCriticalAngle(armorTag, shell, out criticalBreakdown);
+            ArmorFragmentsPlugin.Log.LogInfo(
+                tag + "Ricochet check: angle " + angle.ToString("F0") + " deg, critical " +
+                Mathf.Min(armorTolerated, 90f).ToString("F1") + " deg (" + criticalBreakdown + ")");
 
             if (ArmorFragmentsPlugin.MaxRicochets.Value > 0 && angle >= armorTolerated)
             {
@@ -92,12 +95,18 @@ namespace ArmorFragments
                                          null, applyDamage, mask, leadTime);
                 if (draw) RayDrawer.Animate(path, leadTime);
 
-                LastImpact.Record(tag + "Armor ricochet (single ray)", angle, armorTolerated,
+                // What the shell keeps after the bounce; the rest stays in the armor.
+                float energyOut = EnergyModel.RicochetEnergyOut(shell.Energy, angle);
+                LastImpact.Absorbed = shell.Energy - energyOut;
+                LastImpact.Residual = energyOut;
+
+                LastImpact.Record(tag + "Armor ricochet (single ray)", angle, Mathf.Min(armorTolerated, 90f),
                                   r.HitPart ? 1 : 0, 1 + r.Ricochets, r.Damage);
 
                 ArmorFragmentsPlugin.Log.LogInfo(
-                    tag + "Armor ricochet: angle " + angle.ToString("F0") + " >= tolerated " +
-                    armorTolerated.ToString("F0") + " deg. Single ray: " +
+                    tag + "Armor ricochet: angle " + angle.ToString("F0") + " >= critical " +
+                    armorTolerated.ToString("F0") + " deg, shell keeps " + EnergyModel.Kilojoules(energyOut) +
+                    " of " + EnergyModel.Kilojoules(shell.Energy) + ". Single ray: " +
                     (r.HitPart ? "hit a part" : "hit no part") + ", extra ricochets " +
                     r.Ricochets + ", total damage " + r.Damage.ToString("F1") +
                     (applyDamage ? "" : " (not applied)"));
@@ -116,7 +125,7 @@ namespace ArmorFragments
 
             if (shellEnergy < absorbed)
             {
-                LastImpact.Record(tag + "Blocked (" + comparison + ")", angle, armorTolerated, 0, 0, 0f);
+                LastImpact.Record(tag + "Blocked (" + comparison + ")", angle, Mathf.Min(armorTolerated, 90f), 0, 0, 0f);
                 ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell blocked by armor: " + comparison);
                 return ImpactOutcome.Blocked;
             }
@@ -141,7 +150,7 @@ namespace ArmorFragments
                 totalDamage += r.Damage;
             }
 
-            LastImpact.Record(tag + "Penetrated (" + comparison + "), " + fragmentCount + " rays", angle, armorTolerated,
+            LastImpact.Record(tag + "Penetrated (" + comparison + "), " + fragmentCount + " rays", angle, Mathf.Min(armorTolerated, 90f),
                               partsHit, ricochets, totalDamage);
 
             ArmorFragmentsPlugin.Log.LogInfo(
