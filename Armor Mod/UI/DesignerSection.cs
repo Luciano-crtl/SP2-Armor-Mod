@@ -129,6 +129,8 @@ namespace ArmorFragments.UI
                 {
                     Slider(builder, tags, "Penetration", "Thickness of armor the shell can defeat.",
                         1f, 1000f, 1f, tags.Cannon.Penetration, " mm", v => tags.Cannon.Penetration = v);
+                    Slider(builder, tags, "Fragments", "How many fragment rays a shell makes when it penetrates armor.",
+                        1f, 200f, 1f, tags.Cannon.Fragments, "", v => tags.Cannon.Fragments = Mathf.RoundToInt(v));
                 }
             }
 

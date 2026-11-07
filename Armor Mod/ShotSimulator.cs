@@ -39,55 +39,25 @@ namespace ArmorFragments
             Vector3 origin = camera.transform.position;
             Vector3 direction = camera.transform.forward;
 
-            // Everything along the line, nearest first (real shells in flight are ignored).
-            int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
-            RaycastHit[] hits = Physics.RaycastAll(
-                origin, direction, MaxDistance, mask, QueryTriggerInteraction.Ignore);
-            System.Array.Sort(hits, (x, y) => x.distance.CompareTo(y.distance));
-
             // The shell flies through every part that is not armor and stops at the first
-            // armor part. It also stops at anything that is not a part (the ground, for example).
-            HashSet<PartScript> passedThrough = new HashSet<PartScript>();
-            RaycastHit hit = default(RaycastHit);
-            PartScript part = null;
-            ArmorTag armor = null;
-            string stoppedBy = null;
+            // armor part (or at anything that is not a part, like the ground).
+            BallisticRay.Result ray = BallisticRay.Trace(origin, direction, MaxDistance, null);
 
-            foreach (RaycastHit candidate in hits)
-            {
-                if (candidate.collider.GetComponentInParent<CannonProjectileScript>() != null) continue;
-
-                PartScript candidatePart = candidate.collider.GetComponentInParent<PartScript>();
-                if (candidatePart == null)
-                {
-                    stoppedBy = "'" + candidate.collider.name + "' at " +
-                                candidate.distance.ToString("F0") + " m (not a part)";
-                    break;
-                }
-
-                ArmorTag candidateArmor = TagCodec.Parse(candidatePart.Part.Name).Armor;
-                if (candidateArmor == null)
-                {
-                    passedThrough.Add(candidatePart);   // no [ARM] tag: the shell goes through
-                    continue;
-                }
-
-                hit = candidate;
-                part = candidatePart;
-                armor = candidateArmor;
-                break;
-            }
-
-            string passed = passedThrough.Count == 0
+            string passed = ray.PassedThrough == 0
                 ? ""
-                : "Passed through " + passedThrough.Count + " non-armor parts. ";
+                : "Passed through " + ray.PassedThrough + " non-armor parts. ";
 
-            if (armor == null)
+            if (ray.Armor == null)
             {
-                Message = passed + (stoppedBy != null ? "Stopped by " + stoppedBy : "No armor on the way");
+                Message = passed + (ray.StoppedBy != null ? "Stopped by " + ray.StoppedBy : "No armor on the way");
                 XRayView.Hide();
                 return;
             }
+
+            PartScript part = ray.Part;
+            ArmorTag armor = ray.Armor;
+            RaycastHit hit = ray.Hit;
+            BallisticRay.DrawTrack(ray.FirstPoint, ray);
 
             float angle = Vector3.Angle(direction, hit.normal);
             angle = Mathf.Min(angle, 180f - angle);
@@ -98,7 +68,11 @@ namespace ArmorFragments
             FragmentSpawner.DamageSink = sink;
             try
             {
-                CannonTag shell = new CannonTag { Penetration = ArmorFragmentsPlugin.SimPenetration.Value };
+                CannonTag shell = new CannonTag
+                {
+                    Penetration = ArmorFragmentsPlugin.SimPenetration.Value,
+                    Fragments = ArmorFragmentsPlugin.SimFragmentCount.Value,
+                };
                 FragmentSpawner.Spawn(part, armor, shell, hit.point, direction, hit.normal, angle,
                                       false, true);
             }

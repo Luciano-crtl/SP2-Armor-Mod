@@ -16,6 +16,8 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> ApplyDamage;
         internal static ConfigEntry<float> DamagePerFragment;
         internal static ConfigEntry<float> DefaultPenetration;
+        internal static ConfigEntry<int> DefaultFragmentCount;
+        internal static ConfigEntry<float> BallisticRayRange;
         internal static ConfigEntry<bool> DrawRays;
         internal static ConfigEntry<float> RayWidth;
         internal static ConfigEntry<float> RaySpeed;
@@ -26,6 +28,7 @@ namespace ArmorFragments
 
         // Shot simulation and X-ray view.
         internal static ConfigEntry<float> SimPenetration;
+        internal static ConfigEntry<int> SimFragmentCount;
         internal static ConfigEntry<bool> XRayAfterSimulation;
         internal static ConfigEntry<float> XRayRadius;
         internal static ConfigEntry<float> XRayDuration;
@@ -63,6 +66,14 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "Penetration (mm) of shells from a cannon that has no [CAN] tag in its name.",
                     new AcceptableValueRange<float>(0f, 1000f)));
+            DefaultFragmentCount = Config.Bind("Fragments", "DefaultFragmentCount", 20,
+                new ConfigDescription(
+                    "Fragment rays made when a shell penetrates armor, for cannons without a [CAN f=] tag.",
+                    new AcceptableValueRange<int>(1, 200)));
+            BallisticRayRange = Config.Bind("Fragments", "BallisticRayRange", 100f,
+                new ConfigDescription(
+                    "When a real shell stops in a part that is not armor, a ballistic ray carries on this far (m) looking for armor.",
+                    new AcceptableValueRange<float>(1f, 1000f)));
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
             RayWidth = Config.Bind("Debug", "RayWidth", 0.02f,
@@ -90,6 +101,10 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "Penetration (mm) of the imaginary shell fired by the 'Simulate shot' button.",
                     new AcceptableValueRange<float>(1f, 1000f)));
+            SimFragmentCount = Config.Bind("Simulation", "SimulatedFragmentCount", 20,
+                new ConfigDescription(
+                    "Fragment rays made by the simulated shell when it penetrates armor.",
+                    new AcceptableValueRange<int>(1, 200)));
             XRayAfterSimulation = Config.Bind("Simulation", "XRayAfterSimulation", true,
                 "If true, a simulated shot switches on the X-ray view.");
             XRayRadius = Config.Bind("Simulation", "XRayRadius", 40f,

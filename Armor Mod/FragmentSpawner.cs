@@ -7,7 +7,6 @@ namespace ArmorFragments
 {
     internal static class FragmentSpawner
     {
-        private const int FragmentCount = 20;      // rays per shell hit
         private const float ConeHalfAngle = 35f;   // spread, in degrees
         private const float MaxRange = 30f;        // total path length of one ray, in meters
         private const float SurfaceOffset = 0.02f; // pushes a ricochet start point off the surface
@@ -33,6 +32,11 @@ namespace ArmorFragments
                                  bool simulated = false)
         {
             string tag = simulated ? "[SIM] " : "";
+
+            // How many fragment rays a penetrating shell makes: from the cannon's [CAN f=] tag.
+            int fragmentCount = Mathf.Clamp(
+                cannonTag != null ? cannonTag.Fragments : ArmorFragmentsPlugin.DefaultFragmentCount.Value,
+                1, 500);
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
             bool draw = ArmorFragmentsPlugin.DrawRays.Value;
 
@@ -113,7 +117,7 @@ namespace ArmorFragments
             int ricochets = 0;
             float totalDamage = 0f;
 
-            for (int i = 0; i < FragmentCount; i++)
+            for (int i = 0; i < fragmentCount; i++)
             {
                 Vector3 dir = RandomInCone(direction, ConeHalfAngle);
 
@@ -127,11 +131,11 @@ namespace ArmorFragments
                 totalDamage += r.Damage;
             }
 
-            LastImpact.Record(tag + "Penetrated (" + comparison + "), " + FragmentCount + " rays", angle, armorTolerated,
+            LastImpact.Record(tag + "Penetrated (" + comparison + "), " + fragmentCount + " rays", angle, armorTolerated,
                               partsHit, ricochets, totalDamage);
 
             ArmorFragmentsPlugin.Log.LogInfo(
-                tag + "Fragments: " + partsHit + " of " + FragmentCount + " rays hit a part, " +
+                tag + "Fragments: " + partsHit + " of " + fragmentCount + " rays hit a part, " +
                 ricochets + " ricochets, total damage " + totalDamage.ToString("F1") +
                 (applyDamage ? "" : " (not applied)"));
         }

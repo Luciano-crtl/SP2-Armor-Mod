@@ -26,7 +26,6 @@ namespace ArmorFragments
 
             // Only parts whose name carries an [ARM ...] tag act as armor.
             ArmorTag armor = TagCodec.Parse(part.Part.Name).Armor;
-            if (armor == null) return;
 
             // The firing cannon's [CAN ...] tag, if it has one (it may be destroyed already).
             CannonTag cannon = null;
@@ -50,9 +49,16 @@ namespace ArmorFragments
                 return; // once per shell
             }
 
-            ArmorFragmentsPlugin.Log.LogInfo("Calling FragmentSpawner.Spawn");
             try
             {
+                if (armor == null)
+                {
+                    // Not armor: the game stops the shell here (damage, explosion...).
+                    // A ballistic ray carries on in its place, until it meets armor.
+                    ContinueAsBallisticRay(part, cannon, contact.point, direction);
+                    return;
+                }
+
                 FragmentSpawner.Spawn(part, armor, cannon, contact.point, direction,
                     contact.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value);
             }
@@ -60,6 +66,36 @@ namespace ArmorFragments
             {
                 ArmorFragmentsPlugin.Log.LogError("Fragment spawn failed: " + e);
             }
+        }
+
+        // The shell has stopped in 'stoppedIn', which is not armor. The ray goes on in the shell's
+        // direction, flying through other non-armor parts, and meets the first armor part with the
+        // same rules (and the same damage) as a real shell that had hit it directly.
+        private static void ContinueAsBallisticRay(PartScript stoppedIn, CannonTag cannon,
+                                                   Vector3 from, Vector3 direction)
+        {
+            BallisticRay.Result ray = BallisticRay.Trace(
+                from, direction, ArmorFragmentsPlugin.BallisticRayRange.Value, stoppedIn);
+
+            if (ray.Armor == null)
+            {
+                ArmorFragmentsPlugin.Log.LogInfo(
+                    "Shell stopped in a non-armor part; its ballistic ray found no armor" +
+                    (ray.StoppedBy != null ? " (stopped by " + ray.StoppedBy + ")" : ""));
+                return;
+            }
+
+            float angle = Vector3.Angle(direction, ray.Hit.normal);
+            angle = Mathf.Min(angle, 180f - angle);
+
+            ArmorFragmentsPlugin.Log.LogInfo(
+                "Shell stopped in a non-armor part; its ballistic ray passed through " +
+                ray.PassedThrough + " parts and met armor '" + ray.Part.Part.Name + "' at " +
+                ray.Hit.distance.ToString("F1") + " m");
+
+            BallisticRay.DrawTrack(from, ray);
+            FragmentSpawner.Spawn(ray.Part, ray.Armor, cannon, ray.Hit.point, direction,
+                ray.Hit.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value);
         }
     }
 }

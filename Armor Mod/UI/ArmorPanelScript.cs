@@ -116,6 +116,8 @@ namespace ArmorFragments.UI
 
             FloatSetting(ArmorFragmentsPlugin.SimPenetration, "Simulated penetration",
                 "Penetration of the imaginary shell. Compared with the armor's effective thickness.", 1f, " mm");
+            IntSetting(ArmorFragmentsPlugin.SimFragmentCount, "Simulated fragments",
+                "Fragment rays made by the simulated shell when it penetrates.");
             ToggleSetting(ArmorFragmentsPlugin.XRayAfterSimulation, "X-ray after shot",
                 "Switch on the X-ray view after each simulated shot.");
             FloatSetting(ArmorFragmentsPlugin.XRayRadius, "X-ray radius",
@@ -133,6 +135,10 @@ namespace ArmorFragments.UI
                 "If on, fragments damage the parts they hit.");
             FloatSetting(ArmorFragmentsPlugin.DamagePerFragment, "Damage per fragment",
                 "Damage of one fragment at point-blank range. Falls off with distance.", 0.1f, "");
+            IntSetting(ArmorFragmentsPlugin.DefaultFragmentCount, "Default fragments",
+                "Fragment rays made when a shell penetrates, for cannons without a [CAN f=] tag.");
+            FloatSetting(ArmorFragmentsPlugin.BallisticRayRange, "Ballistic ray range",
+                "When a real shell stops in a non-armor part, a ray carries on this far looking for armor.", 1f, " m");
             FloatSetting(ArmorFragmentsPlugin.DefaultPenetration, "Default penetration",
                 "Penetration of shells from a cannon without a [CAN] tag in its name.", 1f, " mm");
         }

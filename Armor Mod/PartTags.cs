@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using UnityEngine;
 
 namespace ArmorFragments
 {
@@ -20,6 +21,7 @@ namespace ArmorFragments
     internal sealed class CannonTag
     {
         public float Penetration = 100f;   // p: millimeters of armor the shell can defeat
+        public int Fragments = 20;         // f: fragment rays created when the shell penetrates
     }
 
     // Part that reacts to fragment damage (engine, tank, propeller, some fuselages).
@@ -82,7 +84,11 @@ namespace ArmorFragments
                 }
                 else if (kind == "CAN")
                 {
-                    tags.Cannon = new CannonTag { Penetration = Get(values, "p", 100f) };
+                    tags.Cannon = new CannonTag
+                    {
+                        Penetration = Get(values, "p", 100f),
+                        Fragments = Mathf.Clamp(Mathf.RoundToInt(Get(values, "f", 20f)), 1, 500),
+                    };
                 }
                 else if (kind == "MOD")
                 {
@@ -103,7 +109,7 @@ namespace ArmorFragments
             if (tags.Armor != null)
                 Append(name, "[ARM t=" + Number(tags.Armor.Thickness) + " h=" + Number(tags.Armor.Hardness) + "]");
             if (tags.Cannon != null)
-                Append(name, "[CAN p=" + Number(tags.Cannon.Penetration) + "]");
+                Append(name, "[CAN p=" + Number(tags.Cannon.Penetration) + " f=" + tags.Cannon.Fragments + "]");
             if (tags.Module != null)
                 Append(name, "[MOD d=" + Number(tags.Module.MinDamage) + "]");
 
