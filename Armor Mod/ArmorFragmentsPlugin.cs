@@ -14,7 +14,6 @@ namespace ArmorFragments
         // These show up in BepInEx/config/com.yourname.armorfragments.cfg
         // after the first run, so you can tune them without rebuilding.
         internal static ConfigEntry<bool> ApplyDamage;
-        internal static ConfigEntry<float> DamagePerFragment;
         internal static ConfigEntry<int> DefaultFragmentCount;
         internal static ConfigEntry<float> BallisticRayRange;
         internal static ConfigEntry<bool> DrawRays;
@@ -84,10 +83,6 @@ namespace ArmorFragments
 
             ApplyDamage = Config.Bind("Fragments", "ApplyDamage", true,
                 "If true, fragments damage the parts they hit.");
-            DamagePerFragment = Config.Bind("Fragments", "DamagePerFragment", 5f,
-                new ConfigDescription(
-                    "Damage of one fragment at point-blank range. Falls off linearly to 0 at max range.",
-                    new AcceptableValueRange<float>(0f, 100f)));
             DefaultFragmentCount = Config.Bind("Fragments", "DefaultFragmentCount", 20,
                 new ConfigDescription(
                     "Fragment rays made when a shell penetrates armor, for cannons without a [CAN f=] tag.",
@@ -180,13 +175,13 @@ namespace ArmorFragments
                 new ConfigDescription("Small random shift of the critical ricochet angle at each impact. 0% = none (same result every time), 100% = up to 10 degrees either way.",
                     new AcceptableValueRange<float>(0f, 100f)));
             DamagePerKiloJoule = Config.Bind("Energy", "DamagePerKiloJoule", 1f,
-                new ConfigDescription("Part damage per kilojoule of energy a fragment leaves in a part." + NotUsed,
+                new ConfigDescription("Part damage per kilojoule of energy a fragment (or the shell's ray) leaves in a part. This is the damage scale.",
                     new AcceptableValueRange<float>(0.001f, 1000f)));
             DensityModifier = Config.Bind("Energy", "DensityModifier", 1f,
-                new ConfigDescription("Multiplies the density used for parts without tags." + NotUsed,
+                new ConfigDescription("Multiplies the density (mass over collider volume) of every part. Denser parts stop fragments sooner.",
                     new AcceptableValueRange<float>(0.1f, 10f)));
             ConstantForceLoss = Config.Bind("Energy", "ConstantForceLoss", false,
-                "Energy loss inside a part: off = proportional drag (exponential), on = constant force (linear)." + NotUsed);
+                "Energy a fragment loses inside a part: off = drag proportional to its speed (exponential), on = constant force (linear).");
             SimpleFragments = Config.Bind("Energy", "SimpleFragments", false,
                 "Off = fragments with their own mass, energy and speed (central ones carry more). On = equal energy and mass, fixed size (simpler).");
             ShellFragmentShare = Config.Bind("Energy", "ShellFragmentShare", 0.2f,
@@ -199,7 +194,7 @@ namespace ArmorFragments
                 new ConfigDescription("Cross-section (cm2) of every fragment in simple mode.",
                     new AcceptableValueRange<float>(0.01f, 20f)));
             MaxPartsPerFragment = Config.Bind("Energy", "MaxPartsPerFragment", 3,
-                new ConfigDescription("Most parts one fragment may cross before it stops." + NotUsed,
+                new ConfigDescription("Most parts one fragment may cross before it stops (it also stops when its energy runs out).",
                     new AcceptableValueRange<int>(1, 10)));
             SpreadBaseAngle = Config.Bind("Energy", "SpreadBaseAngle", 15f,
                 new ConfigDescription("Base spread of the fragment directions (degrees, one standard deviation). Brittle and thick plates widen it; leftover energy narrows it.",

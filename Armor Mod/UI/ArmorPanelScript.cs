@@ -185,8 +185,8 @@ namespace ArmorFragments.UI
         // Settings of the energy model (phase 2: they can be edited, the calculation does not use them yet).
         private void BuildEnergyModel()
         {
-            builder.Header("Energy model (partly active)", collapsed: true);
-            builder.Text("Status", "Armor, ricochet and the fragment cloud are active; the rest is not used yet");
+            builder.Header("Energy model", collapsed: true);
+            builder.Text("Status", "All active, except the visual speed multiplier");
 
             ToggleSetting(ArmorFragmentsPlugin.LogChordDiagnostics, "Log chord diagnostics",
                 "Each simulated shot writes how far the line travels inside every part to the log ([CHORD] lines).");
@@ -201,8 +201,6 @@ namespace ArmorFragments.UI
                 "Share of the sliding energy a shell loses in a ricochet.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.RicochetRandomness, "Ricochet randomness",
                 "Small random shift of the critical ricochet angle. 0% = none, 100% = up to 10 degrees.", 5f, " %");
-            FloatSetting(ArmorFragmentsPlugin.DamagePerKiloJoule, "Damage per kJ",
-                "Part damage per kilojoule left in a part.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.DensityModifier, "Density modifier",
                 "Multiplies the density of parts without tags.", 0.1f, "x");
             ToggleSetting(ArmorFragmentsPlugin.ConstantForceLoss, "Constant force loss",
@@ -230,8 +228,8 @@ namespace ArmorFragments.UI
             builder.Header("Fragments");
             ToggleSetting(ArmorFragmentsPlugin.ApplyDamage, "Apply damage",
                 "If on, fragments damage the parts they hit.");
-            FloatSetting(ArmorFragmentsPlugin.DamagePerFragment, "Damage per fragment",
-                "Damage of one fragment at point-blank range. Falls off with distance.", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.DamagePerKiloJoule, "Damage per kJ",
+                "Part damage per kilojoule a fragment leaves in a part. This is the damage scale.", 0.1f, "");
             IntSetting(ArmorFragmentsPlugin.DefaultFragmentCount, "Default fragments",
                 "Fragment rays made when a shell penetrates, for cannons without a [CAN f=] tag.");
             FloatSetting(ArmorFragmentsPlugin.BallisticRayRange, "Ballistic ray range",

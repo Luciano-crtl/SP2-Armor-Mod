@@ -35,6 +35,9 @@ namespace ArmorFragments
         private const float HardnessStepDegrees = 12f; // critical angle drops by this per doubling of armor/shell hardness
         private const float SpeedStepDegrees = 5f;     // critical angle rises by this per doubling of speed
         private const float OvermatchLimit = 3f;       // caliber / thickness at which ricochet becomes impossible
+        // A flying piece is considered stopped when its energy falls below this fraction of what it started with.
+        public const float StopFraction = 0.005f;
+
         private const float JitterMaxDegrees = 10f;    // size of the random shift at 100% randomness
 
         // Energy (joules) the armor takes from the shell, which opens a plug of its own cross-section:

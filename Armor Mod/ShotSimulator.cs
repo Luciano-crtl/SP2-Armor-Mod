@@ -107,9 +107,35 @@ namespace ArmorFragments
                 direction = camera.transform.forward;
             }
 
-            // The shell flies through every part that is not armor and stops at the first
-            // armor part (or at anything that is not a part, like the ground).
-            BallisticRay.Result ray = BallisticRay.Trace(origin, direction, MaxDistance, null);
+            CannonTag cannon = new CannonTag
+            {
+                Fragments = ArmorFragmentsPlugin.SimFragmentCount.Value,
+            };
+            ShellInfo shell = new ShellInfo
+            {
+                Mass = ArmorFragmentsPlugin.SimShellMass.Value,
+                Speed = ArmorFragmentsPlugin.SimShellVelocity.Value,
+                CaliberMm = ArmorFragmentsPlugin.SimCaliber.Value,
+                Hardness = ArmorFragmentsPlugin.SimShellHardness.Value,
+            };
+
+            // The shell flies through every part that is not armor (leaving energy in each) and stops
+            // at the first armor part, at anything that is not a part (like the ground), or when it
+            // runs out of energy.
+            BallisticRay.Result ray = BallisticRay.Trace(origin, direction, MaxDistance, null, shell);
+
+            // What the ray leaves in the ordinary parts it crosses is their would-be damage (a simulated
+            // shot never applies damage). It shows up in the X-ray view as the initial ray passes.
+            Dictionary<PartScript, DamageRecord> sink = new Dictionary<PartScript, DamageRecord>();
+            float initialSpeed = Mathf.Max(ArmorFragmentsPlugin.InitialRaySpeed.Value, 0.1f);
+            foreach (BallisticRay.Crossed crossing in ray.Crossings)
+            {
+                float rayDamage = crossing.Dissipated / 1000f * ArmorFragmentsPlugin.DamagePerKiloJoule.Value;
+                ModuleTag module = TagCodec.Parse(crossing.Part.Part.Name).Module;
+                if (rayDamage <= 0f || (module != null && rayDamage < module.MinDamage)) continue;
+
+                sink[crossing.Part] = new DamageRecord { Total = rayDamage, FirstTime = crossing.Distance / initialSpeed };
+            }
 
             string passed = ray.PassedThrough == 0
                 ? ""
@@ -117,8 +143,21 @@ namespace ArmorFragments
 
             if (ray.Armor == null)
             {
-                Message = passed + (ray.StoppedBy != null ? "Stopped by " + ray.StoppedBy : "No armor on the way");
-                XRayView.Hide();
+                Vector3 end = ray.RanOutOfEnergy
+                    ? ray.StopPoint
+                    : (ray.HasFirstPoint ? ray.FirstPoint : origin + direction * 5f);
+
+                if (ray.RanOutOfEnergy)
+                {
+                    BallisticRay.DrawInitialRay(new[] { origin, ray.StopPoint });
+                    RayDrawer.SpawnBubble(ray.StopPoint, RayKind.Landed);   // stays until the next test
+                }
+
+                FillTop(sink);
+                Message = passed + (ray.StoppedBy != null ? "Stopped: " + ray.StoppedBy : "No armor on the way");
+
+                if (sink.Count > 0 && ArmorFragmentsPlugin.XRayAfterSimulation.Value) XRayView.Show(end, sink);
+                else XRayView.Hide();
                 return;
             }
 
@@ -146,24 +185,16 @@ namespace ArmorFragments
             float angle = Vector3.Angle(direction, hit.normal);
             angle = Mathf.Min(angle, 180f - angle);
 
+            // It reaches the armor with what is left of its energy (slower than it left the cannon).
+            ShellInfo atArmor = shell;
+            atArmor.Speed = Mathf.Min(shell.Speed, Mathf.Sqrt(2f * ray.Energy / Mathf.Max(shell.Mass, 0.000001f)));
+
             // The same code a real shell goes through, with damage switched off. Every
-            // fragment's would-be damage is collected per part.
-            Dictionary<PartScript, DamageRecord> sink = new Dictionary<PartScript, DamageRecord>();
+            // fragment's would-be damage is added to the same per-part list.
             FragmentSpawner.DamageSink = sink;
             try
             {
-                CannonTag cannon = new CannonTag
-                {
-                    Fragments = ArmorFragmentsPlugin.SimFragmentCount.Value,
-                };
-                ShellInfo shell = new ShellInfo
-                {
-                    Mass = ArmorFragmentsPlugin.SimShellMass.Value,
-                    Speed = ArmorFragmentsPlugin.SimShellVelocity.Value,
-                    CaliberMm = ArmorFragmentsPlugin.SimCaliber.Value,
-                    Hardness = ArmorFragmentsPlugin.SimShellHardness.Value,
-                };
-                FragmentSpawner.Spawn(part, armor, cannon, shell, hit.point, direction, hit.normal, angle,
+                FragmentSpawner.Spawn(part, armor, cannon, atArmor, hit.point, direction, hit.normal, angle,
                                       false, true, leadTime);
             }
             finally
@@ -171,6 +202,19 @@ namespace ArmorFragments
                 FragmentSpawner.DamageSink = null;
             }
 
+            FillTop(sink);
+
+            Message = passed + "Hit '" + Label(part) + "' at " + hit.distance.ToString("F0") + " m, angle " +
+                      angle.ToString("F0") + " deg: " + sink.Count + " parts would be damaged";
+
+            if (ArmorFragmentsPlugin.XRayAfterSimulation.Value)
+                XRayView.Show(hit.point, sink);
+        }
+
+        // The parts that would take the most damage, for the panel.
+        private static void FillTop(Dictionary<PartScript, DamageRecord> sink)
+        {
+            Top.Clear();
             foreach (KeyValuePair<PartScript, DamageRecord> pair in sink.OrderByDescending(p => p.Value.Total).Take(TopCount))
             {
                 Top.Add(new PartResult
@@ -180,12 +224,6 @@ namespace ArmorFragments
                     Fraction = pair.Value.Total / Mathf.Max(pair.Key.MaxHealth, 1f),
                 });
             }
-
-            Message = passed + "Hit '" + Label(part) + "' at " + hit.distance.ToString("F0") + " m, angle " +
-                      angle.ToString("F0") + " deg: " + sink.Count + " parts would be damaged";
-
-            if (ArmorFragmentsPlugin.XRayAfterSimulation.Value)
-                XRayView.Show(hit.point, sink);
         }
 
         // The player's own label, without our [..] blocks.

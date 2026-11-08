@@ -91,12 +91,18 @@ namespace ArmorFragments
                 path.Add(point, RayKind.None);
 
                 // The armor bounce counts as the ray's first ricochet.
-                TraceResult r = TraceRay(path, point + n * SurfaceOffset, reflected, 0f, 1,
-                                         null, applyDamage, mask, leadTime, 1f);
-                if (draw) RayDrawer.Animate(path, leadTime);
-
                 // What the shell keeps after the bounce; the rest stays in the armor.
                 float energyOut = EnergyModel.RicochetEnergyOut(shell.Energy, angle);
+                Slug bounced = new Slug
+                {
+                    Energy = energyOut,
+                    Mass = Mathf.Max(shell.Mass, 0.000001f),
+                    AreaM2 = shell.AreaCm2 * 0.0001f,
+                };
+                TraceResult r = TraceRay(path, point + n * SurfaceOffset, reflected, 0f, 1,
+                                         null, applyDamage, mask, leadTime, bounced);
+                if (draw) RayDrawer.Animate(path, leadTime);
+
                 LastImpact.Absorbed = shell.Energy - energyOut;
                 LastImpact.Residual = energyOut;
 
@@ -148,10 +154,15 @@ namespace ArmorFragments
                 RayPath path = new RayPath();
                 path.Add(point, RayKind.None);
 
-                // (Until fragments carry their energy through parts, the damage is the old flat value,
-                // scaled by the fragment's share of the cloud.)
+                // The fragment flies with its own energy, mass and size.
+                Slug slug = new Slug
+                {
+                    Energy = fragments[i].Energy,
+                    Mass = fragments[i].Mass,
+                    AreaM2 = fragments[i].AreaCm2 * 0.0001f,
+                };
                 TraceResult r = TraceRay(path, point, fragments[i].Direction, 0f, 0, armor, applyDamage,
-                                         mask, leadTime, fragments[i].Weight);
+                                         mask, leadTime, slug);
                 if (draw) RayDrawer.Animate(path, leadTime);
 
                 if (r.HitPart) partsHit++;
@@ -179,25 +190,44 @@ namespace ArmorFragments
             return ImpactOutcome.Penetrated;
         }
 
-        // Follows one ray and records its route in 'path'. It stops at the first thing it
-        // hits, unless the hit is grazing enough to ricochet; then it bounces and keeps
-        // going. Each bounce consumes one of MaxRicochets, so the loop always ends.
+        // What a flying piece of metal carries: its energy, mass and cross-section.
+        private struct Slug
+        {
+            public float Energy;   // joules
+            public float Mass;     // kilograms
+            public float AreaM2;   // square meters
+        }
+
+        // Follows one piece (a fragment, or a ricocheted shell) and records its route in 'path'.
+        // It flies straight; the first thing it meets either throws it back (a ricochet, if the hit is
+        // grazing enough) or lets it in:
+        //   - not a part (the ground...): it stops;
+        //   - a part: it crosses it (the distance inside comes from the colliders), leaving energy
+        //     behind (that energy is the part's damage), and carries on with what is left, up to
+        //     MaxPartsPerFragment parts, until its energy runs out.
+        // Each bounce consumes one of MaxRicochets, and each part crossed one of the parts allowed,
+        // so the loop always ends.
         //   origin:   where the first segment starts
         //   ignore:   a part to skip on the first segment only (the armor itself)
         //   bounces:  ricochets this ray already had
-        //   traveled: distance already covered, counts toward MaxRange and damage falloff
-        //   damageWeight: this fragment's share of the cloud (1 = average); scales its damage for now
+        //   traveled: distance already covered, counts toward MaxRange
         //   timeOffset: seconds from the start of the shot until this ray starts moving; with the
         //               distance flown it gives the moment each part is touched (for the X-ray view)
         private static TraceResult TraceRay(RayPath path, Vector3 origin, Vector3 dir,
                                             float traveled, int bounces, PartScript ignore,
-                                            bool applyDamage, int mask, float timeOffset, float damageWeight)
+                                            bool applyDamage, int mask, float timeOffset, Slug slug)
         {
             TraceResult result = default;
             int maxBounces = ArmorFragmentsPlugin.MaxRicochets.Value;
+            int maxParts = ArmorFragmentsPlugin.MaxPartsPerFragment.Value;
             float tolerated = ToleratedAngle(
                 ArmorFragmentsPlugin.FragmentRicochetAngle.Value,
                 ArmorFragmentsPlugin.FragmentRicochetMultiplier.Value);
+            float floor = Mathf.Max(1f, slug.Energy * EnergyModel.StopFraction);
+            RayKind stopMarker = DamageSink != null ? RayKind.Landed : RayKind.Hit;
+
+            int partsCrossed = 0;
+            PartScript skip = ignore;
 
             while (true)
             {
@@ -207,20 +237,21 @@ namespace ArmorFragments
                 int count = Physics.RaycastNonAlloc(
                     origin, dir, Hits, remaining, mask, QueryTriggerInteraction.Ignore);
 
-                // Closest hit of ANY object, except shells and the ignored part.
+                // Closest hit of ANY object, except shells and the part to skip.
                 int best = -1;
                 float bestDistance = float.MaxValue;
                 for (int h = 0; h < count; h++)
                 {
                     Collider c = Hits[h].collider;
                     if (c.GetComponentInParent<CannonProjectileScript>() != null) continue;
-                    if (ignore != null && c.GetComponentInParent<PartScript>() == ignore) continue;
+                    if (skip != null && c.GetComponentInParent<PartScript>() == skip) continue;
                     if (Hits[h].distance < bestDistance)
                     {
                         bestDistance = Hits[h].distance;
                         best = h;
                     }
                 }
+                skip = null;
 
                 if (best < 0)
                 {
@@ -230,61 +261,122 @@ namespace ArmorFragments
                 }
 
                 RaycastHit hit = Hits[best];   // copy: Hits is reused by the next ray
-                traveled += hit.distance;
-                ignore = null;                 // only the first segment skips the armor
+                float enteredAt = traveled + hit.distance;
+                traveled = enteredAt;
+                PartScript part = hit.collider.GetComponentInParent<PartScript>();
 
+                // A grazing hit throws it back. What it keeps is sin^2 of the angle; the rest stays
+                // in whatever it hit.
                 float angle = ImpactAngle(dir, hit.normal);
                 if (bounces < maxBounces && angle >= tolerated)
                 {
+                    float kept = EnergyModel.RicochetEnergyOut(slug.Energy, angle);
+                    if (part != null)
+                        Deposit(part, slug.Energy - kept, hit.point, dir, applyDamage, enteredAt, timeOffset, ref result);
+
+                    slug.Energy = kept;
                     path.Add(hit.point, RayKind.Ricochet);
                     dir = Vector3.Reflect(dir, hit.normal).normalized;
                     origin = hit.point + hit.normal * SurfaceOffset;
                     bounces++;
                     result.Ricochets++;
+
+                    if (slug.Energy <= floor)
+                    {
+                        path.Add(hit.point, stopMarker);
+                        path.Final = RayKind.Miss;
+                        break;
+                    }
                     continue;
                 }
 
-                PartScript part = hit.collider.GetComponentInParent<PartScript>();
-                if (part != null)
-                {
-                    // In a simulated shot the stop point stays on screen until the next test.
-                    path.Add(hit.point, DamageSink != null ? RayKind.Landed : RayKind.Hit);
-                    path.Final = RayKind.Hit;
-                    result.HitPart = true;
-
-                    float falloff = 1f - traveled / MaxRange;
-                    float damage = ArmorFragmentsPlugin.DamagePerFragment.Value * damageWeight * falloff;
-
-                    // A part marked [MOD d=...] ignores fragments weaker than that.
-                    ModuleTag module = TagCodec.Parse(part.Part.Name).Module;
-                    if (module == null || damage >= module.MinDamage)
-                    {
-                        if (applyDamage) part.OnDamaged(null, damage, hit.point, dir);
-                        result.Damage += damage;   // counted even when not applied: "would-be" damage
-
-                        if (DamageSink != null)
-                        {
-                            // When the drawn ray's head reaches this point (same speed as drawn).
-                            float arrival = timeOffset + traveled / Mathf.Max(ArmorFragmentsPlugin.RaySpeed.Value, 0.1f);
-
-                            DamageRecord record;
-                            if (!DamageSink.TryGetValue(part, out record))
-                                record.FirstTime = arrival;
-                            record.Total += damage;
-                            record.FirstTime = Mathf.Min(record.FirstTime, arrival);
-                            DamageSink[part] = record;
-                        }
-                    }
-                }
-                else
+                // Not a part (the ground, for example): it stops there.
+                if (part == null)
                 {
                     path.Add(hit.point, DamageSink != null ? RayKind.Landed : RayKind.Miss);
                     path.Final = RayKind.Miss;
+                    break;
                 }
-                break;
+
+                // A part: how far does it travel inside, and what does that cost?
+                float entry;
+                float exit;
+                float chord = PartPhysics.Chord(part, origin, dir, remaining, out entry, out exit);
+                if (chord <= 0.001f)
+                {
+                    // The collider test found nothing (a graze): treat it as a thin wall.
+                    entry = hit.distance;
+                    exit = hit.distance + 0.01f;
+                    chord = 0.01f;
+                }
+
+                float density = PartPhysics.Density(part);
+                float energyIn = slug.Energy;
+                float energyOut = PartPhysics.EnergyAfter(energyIn, slug.Mass, slug.AreaM2, density, chord);
+                result.HitPart = true;
+                partsCrossed++;
+
+                if (energyOut <= floor)
+                {
+                    // It stops inside the part and leaves everything there.
+                    Deposit(part, energyIn, hit.point, dir, applyDamage, enteredAt, timeOffset, ref result);
+                    float into = PartPhysics.StopDistance(energyIn, floor, slug.Mass, slug.AreaM2, density, chord);
+                    path.Add(origin + dir * (entry + into), stopMarker);
+                    path.Final = RayKind.Hit;
+                    break;
+                }
+
+                Deposit(part, energyIn - energyOut, hit.point, dir, applyDamage, enteredAt, timeOffset, ref result);
+                slug.Energy = energyOut;
+
+                if (partsCrossed >= maxParts)
+                {
+                    // It has gone through as many parts as allowed: it ends where it leaves the last one.
+                    path.Add(origin + dir * exit, stopMarker);
+                    path.Final = RayKind.Hit;
+                    break;
+                }
+
+                // Out the other side: carry on from there.
+                float past = exit + 0.002f;
+                origin = origin + dir * past;
+                traveled += past - hit.distance;
+                skip = part;
             }
 
             return result;
+        }
+
+        // The energy a piece leaves in a part is that part's damage. Armor takes none for now (the
+        // game's own damage to armor is ignored too), and a part marked [MOD d=...] ignores pieces
+        // that would hurt it less than that.
+        private static void Deposit(PartScript part, float joules, Vector3 point, Vector3 dir,
+                                    bool applyDamage, float traveledAtEntry, float timeOffset,
+                                    ref TraceResult result)
+        {
+            if (joules <= 0f) return;
+
+            PartTags tags = TagCodec.Parse(part.Part.Name);
+            if (tags.Armor != null) return;
+
+            float damage = joules / 1000f * ArmorFragmentsPlugin.DamagePerKiloJoule.Value;
+            if (tags.Module != null && damage < tags.Module.MinDamage) return;
+
+            if (applyDamage) part.OnDamaged(null, damage, point, dir);
+            result.Damage += damage;   // counted even when not applied: "would-be" damage
+
+            if (DamageSink != null)
+            {
+                // When the drawn ray's head reaches this point (same speed as drawn).
+                float arrival = timeOffset + traveledAtEntry / Mathf.Max(ArmorFragmentsPlugin.RaySpeed.Value, 0.1f);
+
+                DamageRecord record;
+                if (!DamageSink.TryGetValue(part, out record))
+                    record.FirstTime = arrival;
+                record.Total += damage;
+                record.FirstTime = Mathf.Min(record.FirstTime, arrival);
+                DamageSink[part] = record;
+            }
         }
 
         // 0 = head-on, 90 = grazing.
