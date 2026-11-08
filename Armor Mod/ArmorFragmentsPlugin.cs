@@ -18,9 +18,8 @@ namespace ArmorFragments
         internal static ConfigEntry<float> BallisticRayRange;
         internal static ConfigEntry<bool> DrawRays;
         internal static ConfigEntry<float> RayWidth;
-        internal static ConfigEntry<float> RaySpeed;
         internal static ConfigEntry<float> InitialRayWidth;
-        internal static ConfigEntry<float> InitialRaySpeed;
+        internal static ConfigEntry<bool> IgnoreGameDamageOnArmor;
         internal static ConfigEntry<float> RayTrailLength;
         internal static ConfigEntry<float> BubbleSize;
         internal static ConfigEntry<float> BubbleLifetime;
@@ -96,20 +95,13 @@ namespace ArmorFragments
             RayWidth = Config.Bind("Debug", "RayWidth", 0.02f,
                 new ConfigDescription("Thickness of the drawn rays, in meters.",
                     new AcceptableValueRange<float>(0.001f, 1f)));
-            RaySpeed = Config.Bind("Debug", "RaySpeed", 40f,
-                new ConfigDescription(
-                    "How fast the drawn ray moves along its path, in meters per second. " +
-                    "Visual only: it does not change damage or physics.",
-                    new AcceptableValueRange<float>(1f, 500f)));
             InitialRayWidth = Config.Bind("Debug", "InitialRayWidth", 0.06f,
                 new ConfigDescription(
                     "Thickness of the initial ray (the shell, or the simulated shot from the camera), in meters.",
                     new AcceptableValueRange<float>(0.001f, 1f)));
-            InitialRaySpeed = Config.Bind("Debug", "InitialRaySpeed", 150f,
-                new ConfigDescription(
-                    "How fast the initial ray travels, in meters per second. Visual only. " +
-                    "Fragments leave once it has arrived.",
-                    new AcceptableValueRange<float>(1f, 2000f)));
+            IgnoreGameDamageOnArmor = Config.Bind("Fragments", "IgnoreGameDamageOnArmor", true,
+                "If true, the game's own damage to parts with an [ARM] tag (shell impact, explosions, crashes) is ignored: " +
+                "armor is judged only by the energy model and cannot be destroyed.");
             RayTrailLength = Config.Bind("Debug", "RayTrailLength", 6f,
                 new ConfigDescription("Length of the fading trail behind the moving ray, in meters.",
                     new AcceptableValueRange<float>(0.1f, 50f)));
@@ -206,7 +198,7 @@ namespace ArmorFragments
                 new ConfigDescription("How much wider the cone is along the plane of incidence on a fully grazing hit (1 = round).",
                     new AcceptableValueRange<float>(1f, 4f)));
             VisualSpeedMultiplier = Config.Bind("Energy", "VisualSpeedMultiplier", 0.05f,
-                new ConfigDescription("Drawn rays move at their real speed (from energy) times this, so they can be followed." + NotUsed,
+                new ConfigDescription("Drawn rays move at their real speed (worked out from their energy and mass) times this, so they can be followed. They slow down as they lose energy.",
                     new AcceptableValueRange<float>(0.001f, 1f)));
 
             XRayRimLook = Config.Bind("Simulation", "XRayRimLook", true,

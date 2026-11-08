@@ -18,6 +18,10 @@ namespace ArmorFragments
             public PartScript Part;
             public float Dissipated;     // joules left in the part
             public float Distance;       // how far along the ray it was entered
+            public float Exit;           // ... and left (for a ray that stopped inside: where it stopped)
+            public float EnergyIn;       // energy on entering
+            public float EnergyOut;      // energy on leaving (0 if it stopped inside)
+            public float ArrivalTime;    // seconds after the shot starts that the drawn ray reaches it
         }
 
         public struct Result
@@ -133,15 +137,17 @@ namespace ArmorFragments
             float density = PartPhysics.Density(part);
             float after = PartPhysics.EnergyAfter(energy, mass, areaM2, density, chord);
 
-            Crossed crossing = new Crossed { Part = part, Distance = entry };
+            Crossed crossing = new Crossed { Part = part, Distance = entry, Exit = exit, EnergyIn = energy };
             result.PassedThrough++;
 
             if (after <= floor)
             {
                 crossing.Dissipated = energy;
+                crossing.EnergyOut = 0f;
+                float into = PartPhysics.StopDistance(energy, floor, mass, areaM2, density, chord);
+                crossing.Exit = entry + into;
                 result.Crossings.Add(crossing);
 
-                float into = PartPhysics.StopDistance(energy, floor, mass, areaM2, density, chord);
                 result.RanOutOfEnergy = true;
                 result.StopPoint = origin + direction * (entry + into);
                 result.StoppedBy = "ran out of energy inside '" + part.Part.Name + "'";
@@ -150,6 +156,7 @@ namespace ArmorFragments
             }
 
             crossing.Dissipated = energy - after;
+            crossing.EnergyOut = after;
             result.Crossings.Add(crossing);
             energy = after;
             return false;
@@ -161,23 +168,97 @@ namespace ArmorFragments
             return result;
         }
 
-        // Draws the initial ray (the shell) along 'points', thicker and faster than the fragment
-        // rays, with an impact bubble at the last point. Returns how many seconds it takes to
-        // arrive: the fragments are drawn to leave after that.
-        public static float DrawInitialRay(Vector3[] points)
+        // Drawn speed of something carrying 'energy' with 'mass': its real speed times the multiplier
+        // that makes it slow enough to follow.
+        public static float VisualSpeed(float energy, float mass)
         {
-            float length = 0f;
-            for (int i = 1; i < points.Length; i++)
-                length += Vector3.Distance(points[i - 1], points[i]);
+            float real = Mathf.Sqrt(2f * Mathf.Max(energy, 0f) / Mathf.Max(mass, 0.000001f));
+            return Mathf.Max(real * ArmorFragmentsPlugin.VisualSpeedMultiplier.Value, 1f);
+        }
 
-            float duration = length / Mathf.Max(ArmorFragmentsPlugin.InitialRaySpeed.Value, 0.1f);
+        // The shell's last meters before an impact (a single stretch at the shell's own speed).
+        // Returns how many seconds it takes: whatever follows is drawn to start after that.
+        public static float DrawSimpleTrack(Vector3 start, Vector3 end, float shellEnergy, float shellMass)
+        {
+            float speed = VisualSpeed(shellEnergy, shellMass);
+            float duration = Vector3.Distance(start, end) / speed;
             if (!ArmorFragmentsPlugin.DrawRays.Value) return duration;
 
             RayPath path = new RayPath { Final = RayKind.ArmorImpact };
-            for (int i = 0; i < points.Length; i++)
-                path.Add(points[i], i == points.Length - 1 ? RayKind.ArmorImpact : RayKind.None);
+            path.Add(start, RayKind.None);
+            path.Add(end, RayKind.ArmorImpact, speed);
             RayDrawer.Animate(path, 0f, true);
             return duration;
+        }
+
+        // The shell as a ray that goes through parts: drawn from 'start' to 'end', slowing down in every
+        // part it crosses (marked with a bubble where it enters). Fills in each crossing's ArrivalTime
+        // and returns the total duration.
+        //   leadIn:      meters drawn before 'start' (the shell arriving), 0 for none
+        //   startMarker: bubble at 'start' (a real shell has just hit a part there)
+        //   endMarker:   bubble at 'end' (the armor impact, or where the ray stopped)
+        public static float DrawShellRay(Vector3 start, Vector3 direction, ref Result ray, ShellInfo shell,
+                                         Vector3 end, float leadIn, RayKind startMarker, RayKind endMarker)
+        {
+            RayPath path = new RayPath { Final = RayKind.ArmorImpact };
+            float time = 0f;
+            float energy = shell.Energy;
+            float speed = VisualSpeed(energy, shell.Mass);
+            float distance = 0f;   // along the ray from 'start'
+
+            if (leadIn > 0f)
+            {
+                path.Add(start - direction * leadIn, RayKind.None);
+                path.Add(start, startMarker, speed);
+                time += leadIn / speed;
+            }
+            else
+            {
+                path.Add(start, startMarker);
+            }
+
+            for (int i = 0; i < ray.Crossings.Count; i++)
+            {
+                Crossed crossing = ray.Crossings[i];
+
+                // Free flight up to the part (an entered part starts at distance 0: nothing to draw).
+                if (crossing.Distance > distance + 0.0001f)
+                {
+                    time += (crossing.Distance - distance) / speed;
+                    path.Add(start + direction * crossing.Distance,
+                             crossing.Distance > 0.0001f ? RayKind.Hit : RayKind.None, speed);
+                    distance = crossing.Distance;
+                }
+
+                crossing.ArrivalTime = time;
+
+                // Inside the part: it slows down from the speed it came in with to the one it leaves with.
+                float speedOut = crossing.EnergyOut > 0f ? VisualSpeed(crossing.EnergyOut, shell.Mass) : speed * 0.5f;
+                float inside = Mathf.Max(crossing.Exit - distance, 0f);
+                float average = 0.5f * (speed + speedOut);
+                time += inside / average;
+                path.Add(start + direction * crossing.Exit, RayKind.None, average);
+                distance = Mathf.Max(distance, crossing.Exit);
+                speed = speedOut;
+
+                ray.Crossings[i] = crossing;
+            }
+
+            // On to the end point.
+            float toEnd = Vector3.Distance(start, end);
+            if (toEnd > distance + 0.0001f)
+            {
+                time += (toEnd - distance) / speed;
+                path.Add(end, endMarker, speed);
+            }
+            else if (path.Points.Count > 0)
+            {
+                // The last stretch already reaches it: just put the marker there.
+                path.Markers[path.Markers.Count - 1] = endMarker;
+            }
+
+            if (ArmorFragmentsPlugin.DrawRays.Value) RayDrawer.Animate(path, 0f, true);
+            return time;
         }
     }
 }

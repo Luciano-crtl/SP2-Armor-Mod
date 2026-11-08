@@ -124,35 +124,37 @@ namespace ArmorFragments
             // runs out of energy.
             BallisticRay.Result ray = BallisticRay.Trace(origin, direction, MaxDistance, null, shell);
 
+            string passed = ray.PassedThrough == 0
+                ? ""
+                : "Passed through " + ray.PassedThrough + " non-armor parts. ";
+
+            // Where the shell ray ends: at the armor, or where it stopped.
+            Vector3 end;
+            RayKind endMarker;
+            if (ray.Armor != null) { end = ray.Hit.point; endMarker = RayKind.ArmorImpact; }
+            else if (ray.RanOutOfEnergy) { end = ray.StopPoint; endMarker = RayKind.Landed; }
+            else if (ray.HasFirstPoint) { end = ray.FirstPoint; endMarker = RayKind.Landed; }
+            else { end = origin + direction * 5f; endMarker = RayKind.None; }
+
+            // The initial ray: from the exact camera position, thicker than the rest, slowing down in
+            // every ordinary part it crosses (and marked where it enters one). The fragments leave once
+            // it has arrived. Landed markers stay on screen until the next test.
+            float leadTime = BallisticRay.DrawShellRay(origin, direction, ref ray, shell, end, 0f, RayKind.None, endMarker);
+
             // What the ray leaves in the ordinary parts it crosses is their would-be damage (a simulated
             // shot never applies damage). It shows up in the X-ray view as the initial ray passes.
             Dictionary<PartScript, DamageRecord> sink = new Dictionary<PartScript, DamageRecord>();
-            float initialSpeed = Mathf.Max(ArmorFragmentsPlugin.InitialRaySpeed.Value, 0.1f);
             foreach (BallisticRay.Crossed crossing in ray.Crossings)
             {
                 float rayDamage = crossing.Dissipated / 1000f * ArmorFragmentsPlugin.DamagePerKiloJoule.Value;
                 ModuleTag module = TagCodec.Parse(crossing.Part.Part.Name).Module;
                 if (rayDamage <= 0f || (module != null && rayDamage < module.MinDamage)) continue;
 
-                sink[crossing.Part] = new DamageRecord { Total = rayDamage, FirstTime = crossing.Distance / initialSpeed };
+                sink[crossing.Part] = new DamageRecord { Total = rayDamage, FirstTime = crossing.ArrivalTime };
             }
-
-            string passed = ray.PassedThrough == 0
-                ? ""
-                : "Passed through " + ray.PassedThrough + " non-armor parts. ";
 
             if (ray.Armor == null)
             {
-                Vector3 end = ray.RanOutOfEnergy
-                    ? ray.StopPoint
-                    : (ray.HasFirstPoint ? ray.FirstPoint : origin + direction * 5f);
-
-                if (ray.RanOutOfEnergy)
-                {
-                    BallisticRay.DrawInitialRay(new[] { origin, ray.StopPoint });
-                    RayDrawer.SpawnBubble(ray.StopPoint, RayKind.Landed);   // stays until the next test
-                }
-
                 FillTop(sink);
                 Message = passed + (ray.StoppedBy != null ? "Stopped: " + ray.StoppedBy : "No armor on the way");
 
@@ -177,10 +179,6 @@ namespace ArmorFragments
                     ArmorFragmentsPlugin.Log.LogWarning("Chord probe failed: " + e.Message);
                 }
             }
-
-            // The initial ray: from the exact camera position to the armor, thicker than the rest.
-            // The fragments leave once it has arrived.
-            float leadTime = BallisticRay.DrawInitialRay(new[] { origin, hit.point });
 
             float angle = Vector3.Angle(direction, hit.normal);
             angle = Mathf.Min(angle, 180f - angle);

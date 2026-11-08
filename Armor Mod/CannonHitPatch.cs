@@ -150,6 +150,19 @@ namespace ArmorFragments
             BallisticRay.Result ray = BallisticRay.Trace(
                 from, direction, ArmorFragmentsPlugin.BallisticRayRange.Value, stoppedIn, shell);
 
+            // Where the ray ends: at the armor, or where it stopped.
+            Vector3 end;
+            RayKind endMarker;
+            if (ray.Armor != null) { end = ray.Hit.point; endMarker = RayKind.ArmorImpact; }
+            else if (ray.RanOutOfEnergy) { end = ray.StopPoint; endMarker = RayKind.Hit; }
+            else if (ray.HasFirstPoint) { end = ray.FirstPoint; endMarker = RayKind.Miss; }
+            else { end = from; endMarker = RayKind.None; }
+
+            // The initial ray: the shell's last meters, the stop point, then on through the ordinary
+            // parts (slowing down in each) up to the armor or wherever it stops.
+            float leadTime = BallisticRay.DrawShellRay(
+                from, direction, ref ray, shell, end, FragmentSpawner.ShellLeadIn, RayKind.Hit, endMarker);
+
             if (ray.Armor == null)
             {
                 ArmorFragmentsPlugin.Log.LogInfo(
@@ -166,12 +179,6 @@ namespace ArmorFragments
                 ray.PassedThrough + " parts and met armor '" + ray.Part.Part.Name + "' at " +
                 ray.Hit.distance.ToString("F1") + " m with " + EnergyModel.Kilojoules(ray.Energy) +
                 " of " + EnergyModel.Kilojoules(shell.Energy));
-
-            // The initial ray: the shell's last meters, the stop point, then on to the armor.
-            float leadTime = BallisticRay.DrawInitialRay(new[]
-            {
-                from - direction * FragmentSpawner.ShellLeadIn, from, ray.Hit.point,
-            });
 
             // It reaches the armor slower than it hit the first part.
             ShellInfo atArmor = shell;

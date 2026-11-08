@@ -23,10 +23,15 @@ namespace ArmorFragments
         public readonly List<RayKind> Markers = new List<RayKind>();
         public RayKind Final = RayKind.Miss;   // decides the line color
 
-        public void Add(Vector3 point, RayKind marker)
+        // Drawn speed (m/s) for the stretch that ENDS at each point; 0 = use the default.
+        // The first point's value is not used. It lets a ray slow down as it loses energy.
+        public readonly List<float> SpeedTo = new List<float>();
+
+        public void Add(Vector3 point, RayKind marker, float speed = 0f)
         {
             Points.Add(point);
             Markers.Add(marker);
+            SpeedTo.Add(speed);
         }
     }
 
@@ -118,9 +123,7 @@ namespace ArmorFragments
             lr.enabled = false;                 // the animation turns it on when it starts
 
             go.AddComponent<TracerAnimation>().Init(
-                path, lr, ColorOf(path.Final), delay,
-                initial ? ArmorFragmentsPlugin.InitialRaySpeed.Value : ArmorFragmentsPlugin.RaySpeed.Value,
-                ArmorFragmentsPlugin.RayTrailLength.Value);
+                path, lr, ColorOf(path.Final), delay, ArmorFragmentsPlugin.RayTrailLength.Value);
         }
 
         // Balls that stay (the stop points of a simulated shot) until the next test clears them.

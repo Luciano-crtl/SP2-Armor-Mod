@@ -186,7 +186,7 @@ namespace ArmorFragments.UI
         private void BuildEnergyModel()
         {
             builder.Header("Energy model", collapsed: true);
-            builder.Text("Status", "All active, except the visual speed multiplier");
+            builder.Text("Status", "All active");
 
             ToggleSetting(ArmorFragmentsPlugin.LogChordDiagnostics, "Log chord diagnostics",
                 "Each simulated shot writes how far the line travels inside every part to the log ([CHORD] lines).");
@@ -220,7 +220,7 @@ namespace ArmorFragments.UI
             FloatSetting(ArmorFragmentsPlugin.SpreadAnisotropy, "Spread anisotropy",
                 "How much wider the cone is along the plane of incidence (1 = round).", 0.1f, "x");
             FloatSetting(ArmorFragmentsPlugin.VisualSpeedMultiplier, "Visual speed multiplier",
-                "Drawn rays move at real speed times this.", 0.005f, "x");
+                "Drawn rays move at their real speed (from energy) times this, and slow down as they lose energy.", 0.005f, "x");
         }
 
         private void BuildFragments()
@@ -228,6 +228,8 @@ namespace ArmorFragments.UI
             builder.Header("Fragments");
             ToggleSetting(ArmorFragmentsPlugin.ApplyDamage, "Apply damage",
                 "If on, fragments damage the parts they hit.");
+            ToggleSetting(ArmorFragmentsPlugin.IgnoreGameDamageOnArmor, "Ignore game damage on armor",
+                "The game's own damage to [ARM] parts (impact, explosions, crashes) is ignored: armor is judged by the energy model only.");
             FloatSetting(ArmorFragmentsPlugin.DamagePerKiloJoule, "Damage per kJ",
                 "Part damage per kilojoule a fragment leaves in a part. This is the damage scale.", 0.1f, "");
             IntSetting(ArmorFragmentsPlugin.DefaultFragmentCount, "Default fragments",
@@ -260,10 +262,6 @@ namespace ArmorFragments.UI
                 "Thickness of the drawn rays.", 0.005f, " m");
             FloatSetting(ArmorFragmentsPlugin.InitialRayWidth, "Initial ray width",
                 "Thickness of the initial ray (the shell, or the simulated shot).", 0.005f, " m");
-            FloatSetting(ArmorFragmentsPlugin.InitialRaySpeed, "Initial ray speed",
-                "How fast the initial ray travels. Visual only; fragments leave once it arrives.", 5f, " m/s");
-            FloatSetting(ArmorFragmentsPlugin.RaySpeed, "Ray speed",
-                "How fast the drawn ray travels. Visual only.", 1f, " m/s");
             FloatSetting(ArmorFragmentsPlugin.RayTrailLength, "Trail length",
                 "Length of the fading trail behind the moving ray.", 0.1f, " m");
             FloatSetting(ArmorFragmentsPlugin.BubbleSize, "Impact bubble size",

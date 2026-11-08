@@ -69,7 +69,7 @@ namespace ArmorFragments
             // Everything that happens after the impact waits for it to arrive.
             if (leadTime < 0f)
             {
-                leadTime = BallisticRay.DrawInitialRay(new[] { point - direction * ShellLeadIn, point });
+                leadTime = BallisticRay.DrawSimpleTrack(point - direction * ShellLeadIn, point, shell.Energy, shell.Mass);
             }
 
             // 1) Ricochet: does this shell bounce off this armor at this angle? The critical angle
@@ -207,12 +207,14 @@ namespace ArmorFragments
         //     MaxPartsPerFragment parts, until its energy runs out.
         // Each bounce consumes one of MaxRicochets, and each part crossed one of the parts allowed,
         // so the loop always ends.
+        // The path also gets a drawn speed for every stretch (the real speed from the energy times the
+        // visual multiplier), so the ray slows down as it loses energy; the same speeds give the moment
+        // each part is touched, for the X-ray view.
         //   origin:   where the first segment starts
         //   ignore:   a part to skip on the first segment only (the armor itself)
         //   bounces:  ricochets this ray already had
         //   traveled: distance already covered, counts toward MaxRange
-        //   timeOffset: seconds from the start of the shot until this ray starts moving; with the
-        //               distance flown it gives the moment each part is touched (for the X-ray view)
+        //   timeOffset: seconds from the start of the shot until this ray starts moving
         private static TraceResult TraceRay(RayPath path, Vector3 origin, Vector3 dir,
                                             float traveled, int bounces, PartScript ignore,
                                             bool applyDamage, int mask, float timeOffset, Slug slug)
@@ -228,10 +230,12 @@ namespace ArmorFragments
 
             int partsCrossed = 0;
             PartScript skip = ignore;
+            float time = timeOffset;   // seconds since the shot started, at the head of this ray
 
             while (true)
             {
                 float remaining = MaxRange - traveled;
+                float speed = BallisticRay.VisualSpeed(slug.Energy, slug.Mass);
                 if (remaining <= 0.01f) { path.Final = RayKind.Miss; break; }
 
                 int count = Physics.RaycastNonAlloc(
@@ -255,14 +259,14 @@ namespace ArmorFragments
 
                 if (best < 0)
                 {
-                    path.Add(origin + dir * remaining, RayKind.None);   // fades out in the air
+                    path.Add(origin + dir * remaining, RayKind.None, speed);   // fades out in the air
                     path.Final = RayKind.Miss;
                     break;
                 }
 
                 RaycastHit hit = Hits[best];   // copy: Hits is reused by the next ray
-                float enteredAt = traveled + hit.distance;
-                traveled = enteredAt;
+                traveled += hit.distance;
+                time += hit.distance / speed;  // the head reaches the hit now
                 PartScript part = hit.collider.GetComponentInParent<PartScript>();
 
                 // A grazing hit throws it back. What it keeps is sin^2 of the angle; the rest stays
@@ -272,10 +276,10 @@ namespace ArmorFragments
                 {
                     float kept = EnergyModel.RicochetEnergyOut(slug.Energy, angle);
                     if (part != null)
-                        Deposit(part, slug.Energy - kept, hit.point, dir, applyDamage, enteredAt, timeOffset, ref result);
+                        Deposit(part, slug.Energy - kept, hit.point, dir, applyDamage, time, ref result);
 
                     slug.Energy = kept;
-                    path.Add(hit.point, RayKind.Ricochet);
+                    path.Add(hit.point, RayKind.Ricochet, speed);
                     dir = Vector3.Reflect(dir, hit.normal).normalized;
                     origin = hit.point + hit.normal * SurfaceOffset;
                     bounces++;
@@ -283,7 +287,7 @@ namespace ArmorFragments
 
                     if (slug.Energy <= floor)
                     {
-                        path.Add(hit.point, stopMarker);
+                        path.Add(hit.point, stopMarker, speed);
                         path.Final = RayKind.Miss;
                         break;
                     }
@@ -293,7 +297,7 @@ namespace ArmorFragments
                 // Not a part (the ground, for example): it stops there.
                 if (part == null)
                 {
-                    path.Add(hit.point, DamageSink != null ? RayKind.Landed : RayKind.Miss);
+                    path.Add(hit.point, DamageSink != null ? RayKind.Landed : RayKind.Miss, speed);
                     path.Final = RayKind.Miss;
                     break;
                 }
@@ -316,28 +320,37 @@ namespace ArmorFragments
                 result.HitPart = true;
                 partsCrossed++;
 
+                // The drawn ray reaches the part's surface at the speed it flies with.
+                path.Add(origin + dir * entry, RayKind.None, speed);
+
                 if (energyOut <= floor)
                 {
-                    // It stops inside the part and leaves everything there.
-                    Deposit(part, energyIn, hit.point, dir, applyDamage, enteredAt, timeOffset, ref result);
+                    // It stops inside the part and leaves everything there; it slows to a halt on the way.
+                    Deposit(part, energyIn, hit.point, dir, applyDamage, time, ref result);
                     float into = PartPhysics.StopDistance(energyIn, floor, slug.Mass, slug.AreaM2, density, chord);
-                    path.Add(origin + dir * (entry + into), stopMarker);
+                    path.Add(origin + dir * (entry + into), stopMarker, speed * 0.5f);
                     path.Final = RayKind.Hit;
                     break;
                 }
 
-                Deposit(part, energyIn - energyOut, hit.point, dir, applyDamage, enteredAt, timeOffset, ref result);
+                Deposit(part, energyIn - energyOut, hit.point, dir, applyDamage, time, ref result);
                 slug.Energy = energyOut;
+
+                // Inside the part the speed goes from what it was to what it becomes.
+                float speedOut = BallisticRay.VisualSpeed(slug.Energy, slug.Mass);
+                float averageSpeed = 0.5f * (speed + speedOut);
+                time += Mathf.Max(exit - entry, 0f) / averageSpeed;
 
                 if (partsCrossed >= maxParts)
                 {
                     // It has gone through as many parts as allowed: it ends where it leaves the last one.
-                    path.Add(origin + dir * exit, stopMarker);
+                    path.Add(origin + dir * exit, stopMarker, averageSpeed);
                     path.Final = RayKind.Hit;
                     break;
                 }
 
                 // Out the other side: carry on from there.
+                path.Add(origin + dir * exit, RayKind.None, averageSpeed);
                 float past = exit + 0.002f;
                 origin = origin + dir * past;
                 traveled += past - hit.distance;
@@ -351,8 +364,7 @@ namespace ArmorFragments
         // game's own damage to armor is ignored too), and a part marked [MOD d=...] ignores pieces
         // that would hurt it less than that.
         private static void Deposit(PartScript part, float joules, Vector3 point, Vector3 dir,
-                                    bool applyDamage, float traveledAtEntry, float timeOffset,
-                                    ref TraceResult result)
+                                    bool applyDamage, float arrival, ref TraceResult result)
         {
             if (joules <= 0f) return;
 
@@ -367,9 +379,7 @@ namespace ArmorFragments
 
             if (DamageSink != null)
             {
-                // When the drawn ray's head reaches this point (same speed as drawn).
-                float arrival = timeOffset + traveledAtEntry / Mathf.Max(ArmorFragmentsPlugin.RaySpeed.Value, 0.1f);
-
+                // 'arrival' is when the drawn ray's head reaches this point.
                 DamageRecord record;
                 if (!DamageSink.TryGetValue(part, out record))
                     record.FirstTime = arrival;

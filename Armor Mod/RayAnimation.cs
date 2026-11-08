@@ -5,29 +5,31 @@ namespace ArmorFragments
 {
     // Moves a bright head along a RayPath. Behind the head the line fades out.
     // When the head reaches the end, the tail catches up and the line disappears.
-    // Purely visual: it never touches physics or damage.
+    // Each stretch of the path has its own speed (see RayPath.SpeedTo), so a ray visibly slows down
+    // as it loses energy; the trail is a length of TIME behind the head, so it gets shorter when the
+    // ray is slower. Purely visual: it never touches physics or damage.
     public class TracerAnimation : MonoBehaviour
     {
+        private const float DefaultSpeed = 40f;   // m/s, for stretches without a speed of their own
+
         private RayPath path;
         private LineRenderer line;
-        private float[] cumulative;     // distance along the path at each point
-        private float total;
+        private float[] cumulativeDistance;   // meters along the path at each point
+        private float[] cumulativeTime;       // seconds along the path at each point
+        private float totalTime;
+        private float totalDistance;
         private float startTime;
         private float delay;
-        private float speed;
-        private float trail;
+        private float trailTime;
         private int nextMarker;
         private bool started;
         private readonly List<Vector3> visible = new List<Vector3>();
 
-        internal void Init(RayPath path, LineRenderer line, Color color,
-                           float delay, float speed, float trail)
+        internal void Init(RayPath path, LineRenderer line, Color color, float delay, float trailLength)
         {
             this.path = path;
             this.line = line;
             this.delay = delay;
-            this.speed = Mathf.Max(speed, 0.1f);
-            this.trail = Mathf.Max(trail, 0.05f);
             startTime = Time.time;
 
             // Transparent at the tail, solid at the head.
@@ -35,40 +37,52 @@ namespace ArmorFragments
             line.endColor = color;
 
             int n = path.Points.Count;
-            cumulative = new float[n];
+            cumulativeDistance = new float[n];
+            cumulativeTime = new float[n];
+            float firstSpeed = 0f;
             for (int i = 1; i < n; i++)
-                cumulative[i] = cumulative[i - 1] + Vector3.Distance(path.Points[i - 1], path.Points[i]);
-            total = cumulative[n - 1];
+            {
+                float length = Vector3.Distance(path.Points[i - 1], path.Points[i]);
+                float speed = path.SpeedTo[i] > 0.01f ? path.SpeedTo[i] : DefaultSpeed;
+                if (firstSpeed <= 0f) firstSpeed = speed;
+
+                cumulativeDistance[i] = cumulativeDistance[i - 1] + length;
+                cumulativeTime[i] = cumulativeTime[i - 1] + length / speed;
+            }
+            totalDistance = cumulativeDistance[n - 1];
+            totalTime = cumulativeTime[n - 1];
+
+            // The trail covers 'trailLength' meters at the speed the ray starts with.
+            trailTime = Mathf.Max(trailLength, 0.05f) / Mathf.Max(firstSpeed, 1f);
         }
 
         private void Update()
         {
-            if (total <= 0.0001f) { Destroy(gameObject); return; }
+            if (totalDistance <= 0.0001f) { Destroy(gameObject); return; }
 
             float t = Time.time - startTime - delay;
             if (t < 0f) return;
 
             if (!started) { started = true; line.enabled = true; }
 
-            float headRaw = t * speed;          // keeps growing after the end of the path
-            float tailRaw = headRaw - trail;
-            if (tailRaw >= total) { Destroy(gameObject); return; }
+            float tailTime = t - trailTime;
+            if (tailTime >= totalTime) { Destroy(gameObject); return; }
 
             // A bubble appears when the head reaches each marked point.
-            while (nextMarker < cumulative.Length && cumulative[nextMarker] <= headRaw)
+            while (nextMarker < cumulativeTime.Length && cumulativeTime[nextMarker] <= t)
             {
                 RayDrawer.SpawnBubble(path.Points[nextMarker], path.Markers[nextMarker]);
                 nextMarker++;
             }
 
-            float head = Mathf.Min(headRaw, total);
-            float tail = Mathf.Max(tailRaw, 0f);
+            float head = DistanceAt(Mathf.Min(t, totalTime));
+            float tail = DistanceAt(Mathf.Max(tailTime, 0f));
 
             // Visible piece: tail point, every corner between tail and head, head point.
             visible.Clear();
             visible.Add(PointAt(tail));
-            for (int i = 0; i < cumulative.Length; i++)
-                if (cumulative[i] > tail && cumulative[i] < head)
+            for (int i = 0; i < cumulativeDistance.Length; i++)
+                if (cumulativeDistance[i] > tail && cumulativeDistance[i] < head)
                     visible.Add(path.Points[i]);
             visible.Add(PointAt(head));
 
@@ -77,14 +91,29 @@ namespace ArmorFragments
                 line.SetPosition(i, visible[i]);
         }
 
+        // Where the head is (as a distance along the path) after 'time' seconds.
+        private float DistanceAt(float time)
+        {
+            for (int i = 1; i < cumulativeTime.Length; i++)
+            {
+                if (time <= cumulativeTime[i])
+                {
+                    float span = cumulativeTime[i] - cumulativeTime[i - 1];
+                    float f = span > 0.000001f ? (time - cumulativeTime[i - 1]) / span : 0f;
+                    return Mathf.Lerp(cumulativeDistance[i - 1], cumulativeDistance[i], f);
+                }
+            }
+            return totalDistance;
+        }
+
         private Vector3 PointAt(float distance)
         {
-            for (int i = 1; i < cumulative.Length; i++)
+            for (int i = 1; i < cumulativeDistance.Length; i++)
             {
-                if (distance <= cumulative[i])
+                if (distance <= cumulativeDistance[i])
                 {
-                    float segment = cumulative[i] - cumulative[i - 1];
-                    float f = segment > 0.00001f ? (distance - cumulative[i - 1]) / segment : 0f;
+                    float segment = cumulativeDistance[i] - cumulativeDistance[i - 1];
+                    float f = segment > 0.00001f ? (distance - cumulativeDistance[i - 1]) / segment : 0f;
                     return Vector3.Lerp(path.Points[i - 1], path.Points[i], f);
                 }
             }
