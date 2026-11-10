@@ -139,14 +139,18 @@ namespace ArmorFragments.UI
                 });
             }
 
-            FloatSetting(ArmorFragmentsPlugin.SimShellMass, "Sim shell mass",
+            // The simulated cannon: the same two properties a cannon with a [CAN] tag has in the designer.
+            IntSetting(ArmorFragmentsPlugin.SimFragmentCount, "Fragments",
+                "How many fragment rays a shell makes when it penetrates armor.");
+            FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Shell hardness",
+                "How hard the shell is, compared with armor. 100 % is the reference. Harder shells ricochet less.", 5f, " %");
+            // What a tag does not carry: a real cannon gives these to its shell.
+            FloatSetting(ArmorFragmentsPlugin.SimShellMass, "Shell mass",
                 "Mass of the imaginary shell. With its speed it gives the shell's energy.", 0.1f, " kg");
-            FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Sim shell speed",
+            FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Shell speed",
                 "Speed of the imaginary shell.", 10f, " m/s");
-            FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Sim caliber",
+            FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Caliber",
                 "Caliber of the imaginary shell: sets the area the armor has to open.", 1f, " mm");
-            IntSetting(ArmorFragmentsPlugin.SimFragmentCount, "Simulated fragments",
-                "Fragment rays made by the simulated shell when it penetrates.");
             ToggleSetting(ArmorFragmentsPlugin.XRayAfterSimulation, "X-ray after shot",
                 "Switch on the X-ray view after each simulated shot.");
             FloatSetting(ArmorFragmentsPlugin.XRayRadius, "X-ray radius",
@@ -193,8 +197,6 @@ namespace ArmorFragments.UI
 
             FloatSetting(ArmorFragmentsPlugin.DefaultShellHardness, "Default shell hardness",
                 "Shell hardness for cannons without a [CAN k=] tag. Used for the ricochet angle.", 5f, " %");
-            FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Sim shell hardness",
-                "Shell hardness of the simulated shot. Used for the ricochet angle.", 5f, " %");
             FloatSetting(ArmorFragmentsPlugin.ArmorResistance, "Armor resistance",
                 "Energy armor takes, per mm of thickness crossed per cm2 of shell area. About 600 matches real steel.", 5f, " J/mm/cm2");
             FloatSetting(ArmorFragmentsPlugin.RicochetFriction, "Ricochet friction",
