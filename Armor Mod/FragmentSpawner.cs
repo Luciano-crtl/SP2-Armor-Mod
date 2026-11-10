@@ -401,8 +401,22 @@ namespace ArmorFragments
             AircraftScript aircraft = part.Aircraft;
             if (aircraft != null && aircraft.RemoteAircraft)
             {
-                if (aircraft.NetworkAircraft != null)
-                    aircraft.NetworkAircraft.DamagePart(Attacker, part, damage, point, dir);
+                if (aircraft.NetworkAircraft == null)
+                {
+                    ArmorFragmentsPlugin.Log.LogWarning("Remote damage not sent: '" + part.Part.Name + "' has no network aircraft");
+                    return;
+                }
+
+                // In peaceful mode the server throws away all damage between players.
+                if (Assets.Scripts.Flight.FlightSceneScript.IsPeacefulMode)
+                    ArmorFragmentsPlugin.Log.LogWarning(
+                        "PEACEFUL MODE is on: the server ignores damage to other players' aircraft (turn it off in the multiplayer settings)");
+
+                ArmorFragmentsPlugin.Log.LogInfo(
+                    "Remote damage sent: " + damage.ToString("F1") + " to '" + part.Part.Name + "' (part id " +
+                    part.Part.Id + ") of player " + aircraft.NetworkAircraft.PlayerId +
+                    ", attacker " + (Attacker.HasValue ? Attacker.Value.ToString() : "none"));
+                aircraft.NetworkAircraft.DamagePart(Attacker, part, damage, point, dir);
                 return;
             }
             part.OnDamaged(null, damage, point, dir);
