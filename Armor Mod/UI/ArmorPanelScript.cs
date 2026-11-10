@@ -108,6 +108,7 @@ namespace ArmorFragments.UI
         private void BuildSimulation()
         {
             builder.Header("Simulate shot");
+            builder.Text("Mod version", ArmorFragmentsPlugin.Version);
             builder.Buttons(new List<KeyValuePair<string, Action>>
             {
                 new KeyValuePair<string, Action>("Simulate shot", ShotSimulator.Fire),

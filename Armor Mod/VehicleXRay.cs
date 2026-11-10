@@ -15,7 +15,11 @@ namespace ArmorFragments
                 Key key = ArmorFragmentsPlugin.VehicleXRayKey.Value;
                 Keyboard keyboard = Keyboard.current;
                 if (key == Key.None || keyboard == null) return;
-                if (keyboard[key].wasPressedThisFrame) Toggle();
+                if (keyboard[key].wasPressedThisFrame)
+                {
+                    ArmorFragmentsPlugin.Log.LogInfo("Vehicle X-ray key (" + key + ") pressed");
+                    Toggle();
+                }
             }
             catch (System.Exception e)
             {

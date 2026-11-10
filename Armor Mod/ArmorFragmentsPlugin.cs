@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace ArmorFragments
 {
-    [BepInPlugin("com.yourname.armorfragments", "Armor Fragments", "0.1.0")]
+    [BepInPlugin("com.yourname.armorfragments", "Armor Fragments", Version)]
     public class ArmorFragmentsPlugin : BaseUnityPlugin
     {
         internal static ManualLogSource Log;
@@ -66,6 +66,9 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetAngle;
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
+        // Shown in the log and the panel, to tell which build the game is really running.
+        public const string Version = "0.2.0";
+
         private void Update()
         {
             UI.DesignerSection.Tick();
@@ -77,6 +80,7 @@ namespace ArmorFragments
         {
             Log = Logger;
             Instance = this;
+            Log.LogInfo("Armor Fragments " + Version + " loading");
 
             // Keeps this plugin's latest log lines for the in-game panel.
             BepInEx.Logging.Logger.Listeners.Add(new LogMirror());
@@ -123,6 +127,7 @@ namespace ArmorFragments
             VehicleXRayKey = Config.Bind("Simulation", "VehicleXRayKey", UnityEngine.InputSystem.Key.F8,
                 "Key that shows your own vehicle in the X-ray view, coloured by the damage its parts have taken " +
                 "(yellow = a little, orange = damaged, red = a lot). Press again to switch it off. 'None' disables it.");
+            Log.LogInfo("Vehicle X-ray key: " + VehicleXRayKey.Value);
             XRayAfterSimulation = Config.Bind("Simulation", "XRayAfterSimulation", true,
                 "If true, a simulated shot switches on the X-ray view.");
             XRayRadius = Config.Bind("Simulation", "XRayRadius", 40f,
