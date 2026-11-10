@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Assets.Scripts.Craft;
 using Assets.Scripts.Craft.Parts;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
 using UnityEngine;
@@ -34,6 +35,10 @@ namespace ArmorFragments
         // together with the moment the first fragment touches the part.
         // The shot simulator sets it for one shot, then clears it.
         public static Dictionary<PartScript, DamageRecord> DamageSink;
+
+        // Who fired the shell being resolved (the game's player id; null for the simulated shot or when
+        // unknown). Set by the cannon hit patch around each resolution, as the game does for its own shells.
+        public static int? Attacker;
 
         private struct TraceResult
         {
@@ -374,7 +379,7 @@ namespace ArmorFragments
             float damage = joules / 1000f * ArmorFragmentsPlugin.DamagePerKiloJoule.Value;
             if (tags.Module != null && damage < tags.Module.MinDamage) return;
 
-            if (applyDamage) part.OnDamaged(null, damage, point, dir);
+            if (applyDamage) ApplyDamage(part, damage, point, dir);
             result.Damage += damage;   // counted even when not applied: "would-be" damage
 
             if (DamageSink != null)
@@ -387,6 +392,20 @@ namespace ArmorFragments
                 record.FirstTime = Mathf.Min(record.FirstTime, arrival);
                 DamageSink[part] = record;
             }
+        }
+
+        // Damages a part the way the game's own shells do. A part of a REMOTE aircraft (another player's)
+        // ignores OnDamaged; its owner has to be told over the network, which is what DamagePart does.
+        private static void ApplyDamage(PartScript part, float damage, Vector3 point, Vector3 dir)
+        {
+            AircraftScript aircraft = part.Aircraft;
+            if (aircraft != null && aircraft.RemoteAircraft)
+            {
+                if (aircraft.NetworkAircraft != null)
+                    aircraft.NetworkAircraft.DamagePart(Attacker, part, damage, point, dir);
+                return;
+            }
+            part.OnDamaged(null, damage, point, dir);
         }
 
         // 0 = head-on, 90 = grazing.

@@ -64,6 +64,8 @@ namespace ArmorFragments
             try
             {
                 PartPhysics.BeginShot();   // part densities and colliders are remembered per shot
+                FragmentSpawner.Attacker = __instance.Owner != null && __instance.Owner.NetworkAircraft != null
+                    ? __instance.Owner.NetworkAircraft.PlayerId : (int?)null;
 
                 if (armor == null)
                 {
@@ -84,6 +86,10 @@ namespace ArmorFragments
             catch (System.Exception e)
             {
                 ArmorFragmentsPlugin.Log.LogError("Fragment spawn failed: " + e);
+            }
+            finally
+            {
+                FragmentSpawner.Attacker = null;
             }
         }
 

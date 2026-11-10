@@ -1,4 +1,5 @@
 using Assets.Scripts.Craft.Parts;
+using Assets.Scripts.Multiplayer;
 using HarmonyLib;
 
 namespace ArmorFragments
@@ -20,6 +21,21 @@ namespace ArmorFragments
             if (data == null) return true;
 
             return TagCodec.Parse(data.Name).Armor == null;
+        }
+    }
+
+    // The same rule for a shell that hits a part of ANOTHER player's aircraft. The game does not call
+    // OnDamaged there: it sends the damage to the aircraft's owner through DamagePart. Without this, the
+    // game's own damage to a remote armor plate would still go out (and land if the owner has no mod).
+    [HarmonyPatch(typeof(NetworkAircraftScript), "DamagePart")]
+    internal static class RemoteArmorDamagePatch
+    {
+        private static bool Prefix(PartScript part)
+        {
+            if (!ArmorFragmentsPlugin.IgnoreGameDamageOnArmor.Value) return true;
+            if (part == null || part.Part == null) return true;
+
+            return TagCodec.Parse(part.Part.Name).Armor == null;
         }
     }
 }
