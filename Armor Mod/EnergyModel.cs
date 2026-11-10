@@ -38,6 +38,15 @@ namespace ArmorFragments
         // A flying piece is considered stopped when its energy falls below this fraction of what it started with.
         public const float StopFraction = 0.005f;
 
+        // Mass (kg) of a shell of this caliber, worked out the way the game does it for a real cannon:
+        // the standard projectile is a cylinder of radius r (half the caliber) and length r, made of lead
+        // (11342 kg/m3). The game then stores it at 1/100, which the rest of the mod undoes.
+        public static float ShellMassForCaliber(float caliberMm)
+        {
+            float radius = Mathf.Max(caliberMm, 0f) * 0.0005f;   // mm -> m, halved
+            return Mathf.PI * radius * radius * radius * 11342f;
+        }
+
         private const float JitterMaxDegrees = 10f;    // size of the random shift at 100% randomness
 
         // Energy (joules) the armor takes from the shell, which opens a plug of its own cross-section:

@@ -113,7 +113,7 @@ namespace ArmorFragments
             };
             ShellInfo shell = new ShellInfo
             {
-                Mass = ArmorFragmentsPlugin.SimShellMass.Value,
+                Mass = EnergyModel.ShellMassForCaliber(ArmorFragmentsPlugin.SimCaliber.Value),
                 Speed = ArmorFragmentsPlugin.SimShellVelocity.Value,
                 CaliberMm = ArmorFragmentsPlugin.SimCaliber.Value,
                 Hardness = ArmorFragmentsPlugin.SimShellHardness.Value,

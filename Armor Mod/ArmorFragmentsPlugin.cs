@@ -41,7 +41,6 @@ namespace ArmorFragments
         internal static ConfigEntry<float> DefaultShellHardness;
         internal static ConfigEntry<float> SimShellHardness;
         internal static ConfigEntry<float> SimCaliber;
-        internal static ConfigEntry<float> SimShellMass;
         internal static ConfigEntry<float> SimShellVelocity;
         internal static ConfigEntry<float> ArmorResistance;
         internal static ConfigEntry<float> RicochetFriction;
@@ -144,11 +143,8 @@ namespace ArmorFragments
                 new ConfigDescription("Shell hardness (%) of the simulated shot. Compared with the armor's hardness for the ricochet angle.",
                     new AcceptableValueRange<float>(10f, 300f)));
             SimCaliber = Config.Bind("Energy", "SimulatedCaliber", 100f,
-                new ConfigDescription("Caliber (mm) of the simulated shell. With its mass and speed it gives the shell's energy.",
+                new ConfigDescription("Caliber (mm) of the simulated shell. Its mass is worked out from it, as the game does for a real cannon.",
                     new AcceptableValueRange<float>(5f, 500f)));
-            SimShellMass = Config.Bind("Energy", "SimulatedShellMass", 10f,
-                new ConfigDescription("Mass (kg) of the simulated shell. A 40 mm shell is about 0.9 kg.",
-                    new AcceptableValueRange<float>(0.01f, 1000f)));
             SimShellVelocity = Config.Bind("Energy", "SimulatedShellVelocity", 800f,
                 new ConfigDescription("Speed (m/s) of the simulated shell.",
                     new AcceptableValueRange<float>(10f, 3000f)));

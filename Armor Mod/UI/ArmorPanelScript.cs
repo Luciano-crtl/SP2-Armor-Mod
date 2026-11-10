@@ -140,17 +140,17 @@ namespace ArmorFragments.UI
             }
 
             // The simulated cannon: the same two properties a cannon with a [CAN] tag has in the designer.
-            IntSetting(ArmorFragmentsPlugin.SimFragmentCount, "Fragments",
+            IntSetting(ArmorFragmentsPlugin.SimFragmentCount, "Simulated shell fragments",
                 "How many fragment rays a shell makes when it penetrates armor.");
-            FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Shell hardness",
+            FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Simulated shell hardness",
                 "How hard the shell is, compared with armor. 100 % is the reference. Harder shells ricochet less.", 5f, " %");
-            // What a tag does not carry: a real cannon gives these to its shell.
-            FloatSetting(ArmorFragmentsPlugin.SimShellMass, "Shell mass",
-                "Mass of the imaginary shell. With its speed it gives the shell's energy.", 0.1f, " kg");
-            FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Shell speed",
+            // What a real cannon gives its shell. The mass follows from the caliber, as in the game.
+            FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Simulated shell velocity",
                 "Speed of the imaginary shell.", 10f, " m/s");
-            FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Caliber",
-                "Caliber of the imaginary shell: sets the area the armor has to open.", 1f, " mm");
+            FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Simulated shell caliber",
+                "Caliber of the imaginary shell. It sets the area the armor has to open and, with it, the shell's mass.", 1f, " mm");
+            Live("Calculated shell mass", () =>
+                EnergyModel.ShellMassForCaliber(ArmorFragmentsPlugin.SimCaliber.Value).ToString("F2") + " kg");
             ToggleSetting(ArmorFragmentsPlugin.XRayAfterSimulation, "X-ray after shot",
                 "Switch on the X-ray view after each simulated shot.");
             FloatSetting(ArmorFragmentsPlugin.XRayRadius, "X-ray radius",
