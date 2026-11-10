@@ -28,6 +28,7 @@ namespace ArmorFragments
         // Shot simulation and X-ray view.
         internal static ConfigEntry<int> SimFragmentCount;
         internal static ConfigEntry<bool> XRayAfterSimulation;
+        internal static ConfigEntry<UnityEngine.InputSystem.Key> VehicleXRayKey;
         internal static ConfigEntry<float> XRayRadius;
         internal static ConfigEntry<float> XRayDuration;
         internal static ConfigEntry<float> XRayDarkPercent;
@@ -69,6 +70,7 @@ namespace ArmorFragments
         {
             UI.DesignerSection.Tick();
             XRayView.Tick();
+            VehicleXRay.Tick();
         }
 
         private void Awake()
@@ -118,6 +120,9 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "Fragment rays made by the simulated shell when it penetrates armor.",
                     new AcceptableValueRange<int>(1, 200)));
+            VehicleXRayKey = Config.Bind("Simulation", "VehicleXRayKey", UnityEngine.InputSystem.Key.F8,
+                "Key that shows your own vehicle in the X-ray view, coloured by the damage its parts have taken " +
+                "(yellow = a little, orange = damaged, red = a lot). Press again to switch it off. 'None' disables it.");
             XRayAfterSimulation = Config.Bind("Simulation", "XRayAfterSimulation", true,
                 "If true, a simulated shot switches on the X-ray view.");
             XRayRadius = Config.Bind("Simulation", "XRayRadius", 40f,

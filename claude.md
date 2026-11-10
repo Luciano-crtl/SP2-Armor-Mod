@@ -220,3 +220,8 @@ Unidades de massa e velocidade; fidelidade dos colliders e peças ocas; volume d
 4. **Explosão interna:** decidir a pergunta em aberto. Antes, ler no `Game.dll` como a explosão causa dano às peças e suprimir/mover o `Explode()` original.
 5. **Comandos no console nativo** (`DevConsoleApi.RegisterCommand`, no `Jundroo.Packages`), opcional.
 6. **Mais tarde:** feixe de raios no ricochete em vez de raio único, metralhadoras, multiplayer, e conferir o mod depois de cada atualização do jogo.
+
+## Visão raio-x do veículo (tecla)
+- `VehicleXRay` (tecla `VehicleXRayKey`, padrão F8, via Input System; também o botão "Vehicle X-ray" no painel) mostra o veículo do jogador (`FlightSceneScript.Instance.LocalPlayer.Aircraft`) em raio-x, com todas as peças coloridas pelo dano REAL (`PartScript.PartDamage / MaxHealth`). Fica ligada até apertar de novo e atualiza as cores a cada 0,5 s (`XRayView.UpdateLive`).
+- Escala de cores (tiro simulado e veículo): neutro azulado = sem dano, amarelo = pouco, laranja = danificado, vermelho = muito (`XRayView.DamageColor`). "Fully dark at" define a % de vida perdida que vale vermelho.
+- Não testado no jogo. Custo: todas as peças do veículo ganham fantasmas; o limite de vértices do visual de borda (`XRayMaxRimKiloVertices`) protege o desempenho.

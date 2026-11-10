@@ -23,8 +23,18 @@ namespace ArmorFragments
         private static Material[] whiteMaterials;    // for rim-lit ghosts: color comes from the mesh
         private static readonly List<RimGhost> RimList = new List<RimGhost>();
         private static readonly List<Reveal> Reveals = new List<Reveal>();
+        private static readonly List<LiveEntry> LiveList = new List<LiveEntry>();
+        private static bool liveMode;
+        private static float nextLiveUpdate;
+        private const float LiveInterval = 0.5f;   // seconds between looks at the vehicle's damage
         private static float hideAtTime;
         private static int rimRoundRobin;   // where the next frame continues in RimList
+
+        // True while the vehicle view (which stays on until switched off) is showing.
+        public static bool IsLive
+        {
+            get { return liveMode && IsOn; }
+        }
 
         public static bool IsOn
         {
@@ -34,6 +44,32 @@ namespace ArmorFragments
         // damage: simulated damage per part. center: where the shot hit.
         public static void Show(Vector3 center, Dictionary<PartScript, DamageRecord> damage)
         {
+            Show(center, damage, null);
+        }
+
+        // The player's own vehicle: every part is shown, coloured by the damage it has really taken, and
+        // the colours follow new damage until the view is switched off.
+        public static void ShowVehicle(AircraftScript aircraft)
+        {
+            List<PartScript> all = new List<PartScript>();
+            Dictionary<PartScript, DamageRecord> damage = new Dictionary<PartScript, DamageRecord>();
+            foreach (PartData data in aircraft.Parts)
+            {
+                PartScript part = data != null ? data.PartScript : null;
+                if (part == null) continue;
+                all.Add(part);
+                if (part.PartDamage > 0f) damage[part] = new DamageRecord { Total = part.PartDamage };
+            }
+            if (all.Count == 0) return;
+
+            Show(aircraft.CalculateBounds(false).center, damage, all);
+        }
+
+        // vehicleParts: null for a shot (the parts near the impact); a list for the vehicle view.
+        private static void Show(Vector3 center, Dictionary<PartScript, DamageRecord> damage,
+                                 List<PartScript> vehicleParts)
+        {
+            bool live = vehicleParts != null;
             Hide();
 
             Shader shader = RayDrawer.GetShader();
@@ -50,13 +86,20 @@ namespace ArmorFragments
 
             // Every part near the impact (and every part that took simulated damage).
             HashSet<PartScript> parts = new HashSet<PartScript>();
-            int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
-            Collider[] colliders = Physics.OverlapSphere(
-                center, ArmorFragmentsPlugin.XRayRadius.Value, mask, QueryTriggerInteraction.Ignore);
-            foreach (Collider collider in colliders)
+            if (live)
             {
-                PartScript part = collider.GetComponentInParent<PartScript>();
-                if (part != null) parts.Add(part);
+                foreach (PartScript part in vehicleParts) parts.Add(part);
+            }
+            else
+            {
+                int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
+                Collider[] colliders = Physics.OverlapSphere(
+                    center, ArmorFragmentsPlugin.XRayRadius.Value, mask, QueryTriggerInteraction.Ignore);
+                foreach (Collider collider in colliders)
+                {
+                    PartScript part = collider.GetComponentInParent<PartScript>();
+                    if (part != null) parts.Add(part);
+                }
             }
             foreach (PartScript part in damage.Keys) parts.Add(part);
 
@@ -84,7 +127,7 @@ namespace ArmorFragments
 
             float fullDark = Mathf.Max(ArmorFragmentsPlugin.XRayDarkPercent.Value / 100f, 0.01f);
             bool rimLook = ArmorFragmentsPlugin.XRayRimLook.Value;
-            bool showUndamaged = ArmorFragmentsPlugin.XRayShowUndamaged.Value;
+            bool showUndamaged = live || ArmorFragmentsPlugin.XRayShowUndamaged.Value;   // the vehicle view needs every part
             int rimVertexLimit = ArmorFragmentsPlugin.XRayMaxRimKiloVertices.Value * 1000;
             HashSet<Renderer> alreadyHidden = new HashSet<Renderer>();
             float showTime = Time.time;
@@ -101,7 +144,7 @@ namespace ArmorFragments
                 // How dark it ends up: damage as a fraction of the part's health, scaled so that
                 // 'fullDark' of the health lost means fully dark.
                 float t = Mathf.Clamp01(entry.Taken / Mathf.Max(part.MaxHealth, 1f) / fullDark);
-                int level = Mathf.RoundToInt(t * (Levels - 1));
+                int level = LevelFor(t, entry.Taken);
 
                 // The ghost starts neutral. A part that takes damage changes look when the
                 // first fragment reaches it.
@@ -117,20 +160,26 @@ namespace ArmorFragments
                 PartGroupScript group = part.PartGroup;
                 if (group != null && group.Renderer != null) HideRenderer(group.Renderer, alreadyHidden);
 
+                List<GhostInfo> partGhosts = new List<GhostInfo>();
                 foreach (MeshRenderer source in GhostSources(part))
                 {
                     MeshFilter filter = source.GetComponent<MeshFilter>();
                     if (filter == null || filter.sharedMesh == null) continue;
 
                     GhostInfo info = MakeGhost(source, filter.sharedMesh, isArmor, rimLook, rimVertexLimit);
+                    partGhosts.Add(info);
                     if (reveal != null) reveal.Ghosts.Add(info);
                     HideRenderer(source, alreadyHidden);
                 }
+                if (live && partGhosts.Count > 0)
+                    LiveList.Add(new LiveEntry { Part = part, Ghosts = partGhosts, IsArmor = isArmor, Level = entry.Taken > 0f ? level : 0 });
             }
 
             rimRoundRobin = 0;
             // The view stays on for its duration counted from the last part being hit.
-            hideAtTime = showTime + lastReveal + ArmorFragmentsPlugin.XRayDuration.Value;
+            liveMode = live;
+            nextLiveUpdate = Time.time + LiveInterval;
+            hideAtTime = live ? float.MaxValue : showTime + lastReveal + ArmorFragmentsPlugin.XRayDuration.Value;
 
             XRayStats.BuildMs = (float)timer.Elapsed.TotalMilliseconds;
             ArmorFragmentsPlugin.Log.LogInfo(
@@ -158,6 +207,15 @@ namespace ArmorFragments
             public readonly List<GhostInfo> Ghosts = new List<GhostInfo>();
         }
 
+        // A part of the vehicle view: its ghosts and the damage level they currently show.
+        private sealed class LiveEntry
+        {
+            public PartScript Part;
+            public List<GhostInfo> Ghosts;
+            public bool IsArmor;
+            public int Level;
+        }
+
         private sealed class GhostInfo
         {
             public MeshRenderer Renderer;
@@ -173,15 +231,42 @@ namespace ArmorFragments
             public float RimAlpha;
         }
 
-        // t: 0 = no damage, 1 = fully dark. Damaged parts get a dark red body and a bright red rim.
+        // The damage scale: lightly damaged = yellow, damaged = orange, badly damaged = red.
+        // t: 0..1, where 1 means 'fully dark' (the setting) of the part's health lost.
+        private static Color DamageColor(float t)
+        {
+            Color yellow = new Color(1.00f, 0.88f, 0.10f);
+            Color orange = new Color(1.00f, 0.50f, 0.05f);
+            Color red = new Color(0.95f, 0.06f, 0.03f);
+            t = Mathf.Clamp01(t);
+            return t < 0.5f ? Color.Lerp(yellow, orange, t * 2f) : Color.Lerp(orange, red, (t - 0.5f) * 2f);
+        }
+
+        // The material level of a part: 0 is the neutral look, so any damage at all gets at least 1.
+        private static int LevelFor(float t, float taken)
+        {
+            int level = Mathf.RoundToInt(t * (Levels - 1));
+            return taken > 0f ? Mathf.Max(1, level) : level;
+        }
+
+        // t: 0 = no damage (neutral, bluish), 1 = fully dark. A damaged part is yellow, orange or red.
         private static Look ComputeLook(float t, bool isArmor)
         {
             Look look = new Look();
-            look.Body = Color.Lerp(isArmor ? new Color(0.55f, 0.85f, 1.00f) : new Color(0.78f, 0.82f, 0.88f),
-                                   new Color(0.30f, 0.03f, 0.03f), t);
-            look.BodyAlpha = Mathf.Lerp(isArmor ? 0.06f : 0.02f, 0.60f, t);
-            look.Rim = Color.Lerp(new Color(0.90f, 0.95f, 1.00f), new Color(1.00f, 0.12f, 0.05f), t);
-            look.RimAlpha = Mathf.Lerp(isArmor ? 0.45f : 0.22f, 0.95f, t);
+            if (t <= 0f)
+            {
+                look.Body = isArmor ? new Color(0.55f, 0.85f, 1.00f) : new Color(0.78f, 0.82f, 0.88f);
+                look.BodyAlpha = isArmor ? 0.06f : 0.02f;
+                look.Rim = new Color(0.90f, 0.95f, 1.00f);
+                look.RimAlpha = isArmor ? 0.45f : 0.22f;
+                return look;
+            }
+
+            Color damage = DamageColor(t);
+            look.Body = damage * 0.75f;
+            look.BodyAlpha = Mathf.Lerp(0.18f, 0.55f, t);
+            look.Rim = damage;
+            look.RimAlpha = Mathf.Lerp(0.70f, 0.95f, t);
             return look;
         }
 
@@ -197,6 +282,8 @@ namespace ArmorFragments
             Ghosts.Clear();
 
             Reveals.Clear();
+            LiveList.Clear();
+            liveMode = false;
 
             // The rim ghosts own copies of meshes: free them.
             foreach (RimGhost rim in RimList)
@@ -222,6 +309,11 @@ namespace ArmorFragments
             }
 
             ApplyDueReveals();
+            if (liveMode && Time.time >= nextLiveUpdate)
+            {
+                nextLiveUpdate = Time.time + LiveInterval;
+                UpdateLive();
+            }
             UpdateRimColors();
         }
 
@@ -233,19 +325,47 @@ namespace ArmorFragments
                 Reveal reveal = Reveals[i];
                 if (Time.time < reveal.At) continue;
 
-                Look look = ComputeLook(reveal.T, reveal.IsArmor);
-                foreach (GhostInfo ghost in reveal.Ghosts)
-                {
-                    if (ghost == null || ghost.Renderer == null) continue;
-
-                    Material material = ghost.Rim != null
-                        ? whiteMaterials[reveal.Level]
-                        : (reveal.IsArmor ? armorMaterials : normalMaterials)[reveal.Level];
-                    SetMaterial(ghost.Renderer, ghost.SubMeshes, material);
-                    if (ghost.Rim != null) ghost.Rim.SetLook(look.Body, look.BodyAlpha, look.Rim, look.RimAlpha);
-                }
+                ApplyLook(reveal.Ghosts, reveal.T, reveal.Level, reveal.IsArmor);
                 Reveals.RemoveAt(i);
             }
+        }
+
+        // Gives a part's ghosts the look of 'level' (t is the matching 0..1 darkness).
+        private static void ApplyLook(List<GhostInfo> ghosts, float t, int level, bool isArmor)
+        {
+            Look look = ComputeLook(t, isArmor);
+            foreach (GhostInfo ghost in ghosts)
+            {
+                if (ghost == null || ghost.Renderer == null) continue;
+
+                Material material = ghost.Rim != null
+                    ? whiteMaterials[level]
+                    : (isArmor ? armorMaterials : normalMaterials)[level];
+                SetMaterial(ghost.Renderer, ghost.SubMeshes, material);
+                if (ghost.Rim != null) ghost.Rim.SetLook(look.Body, look.BodyAlpha, look.Rim, look.RimAlpha);
+            }
+        }
+
+        // Vehicle view: look at each part's real damage and restyle the ones whose level changed.
+        // Switches itself off when the vehicle is gone.
+        private static void UpdateLive()
+        {
+            float fullDark = Mathf.Max(ArmorFragmentsPlugin.XRayDarkPercent.Value / 100f, 0.01f);
+            int alive = 0;
+            foreach (LiveEntry entry in LiveList)
+            {
+                if (entry.Part == null) continue;
+                alive++;
+
+                float taken = entry.Part.PartDamage;
+                float t = Mathf.Clamp01(taken / Mathf.Max(entry.Part.MaxHealth, 1f) / fullDark);
+                int level = LevelFor(t, taken);
+                if (level == entry.Level) continue;
+
+                entry.Level = level;
+                ApplyLook(entry.Ghosts, t, level, entry.IsArmor);
+            }
+            if (alive == 0) Hide();
         }
 
         private static void SetMaterial(MeshRenderer renderer, int subMeshes, Material material)
@@ -400,16 +520,23 @@ namespace ArmorFragments
             normalMaterials = new Material[Levels];
             armorMaterials = new Material[Levels];
 
-            // From almost invisible (no damage) to dark and nearly solid (a lot of damage).
+            // Level 0: almost invisible (no damage). Levels 1..: yellow, orange, red, more solid as the damage grows.
             Color normalLight = new Color(0.70f, 0.80f, 0.95f, 0.04f);
             Color armorLight = new Color(0.45f, 0.85f, 1.00f, 0.09f);
-            Color dark = new Color(0.10f, 0.00f, 0.00f, 0.92f);
 
             for (int i = 0; i < Levels; i++)
             {
+                if (i == 0)
+                {
+                    normalMaterials[i] = MakeMaterial(shader, normalLight, i);
+                    armorMaterials[i] = MakeMaterial(shader, armorLight, i);
+                    continue;
+                }
                 float t = i / (float)(Levels - 1);
-                normalMaterials[i] = MakeMaterial(shader, Color.Lerp(normalLight, dark, t), i);
-                armorMaterials[i] = MakeMaterial(shader, Color.Lerp(armorLight, dark, t), i);
+                Color damage = DamageColor(t);
+                damage.a = Mathf.Lerp(0.30f, 0.85f, t);
+                normalMaterials[i] = MakeMaterial(shader, damage, i);
+                armorMaterials[i] = MakeMaterial(shader, damage, i);
             }
         }
     }
