@@ -377,7 +377,6 @@ namespace ArmorFragments
             if (tags.Armor != null) return;
 
             float damage = joules / 1000f * ArmorFragmentsPlugin.DamagePerKiloJoule.Value;
-            if (tags.Module != null && damage < tags.Module.MinDamage) return;
 
             if (applyDamage) ApplyDamage(part, damage, point, dir);
             result.Damage += damage;   // counted even when not applied: "would-be" damage

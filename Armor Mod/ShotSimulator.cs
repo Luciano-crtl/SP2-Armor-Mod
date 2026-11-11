@@ -147,8 +147,7 @@ namespace ArmorFragments
             foreach (BallisticRay.Crossed crossing in ray.Crossings)
             {
                 float rayDamage = crossing.Dissipated / 1000f * ArmorFragmentsPlugin.DamagePerKiloJoule.Value;
-                ModuleTag module = TagCodec.Parse(crossing.Part.Part.Name).Module;
-                if (rayDamage <= 0f || (module != null && rayDamage < module.MinDamage)) continue;
+                if (rayDamage <= 0f) continue;
 
                 sink[crossing.Part] = new DamageRecord { Total = rayDamage, FirstTime = crossing.ArrivalTime };
             }

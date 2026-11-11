@@ -29,7 +29,6 @@ namespace ArmorFragments
     // Part that reacts to fragment damage (engine, tank, propeller, some fuselages).
     internal sealed class ModuleTag
     {
-        public float MinDamage = 1f;   // d: fragments weaker than this are ignored
         public string Variable;        // v: name of the Funky Trees variable that carries the part's damage (null = from the part's name)
     }
 
@@ -96,11 +95,7 @@ namespace ArmorFragments
                 }
                 else if (kind == "MOD")
                 {
-                    tags.Module = new ModuleTag
-                    {
-                        MinDamage = Get(values, "d", 1f),
-                        Variable = ReadText(block.Groups[2].Value, "v"),
-                    };
+                    tags.Module = new ModuleTag { Variable = ReadText(block.Groups[2].Value, "v") };
                 }
             }
 
@@ -121,8 +116,8 @@ namespace ArmorFragments
                 Append(name, "[CAN f=" + tags.Cannon.Fragments +
                        " k=" + Number(tags.Cannon.ShellHardness) + "]");
             if (tags.Module != null)
-                Append(name, "[MOD d=" + Number(tags.Module.MinDamage) +
-                       (string.IsNullOrEmpty(tags.Module.Variable) ? "" : " v=" + tags.Module.Variable) + "]");
+                Append(name, string.IsNullOrEmpty(tags.Module.Variable)
+                    ? "[MOD]" : "[MOD v=" + tags.Module.Variable + "]");
 
             return name.Length == 0 ? fallback : name.ToString();
         }
