@@ -17,8 +17,9 @@ namespace ArmorFragments
     // damage it already had when the camera opened.
     internal sealed class ImpactXRay
     {
-        // Layer 3 is unused by the game and not drawn by the main camera.
-        public const int GhostLayer = 3;
+        // The layer the ghosts are on (a setting): one only the impact camera is to draw. The main camera is
+        // told to leave it out while the impact camera is open (see ImpactCamera).
+        public int GhostLayer { get; private set; }
 
         private sealed class GhostInfo
         {
@@ -52,6 +53,7 @@ namespace ArmorFragments
         private readonly List<RimGhost> rims = new List<RimGhost>();
 
         private int nextBuild;
+        private int partsBuilt;
         private int rimVertices;
         private int rimRound;
         private bool rimIdle;
@@ -72,6 +74,7 @@ namespace ArmorFragments
 
         public ImpactXRay(AircraftScript aircraft, Vector3 impact)
         {
+            GhostLayer = Mathf.Clamp(ArmorFragmentsPlugin.ImpactCameraGhostLayer.Value, 0, 31);
             Shader shader = RayDrawer.GetShader();
             if (shader == null) return;
             if (XRayView.normalMaterials == null) XRayView.CreateMaterials(shader);
@@ -130,6 +133,7 @@ namespace ArmorFragments
             }
             entry.Level = level;
             entry.Built = true;
+            partsBuilt++;
         }
 
         private GhostInfo MakeGhost(MeshRenderer source, Mesh mesh, Entry entry, float t, int level)
@@ -173,6 +177,29 @@ namespace ArmorFragments
 
             ghostObjects.Add(ghost);
             return info;
+        }
+
+        // A line for the log: what was built, and the state of a few ghosts (to find out why they would not show).
+        public string Describe()
+        {
+            System.Text.StringBuilder text = new System.Text.StringBuilder();
+            text.Append(partsBuilt).Append(" of ").Append(entries.Count).Append(" parts, ")
+                .Append(ghostObjects.Count).Append(" ghosts (").Append(rims.Count).Append(" rim-lit, ")
+                .Append(rimVertices).Append(" rim vertices), on layer ").Append(GhostLayer);
+
+            int shown = 0;
+            foreach (GameObject ghost in ghostObjects)
+            {
+                if (ghost == null || shown >= 3) continue;
+                Renderer renderer = ghost.GetComponent<Renderer>();
+                text.Append("; sample: layer ").Append(ghost.layer)
+                    .Append(", active ").Append(ghost.activeInHierarchy)
+                    .Append(", enabled ").Append(renderer != null && renderer.enabled)
+                    .Append(", queue ").Append(renderer != null && renderer.sharedMaterial != null ? renderer.sharedMaterial.renderQueue : -1)
+                    .Append(", bounds ").Append(renderer != null ? renderer.bounds.size.magnitude.ToString("F1") : "?");
+                shown++;
+            }
+            return text.ToString();
         }
 
         // ---- Damage ------------------------------------------------------------------

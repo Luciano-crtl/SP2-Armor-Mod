@@ -3,6 +3,7 @@ using System.Reflection;
 using Assets.Scripts.Craft;
 using Assets.Scripts.Craft.Parts;
 using Assets.Scripts.Flight;
+using Assets.Scripts.Flight.Cameras;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
@@ -53,6 +54,8 @@ namespace ArmorFragments
         private static ImpactXRay xray;
         private static XState xstate;
         private static float xstateStart;
+        private static bool mainHadGhostLayer;   // did the main camera draw the ghost layer before we turned it off?
+        private static int mainHiddenLayer = -1;
         private const float FadeOutSeconds = 0.12f;
         private const float FadeInSeconds = 0.2f;
 
@@ -134,6 +137,7 @@ namespace ArmorFragments
                 {
                     xray = candidate;
                     xstate = XState.Waiting;
+                    HideFromMainCamera(candidate.GhostLayer);
                 }
             }
 
@@ -442,6 +446,7 @@ namespace ArmorFragments
         {
             if (xray == null) return;
 
+            HideFromMainCamera(xray.GhostLayer);        // in case the game reset the main camera's layers
             if (!xray.BuildDone) xray.BuildStep(3f);   // at most ~3 ms per frame
             xray.Tick(camera.transform.position, followDone);
 
@@ -461,7 +466,8 @@ namespace ArmorFragments
                     if (seconds >= FadeOutSeconds)
                     {
                         // The real vehicle is no longer drawn; the ghosts (on their own layer) are.
-                        camera.cullingMask = (1 << ImpactXRay.GhostLayer) | (1 << RayLayer);
+                        camera.cullingMask = (1 << xray.GhostLayer) | (1 << RayLayer);
+                        ArmorFragmentsPlugin.Log.LogInfo("Impact camera X-ray on: " + xray.Describe());
                         xstate = XState.FadeIn;
                         xstateStart = Time.time;
                     }
@@ -476,6 +482,37 @@ namespace ArmorFragments
                     }
                     break;
             }
+        }
+
+        // The ghosts must be seen only by the impact camera: the main camera stops drawing their layer while
+        // the impact camera is open, and gets it back afterwards.
+        private static Camera MainCamera()
+        {
+            CameraManagerScript manager = CameraManagerScript.Instance;
+            return manager != null && manager.MainCamera != null ? manager.MainCamera : Camera.main;
+        }
+
+        private static void HideFromMainCamera(int layer)
+        {
+            Camera main = MainCamera();
+            if (main == null || layer == RayLayer) return;
+
+            if (mainHiddenLayer != layer)
+            {
+                mainHadGhostLayer = (main.cullingMask & (1 << layer)) != 0;
+                mainHiddenLayer = layer;
+            }
+            main.cullingMask &= ~(1 << layer);
+        }
+
+        private static void RestoreMainCamera()
+        {
+            if (mainHiddenLayer >= 0 && mainHadGhostLayer)
+            {
+                Camera main = MainCamera();
+                if (main != null) main.cullingMask |= 1 << mainHiddenLayer;
+            }
+            mainHiddenLayer = -1;
         }
 
         private static void SetPictureAlpha(float alpha)
@@ -535,6 +572,7 @@ namespace ArmorFragments
                 xray = null;
             }
             xstate = XState.Off;
+            RestoreMainCamera();
 
             if (cameraObject != null) Object.Destroy(cameraObject);
             if (panel != null) Object.Destroy(panel);

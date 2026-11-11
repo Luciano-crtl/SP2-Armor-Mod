@@ -25,6 +25,7 @@ namespace ArmorFragments
                 Layers();
                 LocalVehicle();
                 Lighting();
+                RendererLayerMasks();
                 Line("---- end of camera diagnostic ----");
             }
             catch (Exception e)
@@ -162,6 +163,37 @@ namespace ArmorFragments
                 if (light.shadows != LightShadows.None) shadowed++;
             }
             Line("Lights in the scene: " + lights.Length + " (" + directional + " directional, " + shadowed + " casting shadows)");
+        }
+
+        // URP's own layer filters (besides each camera's culling mask): what the renderer draws.
+        private static void RendererLayerMasks()
+        {
+            try
+            {
+                RenderPipelineAsset asset = GraphicsSettings.currentRenderPipeline;
+                if (asset == null) return;
+
+                PropertyInfo renderer = asset.GetType().GetProperty("scriptableRenderer", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                object instance = renderer != null ? renderer.GetValue(asset, null) : null;
+                if (instance == null)
+                {
+                    Line("URP renderer: not reachable");
+                    return;
+                }
+
+                StringBuilder text = new StringBuilder("URP renderer " + instance.GetType().Name + ":");
+                foreach (string name in new[] { "opaqueLayerMask", "transparentLayerMask", "prepassLayerMask" })
+                {
+                    PropertyInfo property = instance.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    object value = property != null ? property.GetValue(instance, null) : null;
+                    text.Append(' ').Append(name).Append('=').Append(value is LayerMask ? MaskText(((LayerMask)value).value) : "?");
+                }
+                Line(text.ToString());
+            }
+            catch (Exception e)
+            {
+                Line("URP renderer layer masks: failed (" + e.Message + ")");
+            }
         }
 
         // ---- Helpers ------------------------------------------------------------

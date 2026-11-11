@@ -259,6 +259,8 @@ namespace ArmorFragments.UI
                 "Degrees.", 1f, " deg");
             ToggleSetting(ArmorFragmentsPlugin.ImpactCameraXRay, "X-ray on impact",
                 "Switches to the X-ray view the moment the shot hits, showing the damage as the fragments arrive.");
+            IntSetting(ArmorFragmentsPlugin.ImpactCameraGhostLayer, "X-ray layer",
+                "Unity layer of the X-ray ghosts (29 or 30 = the game's mod layers, 3 = unused). Change it if the ghosts do not show; it applies to the next impact.");
             ToggleSetting(ArmorFragmentsPlugin.ImpactCameraShadows, "Shadows",
                 "Off = the vehicle is lit but casts no shadows. Cheaper.");
         }
