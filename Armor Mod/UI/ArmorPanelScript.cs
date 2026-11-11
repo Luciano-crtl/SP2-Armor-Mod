@@ -306,6 +306,7 @@ namespace ArmorFragments.UI
             {
                 new KeyValuePair<string, Action>("Reset to defaults", ResetToDefaults),
                 new KeyValuePair<string, Action>("Clear rays", ClearRays),
+                new KeyValuePair<string, Action>("Camera diagnostic", CameraDiagnostic.Run),
             });
         }
 

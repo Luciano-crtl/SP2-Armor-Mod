@@ -243,3 +243,14 @@ Unidades de massa e velocidade; fidelidade dos colliders e peças ocas; volume d
 
 ## Pendências do usuário (lembrar!)
 - **Testar o multiplayer v0.3.0 com playtesters** (o host resolve tiros de quem não tem o mod; sincronização das configurações do host; ver seção acima). O usuário pediu para ser lembrado.
+
+## Câmera de impacto (PLANEJADA, estilo War Thunder; só o diagnóstico existe — v0.4.1)
+Decisões do usuário:
+- Só para quem tem o mod (cálculo local). Liga quando o tiro acerta peça de **qualquer veículo exceto o próprio** (jogadores e NPCs).
+- Painel no canto superior direito, **tamanho configurável**, **tecla para esconder/mostrar**, some junto com a interface de voo.
+- A câmera fica ~10 m (configurável) atrás do ponto de impacto, na linha do tiro, **presa ao veículo atingido**. Mostra o raio que o mod já desenha (velocidade = `VisualSpeedMultiplier` global), não o projétil real: é uma repetição em câmera lenta depois da resolução (sem prever o impacto).
+- No instante do impacto liga o raio-x, com transição gradual curta. Fica 5 s (configurável) depois da última peça danificada; cada novo impacto reinicia o tempo, **sem** mudar o enquadramento.
+- Pode **pular para outro alvo** (novo veículo atingido); deve haver configuração para desativar isso, além de outras (liga/desliga geral, distância, duração, tamanho, resolução).
+- Renderizar só o veículo atingido num "limbo" cinza, mantendo a iluminação (economia de GPU). O jogo usa URP.
+Ideias/cuidados: raios e bolhas presos à peça atingida (coordenadas locais) porque o alvo se move; fantasmas do raio-x numa camada própria só visível à câmera de impacto (a câmera principal a exclui), pois `forceRenderingOff` é global; brilho de borda calculado uma vez (câmera parada em relação ao alvo); sombras e pós-processamento desligados na câmera (URP renderiza sombras por câmera); `RenderTexture` pequena (~384²), criada só durante o uso; só o primeiro projétil de uma rajada liga a câmera.
+- **Botão "Camera diagnostic"** (Tools): escreve `[CAMDIAG]` no log (pipeline, câmeras, URP, camadas e camadas livres, camadas do veículo do jogador, iluminação). O resultado decide o resto.
