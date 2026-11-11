@@ -61,6 +61,16 @@ namespace ArmorFragments
                 return; // once per shell
             }
 
+            // A shot of yours that hit another vehicle: the impact camera may show it.
+            try
+            {
+                ImpactCamera.OnShellImpact(part, contact.point, direction, __instance.Owner);
+            }
+            catch (System.Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("Impact camera trigger failed: " + e.Message);
+            }
+
             try
             {
                 PartPhysics.BeginShot();   // part densities and colliders are remembered per shot

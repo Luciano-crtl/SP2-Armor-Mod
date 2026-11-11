@@ -65,6 +65,7 @@ namespace ArmorFragments.UI
                 BuildStatus();
                 BuildSimulation();
                 BuildMultiplayer();
+                BuildImpactCamera();
                 BuildXRayPerformance();
                 BuildEnergyModel();
                 BuildFragments();
@@ -233,6 +234,29 @@ namespace ArmorFragments.UI
                 "How much the cone leans toward the plate's normal on slanted hits.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.SpreadAnisotropy, "Spread anisotropy",
                 "How much wider the cone is along the plane of incidence (1 = round).", 0.1f, "x");
+        }
+
+        private void BuildImpactCamera()
+        {
+            builder.Header("Impact camera", collapsed: true);
+            ToggleSetting(ArmorFragmentsPlugin.ImpactCameraEnabled, "Impact camera",
+                "Shows a small camera when a shell you fired hits another vehicle. The toggle key does the same.");
+            ToggleSetting(ArmorFragmentsPlugin.ImpactCameraSwitchTargets, "Switch targets",
+                "Hitting another vehicle while the camera is open moves it there.");
+            FloatSetting(ArmorFragmentsPlugin.ShellLeadIn, "Lead-in distance",
+                "Meters of the shot shown before the impact. The camera starts this far behind it.", 1f, " m");
+            FloatSetting(ArmorFragmentsPlugin.ImpactCameraLinger, "Stay open after",
+                "Seconds the camera stays open after the last ray has ended.", 0.5f, " s");
+            FloatSetting(ArmorFragmentsPlugin.ImpactCameraWidthPercent, "Window width",
+                "Width of the window, as a percentage of the screen.", 1f, " %");
+            FloatSetting(ArmorFragmentsPlugin.ImpactCameraMargin, "Window margin",
+                "Distance from the top right corner, in pixels.", 2f, " px");
+            IntSetting(ArmorFragmentsPlugin.ImpactCameraResolution, "Picture height",
+                "Pixels. Lower = cheaper to render.");
+            FloatSetting(ArmorFragmentsPlugin.ImpactCameraFov, "Field of view",
+                "Degrees.", 1f, " deg");
+            ToggleSetting(ArmorFragmentsPlugin.ImpactCameraShadows, "Shadows",
+                "Off = the vehicle is lit but casts no shadows. Cheaper.");
         }
 
         // Role in a multiplayer session, and the host's switch.

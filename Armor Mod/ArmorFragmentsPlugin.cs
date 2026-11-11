@@ -27,6 +27,18 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> LogNetworkDamage;
         internal static ConfigEntry<bool> HostResolvesShots;
 
+        // Impact camera (all local: none of it affects other players).
+        internal static ConfigEntry<bool> ImpactCameraEnabled;
+        internal static ConfigEntry<UnityEngine.InputSystem.Key> ImpactCameraKey;
+        internal static ConfigEntry<bool> ImpactCameraSwitchTargets;
+        internal static ConfigEntry<float> ShellLeadIn;
+        internal static ConfigEntry<float> ImpactCameraLinger;
+        internal static ConfigEntry<float> ImpactCameraWidthPercent;
+        internal static ConfigEntry<float> ImpactCameraMargin;
+        internal static ConfigEntry<int> ImpactCameraResolution;
+        internal static ConfigEntry<float> ImpactCameraFov;
+        internal static ConfigEntry<bool> ImpactCameraShadows;
+
         // Shot simulation and X-ray view.
         internal static ConfigEntry<int> SimFragmentCount;
         internal static ConfigEntry<bool> XRayAfterSimulation;
@@ -69,7 +81,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.4.1";
+        public const string Version = "0.5.0";
 
         private void Update()
         {
@@ -79,6 +91,7 @@ namespace ArmorFragments
             NetSync.Tick();
             HostResolver.Tick();
             ModuleOutputs.Tick();
+            ImpactCamera.Tick();
         }
 
         private void Awake()
@@ -127,6 +140,33 @@ namespace ArmorFragments
 
             LogNetworkDamage = Config.Bind("Debug", "LogNetworkDamage", false,
                 "If true, writes a log line for every piece of damage sent to another player's aircraft (many lines per shot).");
+
+            ImpactCameraEnabled = Config.Bind("ImpactCamera", "Enabled", true,
+                "Shows a small camera in the top right corner when a shell you fired hits another vehicle.");
+            ImpactCameraKey = Config.Bind("ImpactCamera", "ToggleKey", UnityEngine.InputSystem.Key.F9,
+                "Key that switches the impact camera on and off. 'None' disables the key.");
+            ImpactCameraSwitchTargets = Config.Bind("ImpactCamera", "SwitchTargets", true,
+                "If true, hitting another vehicle while the camera is open moves it to that vehicle. If false it stays on the first one until it closes.");
+            ShellLeadIn = Config.Bind("ImpactCamera", "LeadInDistance", 10f,
+                new ConfigDescription("Meters of the shell's flight shown before an impact. The camera starts this far behind the impact, and the drawn shell ray starts there too.",
+                    new AcceptableValueRange<float>(1f, 100f)));
+            ImpactCameraLinger = Config.Bind("ImpactCamera", "LingerSeconds", 5f,
+                new ConfigDescription("Seconds the camera stays open after the last ray of the last impact has ended.",
+                    new AcceptableValueRange<float>(0.5f, 60f)));
+            ImpactCameraWidthPercent = Config.Bind("ImpactCamera", "WidthPercent", 22f,
+                new ConfigDescription("Width of the camera window, as a percentage of the screen width.",
+                    new AcceptableValueRange<float>(5f, 60f)));
+            ImpactCameraMargin = Config.Bind("ImpactCamera", "MarginPixels", 16f,
+                new ConfigDescription("Distance (pixels) of the window from the top right corner of the screen.",
+                    new AcceptableValueRange<float>(0f, 300f)));
+            ImpactCameraResolution = Config.Bind("ImpactCamera", "ResolutionHeight", 384,
+                new ConfigDescription("Height (pixels) of the camera's picture; the width is 4/3 of it. Lower = cheaper.",
+                    new AcceptableValueRange<int>(128, 1080)));
+            ImpactCameraFov = Config.Bind("ImpactCamera", "FieldOfView", 45f,
+                new ConfigDescription("Field of view (degrees) of the impact camera.",
+                    new AcceptableValueRange<float>(15f, 90f)));
+            ImpactCameraShadows = Config.Bind("ImpactCamera", "Shadows", false,
+                "If true, the impact camera draws shadows. Costs GPU time; off = the vehicle is lit but casts no shadows.");
 
             HostResolvesShots = Config.Bind("Multiplayer", "HostResolvesShots", true,
                 "Only matters when you host. If true, shells from players who do not run the mod are worked out " +

@@ -244,7 +244,7 @@ Unidades de massa e velocidade; fidelidade dos colliders e peças ocas; volume d
 ## Pendências do usuário (lembrar!)
 - **Testar o multiplayer v0.3.0 com playtesters** (o host resolve tiros de quem não tem o mod; sincronização das configurações do host; ver seção acima). O usuário pediu para ser lembrado.
 
-## Câmera de impacto (PLANEJADA, estilo War Thunder; só o diagnóstico existe — v0.4.1)
+## Câmera de impacto (estilo War Thunder) — FASE 1 implementada em v0.5.0, não testada no jogo
 Decisões do usuário:
 - Só para quem tem o mod (cálculo local). Liga quando o tiro acerta peça de **qualquer veículo exceto o próprio** (jogadores e NPCs).
 - Painel no canto superior direito, **tamanho configurável**, **tecla para esconder/mostrar**, some junto com a interface de voo.
@@ -254,3 +254,11 @@ Decisões do usuário:
 - Renderizar só o veículo atingido num "limbo" cinza, mantendo a iluminação (economia de GPU). O jogo usa URP.
 Ideias/cuidados: raios e bolhas presos à peça atingida (coordenadas locais) porque o alvo se move; fantasmas do raio-x numa camada própria só visível à câmera de impacto (a câmera principal a exclui), pois `forceRenderingOff` é global; brilho de borda calculado uma vez (câmera parada em relação ao alvo); sombras e pós-processamento desligados na câmera (URP renderiza sombras por câmera); `RenderTexture` pequena (~384²), criada só durante o uso; só o primeiro projétil de uma rajada liga a câmera.
 - **Botão "Camera diagnostic"** (Tools): escreve `[CAMDIAG]` no log (pipeline, câmeras, URP, camadas e camadas livres, camadas do veículo do jogador, iluminação). O resultado decide o resto.
+
+### Resultado do diagnóstico (log do usuário) e fases
+- URP; só existe a `MainCamera` (sombras e pós-processamento ligados; sombras até 700 m). Ela NÃO desenha as camadas 1,2,3,5,6,7,8,9,14,15,22,24,27,31. A **camada 3** (sem nome, vazia) é livre e invisível para a câmera principal: reservada para os fantasmas do raio-x da câmera de impacto (fase 3). As camadas 28-30 ('Mod Layer 1-3') são vazias mas a câmera principal as desenha: **28 é a camada dos raios e bolhas do mod** (`ImpactCamera.RayLayer`).
+- Veículos do jogador: peças na camada 21 'Aircraft' (472 renderers + 244 combinados); NPCs prováveis na 13 'Car'. 276 renderers do veículo estão na camada 0 (Default) — não desenhados na câmera (o log do início da câmera lista quais são). Luz: 1 direcional (sombra suave, intensidade 0,6); ambiente PLANO 0,8, reflexo pelo skybox.
+- **Fase 1 (feita):** `ImpactCamera.cs`. Gatilho em `CannonHitPatch` (tiro do jogador local em peça de outro `AircraftScript`; NPCs que não são aeronaves, como carros NPC, não passam por `PartScript` e não disparam a câmera). `Camera` + `RenderTexture` (altura 384, 4:3) criadas só durante o uso e destruídas ao fechar; máscara = camadas dos renderers ativos do alvo (exceto 0,4,5,10,19,20) + 28; fundo cinza; URP configurado por reflexão (sem sombras, sem pós-processamento, sem AA, sem cópias de profundidade/cor). Posicionada `LeadInDistance` m atrás do impacto, um pouco ao lado e acima, presa (`SetParent`) à peça atingida. Janela = `Canvas` overlay + `RawImage` no canto superior direito (largura em % da tela, margem em px). Fecha quando o último raio terminou (`RayDrawer.LastEndTime`, registrado por `TracerAnimation`) + `LingerSeconds`; novos impactos no mesmo veículo estendem o tempo sem mudar o enquadramento; outro veículo move a câmera se `SwitchTargets`. Tecla `ToggleKey` (F9) liga/desliga (grava a configuração). `LeadInDistance` (antes constante 4 m, agora 10 m) vale também para o raio da tela principal.
+- **Fase 2 (pendente):** raios e bolhas presos à peça atingida (coordenadas locais) para o alvo em movimento não escapar deles. Hoje a câmera acompanha o alvo mas os raios ficam parados no mundo.
+- **Fase 3 (pendente):** raio-x próprio da câmera (fantasmas na camada 3, brilho de borda calculado uma vez, transição curta ao ligar), ligado no instante do impacto.
+- **Fase 4 (pendente):** acabamento (regra de rajada, ajustes dos testes).

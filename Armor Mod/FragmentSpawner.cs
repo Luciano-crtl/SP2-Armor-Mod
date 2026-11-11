@@ -24,7 +24,11 @@ namespace ArmorFragments
     internal static class FragmentSpawner
     {
         // Length of the drawn shell track before the impact, in meters.
-        public const float ShellLeadIn = 4f;
+        // Meters of the shell's flight drawn before an impact (also where the impact camera starts).
+        public static float ShellLeadIn
+        {
+            get { return ArmorFragmentsPlugin.ShellLeadIn.Value; }
+        }
 
         private const float MaxRange = 30f;        // total path length of one ray, in meters
         private const float SurfaceOffset = 0.02f; // pushes a ricochet start point off the surface

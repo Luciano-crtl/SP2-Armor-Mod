@@ -48,6 +48,15 @@ namespace ArmorFragments
             "UI/Default",
         };
 
+        // When the last drawn ray (and its trail) ends, as a Time.time value. The impact camera stays
+        // until then, so every new impact that draws rays keeps it open.
+        public static float LastEndTime;
+
+        public static void NoteEnd(float time)
+        {
+            if (time > LastEndTime) LastEndTime = time;
+        }
+
         private static Material lineMaterial;                 // white: the color comes from the line itself
         private static readonly Material[] BubbleMaterials = new Material[6];   // one per RayKind
         private static Shader shaderUsed;
@@ -111,6 +120,7 @@ namespace ArmorFragments
             if (!available) return;
 
             GameObject go = new GameObject("ArmorFragmentRay");
+            go.layer = ImpactCamera.RayLayer;
             LineRenderer lr = go.AddComponent<LineRenderer>();
             lr.useWorldSpace = true;
             lr.positionCount = 0;
@@ -145,6 +155,7 @@ namespace ArmorFragments
 
             GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "ArmorFragmentBubble";
+            go.layer = ImpactCamera.RayLayer;
 
             // The primitive comes with a collider; remove it NOW or later rays would hit it.
             Collider col = go.GetComponent<Collider>();

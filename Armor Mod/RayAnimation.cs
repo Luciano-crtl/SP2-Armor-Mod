@@ -54,6 +54,8 @@ namespace ArmorFragments
 
             // The trail covers 'trailLength' meters at the speed the ray starts with.
             trailTime = Mathf.Max(trailLength, 0.05f) / Mathf.Max(firstSpeed, 1f);
+
+            RayDrawer.NoteEnd(startTime + delay + totalTime + trailTime);
         }
 
         private void Update()
