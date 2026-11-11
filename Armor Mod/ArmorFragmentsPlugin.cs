@@ -158,7 +158,6 @@ namespace ArmorFragments
                 "Each simulated shot also writes to the log how far the line travels inside every part " +
                 "(lines starting with [CHORD]). Diagnostic for the energy model; changes nothing.");
 
-            const string NotUsed = " (Energy model: not used by the calculation yet.)";
             DefaultShellHardness = Config.Bind("Energy", "DefaultShellHardness", 100f,
                 new ConfigDescription("Shell hardness (%) for cannons without a [CAN k=] tag. Compared with the armor's hardness for the ricochet angle.",
                     new AcceptableValueRange<float>(10f, 300f)));

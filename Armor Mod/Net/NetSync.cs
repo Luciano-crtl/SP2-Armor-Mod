@@ -320,7 +320,7 @@ namespace ArmorFragments
                 {
                     reader.ReadUInt8Unpacked();
                     reader.ReadUInt16();
-                    text = reader.ReadString();
+                    text = reader.ReadStringAllocated();
                 }
                 finally
                 {
