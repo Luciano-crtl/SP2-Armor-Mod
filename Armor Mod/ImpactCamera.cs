@@ -10,14 +10,13 @@ using UnityEngine.UI;
 namespace ArmorFragments
 {
     // Impact camera, in the style of War Thunder: when a shell you fired hits another vehicle, a small
-    // window in the top right corner shows the shot arriving and what it does. It stays on the vehicle
-    // that was hit (the camera is attached to it), and renders ONLY that vehicle and the mod's rays on a
-    // plain grey background, which keeps it cheap. Nothing exists while it is not in use.
+    // window in the top right corner shows the shot arriving and what it does. The camera flies behind
+    // the shell's ray as it approaches, stops at the impact, and stays with the vehicle that was hit. It
+    // renders ONLY that vehicle and the mod's rays on a plain grey background, which keeps it cheap.
+    // Nothing exists while it is not in use.
     //
-    // What it shows is the ray the mod already draws (at the user's visual speed), so it is a slow replay
-    // of the impact, started when the impact has been worked out.
-    //
-    // Phase 1: camera, window, lifetime. (Later: rays attached to the hit part, the camera's own X-ray.)
+    // What it shows is the ray the mod draws (at the user's visual speed, attached to the hit part), so it
+    // is a slow replay of the impact, started when the impact has been worked out.
     internal static class ImpactCamera
     {
         // The mod's rays and bubbles live here ('Mod Layer 1': empty, and drawn by the main camera too).
@@ -28,19 +27,31 @@ namespace ArmorFragments
         private const int ExcludedLayers = (1 << 0) | (1 << 4) | (1 << 5) | (1 << 10) | (1 << 19) | (1 << 20);
 
         private static readonly Color Background = new Color(0.32f, 0.33f, 0.36f, 1f);
-        private const float MinShowSeconds = 2f;   // even if no ray was drawn
+        private const float MinShowSeconds = 1f;   // the 'impact' time when no ray was drawn (rays off)
 
         private static GameObject cameraObject;
         private static Camera camera;
         private static RenderTexture texture;
         private static GameObject panel;
         private static Canvas canvas;
+        private static RawImage image;
         private static RectTransform borderRect;
         private static RectTransform imageRect;
 
         private static AircraftScript targetAircraft;
+        private static PartScript anchorPart;      // the part that was hit; the camera moves with it
+        private static Vector3 impactLocal;        // the impact point and the shot's direction, in that part's space
+        private static Vector3 directionLocal;
         private static float startTime;
         private static bool active;
+        private static bool shadowsApplied;
+
+        // Following the shell's ray
+        private static TracerAnimation tracer;
+        private static int serialAtStart;
+        private static bool hadTracer;
+        private static bool followDone;
+        private static float firstSegment;         // meters of the shell's flight before the impact
 
         public static bool IsActive
         {
@@ -65,7 +76,7 @@ namespace ArmorFragments
 
             if (active)
             {
-                // More hits on the same vehicle: the camera stays where it is (the timer follows the rays).
+                // More hits on the same vehicle: the camera stays where it is (the timer follows the impacts).
                 if (aircraft == targetAircraft) return;
                 if (!ArmorFragmentsPlugin.ImpactCameraSwitchTargets.Value) return;
                 Stop();
@@ -85,28 +96,31 @@ namespace ArmorFragments
         private static void Start(PartScript hit, AircraftScript aircraft, Vector3 point, Vector3 direction)
         {
             targetAircraft = aircraft;
+            anchorPart = hit;
+            impactLocal = hit.transform.InverseTransformPoint(point);
+            directionLocal = hit.transform.InverseTransformDirection(direction);
             startTime = Time.time;
 
+            // The shell's ray is drawn right after this call: the camera follows the first one.
+            serialAtStart = RayDrawer.InitialSerial;
+            tracer = null;
+            hadTracer = false;
+            firstSegment = FragmentSpawner.ShellLeadIn;
+            followDone = !ArmorFragmentsPlugin.DrawRays.Value;   // no ray drawn, nothing to follow
+
             int mask = LayersOf(aircraft) | (1 << RayLayer);
-            CreateTexture();
+            CreateTexture(ArmorFragmentsPlugin.ImpactCameraResolution.Value);
             CreateCamera(mask);
             CreatePanel();
 
-            // Behind the shell, a bit to the side and above, so the ray is seen from an angle and not end-on.
-            float lead = FragmentSpawner.ShellLeadIn;
-            Vector3 right = Vector3.Cross(Vector3.up, direction);
-            if (right.sqrMagnitude < 0.01f) right = Vector3.right;
-            right.Normalize();
-            Vector3 position = point - direction * lead + right * (0.35f * lead) + Vector3.up * (0.2f * lead);
-
-            camera.transform.SetPositionAndRotation(position, Quaternion.LookRotation(point - position, Vector3.up));
-            camera.transform.SetParent(hit.transform, true);   // it goes where the vehicle goes
-            camera.farClipPlane = Mathf.Max(60f, lead * 6f);
+            active = true;
+            UpdatePose();
             camera.enabled = true;
 
-            active = true;
             ArmorFragmentsPlugin.Log.LogInfo(
-                "Impact camera on: '" + hit.Part.Name + "', " + lead.ToString("F0") + " m behind the impact");
+                "Impact camera on: '" + hit.Part.Name + "', " +
+                ArmorFragmentsPlugin.ImpactCameraDistance.Value.ToString("F1") + " m from the impact, shot shown from " +
+                FragmentSpawner.ShellLeadIn.ToString("F0") + " m before it");
         }
 
         // The layers the vehicle's visible meshes are on, so the camera can draw it and nothing else.
@@ -157,13 +171,34 @@ namespace ArmorFragments
 
         // ---- Camera, texture and window --------------------------------------------
 
-        private static void CreateTexture()
+        private static RenderTexture MakeTexture(int height)
         {
-            int height = Mathf.Clamp(ArmorFragmentsPlugin.ImpactCameraResolution.Value, 64, 2048);
+            height = Mathf.Clamp(height, 64, 2048);
             int width = Mathf.RoundToInt(height * 4f / 3f);
-            texture = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
-            texture.name = "ArmorImpactCamera";
-            texture.Create();
+            RenderTexture result = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+            result.name = "ArmorImpactCamera";
+            result.Create();
+            return result;
+        }
+
+        private static void CreateTexture(int height)
+        {
+            texture = MakeTexture(height);
+        }
+
+        // The picture height setting changed while the camera is open: a new texture of that size.
+        private static void ResizeTexture(int height)
+        {
+            RenderTexture old = texture;
+            texture = MakeTexture(height);
+            camera.targetTexture = texture;
+            if (image != null) image.texture = texture;
+
+            if (old != null)
+            {
+                old.Release();
+                Object.Destroy(old);
+            }
         }
 
         private static void CreateCamera(int mask)
@@ -174,7 +209,7 @@ namespace ArmorFragments
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = Background;
             camera.cullingMask = mask;
-            camera.nearClipPlane = 0.1f;
+            camera.nearClipPlane = 0.05f;
             camera.fieldOfView = Mathf.Clamp(ArmorFragmentsPlugin.ImpactCameraFov.Value, 10f, 100f);
             camera.allowHDR = false;
             camera.allowMSAA = false;
@@ -186,8 +221,8 @@ namespace ArmorFragments
         }
 
         // The game renders with URP. Its per-camera settings are set by reflection (no reference to the
-        // URP assembly is needed): no shadows (the main camera already paid for them), no post-processing,
-        // no anti-aliasing, no extra depth or color copies.
+        // URP assembly is needed): shadows as the setting says, no post-processing, no anti-aliasing,
+        // no extra depth or color copies.
         private static void ConfigureUniversalCamera(Camera target)
         {
             System.Type type = FindType("UnityEngine.Rendering.Universal.UniversalAdditionalCameraData");
@@ -197,8 +232,9 @@ namespace ArmorFragments
                 return;
             }
 
+            shadowsApplied = ArmorFragmentsPlugin.ImpactCameraShadows.Value;
             Component data = target.gameObject.GetComponent(type) ?? target.gameObject.AddComponent(type);
-            SetProperty(data, "renderShadows", ArmorFragmentsPlugin.ImpactCameraShadows.Value);
+            SetProperty(data, "renderShadows", shadowsApplied);
             SetProperty(data, "renderPostProcessing", false);
             SetProperty(data, "antialiasing", 0);          // none
             SetProperty(data, "requiresDepthOption", 0);   // off
@@ -249,7 +285,7 @@ namespace ArmorFragments
 
             GameObject picture = new GameObject("Picture");
             picture.transform.SetParent(panel.transform, false);
-            RawImage image = picture.AddComponent<RawImage>();
+            image = picture.AddComponent<RawImage>();
             image.texture = texture;
             image.raycastTarget = false;
             imageRect = picture.GetComponent<RectTransform>();
@@ -277,6 +313,59 @@ namespace ArmorFragments
             imageRect.sizeDelta = new Vector2(width, height);
         }
 
+        // ---- The camera's movement -------------------------------------------------
+
+        // Behind the shell by 'Distance' meters, a little to the side and above (so the ray is seen from an
+        // angle, not end-on), looking at the impact. While the shell flies, the camera flies with it; once
+        // the shell has arrived it stays, and keeps moving with the hit part.
+        private static void UpdatePose()
+        {
+            if (anchorPart == null || camera == null) return;
+
+            Transform part = anchorPart.transform;
+            Vector3 impact = part.TransformPoint(impactLocal);
+            Vector3 direction = part.TransformDirection(directionLocal).normalized;
+
+            float progress = followDone ? firstSegment
+                : (tracer != null ? Mathf.Min(tracer.HeadDistance, firstSegment) : 0f);
+            float distance = Mathf.Max(ArmorFragmentsPlugin.ImpactCameraDistance.Value, 0.2f);
+
+            Vector3 right = Vector3.Cross(Vector3.up, direction);
+            if (right.sqrMagnitude < 0.01f) right = Vector3.right;
+            right.Normalize();
+
+            float back = (firstSegment - progress) + distance;
+            Vector3 position = impact - direction * back + right * (0.35f * distance) + Vector3.up * (0.2f * distance);
+            camera.transform.SetPositionAndRotation(position, Quaternion.LookRotation(impact - position, Vector3.up));
+            camera.farClipPlane = Mathf.Max(60f, (firstSegment + distance) * 6f);
+        }
+
+        // Finds the shell's ray and checks whether it has reached the impact.
+        private static void UpdateFollow()
+        {
+            if (followDone) return;
+
+            if (tracer == null && !hadTracer && RayDrawer.InitialSerial > serialAtStart)
+            {
+                tracer = RayDrawer.InitialTracer;
+                hadTracer = tracer != null;
+            }
+
+            if (hadTracer && tracer == null)
+            {
+                followDone = true;   // the ray is gone: it has long reached the impact
+            }
+            else if (tracer != null)
+            {
+                if (tracer.FirstSegment > 0.01f) firstSegment = tracer.FirstSegment;
+                if (tracer.HeadDistance >= firstSegment - 0.01f) followDone = true;
+            }
+            else if (Time.time - startTime > 1f)
+            {
+                followDone = true;   // no ray appeared
+            }
+        }
+
         // ---- Every frame -----------------------------------------------------------
 
         public static void Tick()
@@ -285,25 +374,43 @@ namespace ArmorFragments
             if (!active) return;
 
             if (!ArmorFragmentsPlugin.ImpactCameraEnabled.Value || camera == null || targetAircraft == null ||
-                FlightSceneScript.Instance == null)
+                anchorPart == null || FlightSceneScript.Instance == null)
             {
                 Stop();
                 return;
             }
 
-            // Stay until the last ray of the last impact has finished, plus the linger time.
-            float end = Mathf.Max(startTime + MinShowSeconds, RayDrawer.LastEndTime) + ArmorFragmentsPlugin.ImpactCameraLinger.Value;
+            // Closes a while after the impact, counted from the moment the shell's ray reaches it (the
+            // last impact on this vehicle, if there were several).
+            float impactTime = RayDrawer.LastImpactTime > startTime ? RayDrawer.LastImpactTime : startTime + MinShowSeconds;
+            float end = impactTime + ArmorFragmentsPlugin.ImpactCameraLinger.Value;
             if (Time.time > end)
             {
                 Stop();
                 return;
             }
 
+            ApplySettings();
+            UpdateFollow();
+            UpdatePose();
+
             // Hidden together with the rest of the flight UI; the camera rests while nobody sees it.
             bool show = FlightSceneScript.Instance.FlightUI == null || FlightSceneScript.Instance.FlightUI.Visible;
             canvas.enabled = show;
             camera.enabled = show;
             Layout();
+        }
+
+        // Settings that can change while the camera is open take effect at once.
+        private static void ApplySettings()
+        {
+            camera.fieldOfView = Mathf.Clamp(ArmorFragmentsPlugin.ImpactCameraFov.Value, 10f, 100f);
+
+            if (ArmorFragmentsPlugin.ImpactCameraShadows.Value != shadowsApplied)
+                ConfigureUniversalCamera(camera);
+
+            int height = Mathf.Clamp(ArmorFragmentsPlugin.ImpactCameraResolution.Value, 64, 2048);
+            if (texture != null && texture.height != height) ResizeTexture(height);
         }
 
         // The key switches the impact camera on and off for good (it is a setting).
@@ -332,6 +439,8 @@ namespace ArmorFragments
             if (active) ArmorFragmentsPlugin.Log.LogInfo("Impact camera off");
             active = false;
             targetAircraft = null;
+            anchorPart = null;
+            tracer = null;
 
             if (cameraObject != null) Object.Destroy(cameraObject);
             if (panel != null) Object.Destroy(panel);
@@ -344,6 +453,7 @@ namespace ArmorFragments
             camera = null;
             panel = null;
             canvas = null;
+            image = null;
             borderRect = null;
             imageRect = null;
             texture = null;

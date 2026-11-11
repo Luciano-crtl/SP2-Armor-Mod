@@ -244,9 +244,11 @@ namespace ArmorFragments.UI
             ToggleSetting(ArmorFragmentsPlugin.ImpactCameraSwitchTargets, "Switch targets",
                 "Hitting another vehicle while the camera is open moves it there.");
             FloatSetting(ArmorFragmentsPlugin.ShellLeadIn, "Lead-in distance",
-                "Meters of the shot shown before the impact. The camera starts this far behind it.", 1f, " m");
-            FloatSetting(ArmorFragmentsPlugin.ImpactCameraLinger, "Stay open after",
-                "Seconds the camera stays open after the last ray has ended.", 0.5f, " s");
+                "Meters of the shot shown before the impact. Takes effect with the next impact, after the camera has closed.", 1f, " m");
+            FloatSetting(ArmorFragmentsPlugin.ImpactCameraDistance, "Camera distance",
+                "How far the camera stays behind the shot, and from the impact.", 0.5f, " m");
+            FloatSetting(ArmorFragmentsPlugin.ImpactCameraLinger, "Stay open after impact",
+                "Seconds the camera stays open after the shot reaches the impact.", 0.5f, " s");
             FloatSetting(ArmorFragmentsPlugin.ImpactCameraWidthPercent, "Window width",
                 "Width of the window, as a percentage of the screen.", 1f, " %");
             FloatSetting(ArmorFragmentsPlugin.ImpactCameraMargin, "Window margin",

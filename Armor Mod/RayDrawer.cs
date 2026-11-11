@@ -22,6 +22,7 @@ namespace ArmorFragments
         public readonly List<Vector3> Points = new List<Vector3>();
         public readonly List<RayKind> Markers = new List<RayKind>();
         public RayKind Final = RayKind.Miss;   // decides the line color
+        public Transform Anchor;               // if set, the points travel with this transform
 
         // Drawn speed (m/s) for the stretch that ENDS at each point; 0 = use the default.
         // The first point's value is not used. It lets a ray slow down as it loses energy.
@@ -48,14 +49,23 @@ namespace ArmorFragments
             "UI/Default",
         };
 
-        // When the last drawn ray (and its trail) ends, as a Time.time value. The impact camera stays
-        // until then, so every new impact that draws rays keeps it open.
-        public static float LastEndTime;
+        // When the shell's ray last reached its impact (a Time.time value). The impact camera counts its
+        // closing time from here, so every new impact keeps it open.
+        public static float LastImpactTime;
 
-        public static void NoteEnd(float time)
+        public static void NoteImpact(float time)
         {
-            if (time > LastEndTime) LastEndTime = time;
+            if (time > LastImpactTime) LastImpactTime = time;
         }
+
+        // The latest shell ray (the 'initial' one) drawn, and how many have been drawn: the impact camera
+        // follows the first one made after it opens.
+        public static TracerAnimation InitialTracer;
+        public static int InitialSerial;
+
+        // While set, the rays drawn are attached to this transform (the part that was hit), so a moving
+        // target carries them along instead of leaving them behind.
+        public static Transform Anchor;
 
         private static Material lineMaterial;                 // white: the color comes from the line itself
         private static readonly Material[] BubbleMaterials = new Material[6];   // one per RayKind
@@ -132,8 +142,14 @@ namespace ArmorFragments
             lr.receiveShadows = false;
             lr.enabled = false;                 // the animation turns it on when it starts
 
-            go.AddComponent<TracerAnimation>().Init(
-                path, lr, ColorOf(path.Final), delay, ArmorFragmentsPlugin.RayTrailLength.Value);
+            path.Anchor = Anchor;
+            TracerAnimation tracer = go.AddComponent<TracerAnimation>();
+            tracer.Init(path, lr, ColorOf(path.Final), delay, ArmorFragmentsPlugin.RayTrailLength.Value, initial);
+            if (initial)
+            {
+                InitialTracer = tracer;
+                InitialSerial++;
+            }
         }
 
         // Balls that stay (the stop points of a simulated shot) until the next test clears them.

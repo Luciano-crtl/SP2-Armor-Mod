@@ -32,6 +32,7 @@ namespace ArmorFragments
         internal static ConfigEntry<UnityEngine.InputSystem.Key> ImpactCameraKey;
         internal static ConfigEntry<bool> ImpactCameraSwitchTargets;
         internal static ConfigEntry<float> ShellLeadIn;
+        internal static ConfigEntry<float> ImpactCameraDistance;
         internal static ConfigEntry<float> ImpactCameraLinger;
         internal static ConfigEntry<float> ImpactCameraWidthPercent;
         internal static ConfigEntry<float> ImpactCameraMargin;
@@ -81,7 +82,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.5.0";
+        public const string Version = "0.5.1";
 
         private void Update()
         {
@@ -148,10 +149,13 @@ namespace ArmorFragments
             ImpactCameraSwitchTargets = Config.Bind("ImpactCamera", "SwitchTargets", true,
                 "If true, hitting another vehicle while the camera is open moves it to that vehicle. If false it stays on the first one until it closes.");
             ShellLeadIn = Config.Bind("ImpactCamera", "LeadInDistance", 10f,
-                new ConfigDescription("Meters of the shell's flight shown before an impact. The camera starts this far behind the impact, and the drawn shell ray starts there too.",
+                new ConfigDescription("Meters of the shell's flight shown before an impact: the drawn shell ray starts this far from the impact. Takes effect with the next impact (after the camera has closed).",
                     new AcceptableValueRange<float>(1f, 100f)));
+            ImpactCameraDistance = Config.Bind("ImpactCamera", "CameraDistance", 3f,
+                new ConfigDescription("How far (meters) the camera stays behind the shell: it flies this far behind the shell's ray and stops this far from the impact.",
+                    new AcceptableValueRange<float>(0.5f, 30f)));
             ImpactCameraLinger = Config.Bind("ImpactCamera", "LingerSeconds", 5f,
-                new ConfigDescription("Seconds the camera stays open after the last ray of the last impact has ended.",
+                new ConfigDescription("Seconds the camera stays open after the shell's ray reaches the impact (a new impact on the same vehicle restarts the count).",
                     new AcceptableValueRange<float>(0.5f, 60f)));
             ImpactCameraWidthPercent = Config.Bind("ImpactCamera", "WidthPercent", 22f,
                 new ConfigDescription("Width of the camera window, as a percentage of the screen width.",

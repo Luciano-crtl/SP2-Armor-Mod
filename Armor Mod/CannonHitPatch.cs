@@ -71,6 +71,9 @@ namespace ArmorFragments
                 ArmorFragmentsPlugin.Log.LogWarning("Impact camera trigger failed: " + e.Message);
             }
 
+            // The rays drawn for this impact travel with the part that was hit.
+            RayDrawer.Anchor = part.transform;
+
             try
             {
                 PartPhysics.BeginShot();   // part densities and colliders are remembered per shot
@@ -100,6 +103,7 @@ namespace ArmorFragments
             finally
             {
                 FragmentSpawner.Attacker = null;
+                RayDrawer.Anchor = null;
             }
         }
 

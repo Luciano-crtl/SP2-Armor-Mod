@@ -22,10 +22,27 @@ namespace ArmorFragments
         private float delay;
         private float trailTime;
         private int nextMarker;
+        private Transform anchor;     // the points travel with it (null = fixed in the world)
+        private Vector3[] local;      // the points in the anchor's space
         private bool started;
         private readonly List<Vector3> visible = new List<Vector3>();
 
-        internal void Init(RayPath path, LineRenderer line, Color color, float delay, float trailLength)
+        // How far (meters) the head has gone along the path.
+        public float HeadDistance { get; private set; }
+
+        // Length of the path's first stretch: for the shell's ray, the flight before the impact.
+        public float FirstSegment
+        {
+            get { return cumulativeDistance != null && cumulativeDistance.Length > 1 ? cumulativeDistance[1] : 0f; }
+        }
+
+        // A point of the path now: moved along with the anchor if there is one (and it still exists).
+        private Vector3 P(int i)
+        {
+            return anchor != null ? anchor.TransformPoint(local[i]) : path.Points[i];
+        }
+
+        internal void Init(RayPath path, LineRenderer line, Color color, float delay, float trailLength, bool initial)
         {
             this.path = path;
             this.line = line;
@@ -55,7 +72,15 @@ namespace ArmorFragments
             // The trail covers 'trailLength' meters at the speed the ray starts with.
             trailTime = Mathf.Max(trailLength, 0.05f) / Mathf.Max(firstSpeed, 1f);
 
-            RayDrawer.NoteEnd(startTime + delay + totalTime + trailTime);
+            anchor = path.Anchor;
+            if (anchor != null)
+            {
+                local = new Vector3[n];
+                for (int i = 0; i < n; i++) local[i] = anchor.InverseTransformPoint(path.Points[i]);
+            }
+
+            // The shell's ray reaches its impact (the second point) at this moment.
+            if (initial && n > 1) RayDrawer.NoteImpact(startTime + delay + cumulativeTime[1]);
         }
 
         private void Update()
@@ -73,11 +98,12 @@ namespace ArmorFragments
             // A bubble appears when the head reaches each marked point.
             while (nextMarker < cumulativeTime.Length && cumulativeTime[nextMarker] <= t)
             {
-                RayDrawer.SpawnBubble(path.Points[nextMarker], path.Markers[nextMarker]);
+                RayDrawer.SpawnBubble(P(nextMarker), path.Markers[nextMarker]);
                 nextMarker++;
             }
 
             float head = DistanceAt(Mathf.Min(t, totalTime));
+            HeadDistance = head;
             float tail = DistanceAt(Mathf.Max(tailTime, 0f));
 
             // Visible piece: tail point, every corner between tail and head, head point.
@@ -85,7 +111,7 @@ namespace ArmorFragments
             visible.Add(PointAt(tail));
             for (int i = 0; i < cumulativeDistance.Length; i++)
                 if (cumulativeDistance[i] > tail && cumulativeDistance[i] < head)
-                    visible.Add(path.Points[i]);
+                    visible.Add(P(i));
             visible.Add(PointAt(head));
 
             line.positionCount = visible.Count;
@@ -116,10 +142,10 @@ namespace ArmorFragments
                 {
                     float segment = cumulativeDistance[i] - cumulativeDistance[i - 1];
                     float f = segment > 0.00001f ? (distance - cumulativeDistance[i - 1]) / segment : 0f;
-                    return Vector3.Lerp(path.Points[i - 1], path.Points[i], f);
+                    return Vector3.Lerp(P(i - 1), P(i), f);
                 }
             }
-            return path.Points[path.Points.Count - 1];
+            return P(path.Points.Count - 1);
         }
     }
 
