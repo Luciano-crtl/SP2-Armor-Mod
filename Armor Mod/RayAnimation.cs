@@ -98,7 +98,7 @@ namespace ArmorFragments
             // A bubble appears when the head reaches each marked point.
             while (nextMarker < cumulativeTime.Length && cumulativeTime[nextMarker] <= t)
             {
-                RayDrawer.SpawnBubble(P(nextMarker), path.Markers[nextMarker]);
+                RayDrawer.SpawnBubble(P(nextMarker), path.Markers[nextMarker], anchor);
                 nextMarker++;
             }
 
@@ -155,9 +155,13 @@ namespace ArmorFragments
         private float size;
         private float lifetime;
         private float startTime;
+        private Transform anchor;    // the bubble travels with it (null = fixed in the world)
+        private Vector3 local;
 
-        internal void Init(float size, float lifetime)
+        internal void Init(float size, float lifetime, Transform anchor = null)
         {
+            this.anchor = anchor;
+            if (anchor != null) local = anchor.InverseTransformPoint(transform.position);
             this.size = size;
             this.lifetime = Mathf.Max(lifetime, 0.05f);
             startTime = Time.time;
@@ -168,6 +172,9 @@ namespace ArmorFragments
         {
             float f = (Time.time - startTime) / lifetime;
             if (f >= 1f) { Destroy(gameObject); return; }
+
+            // Stays on the spot of the part that was hit, even as the vehicle moves.
+            if (anchor != null) transform.position = anchor.TransformPoint(local);
             transform.localScale = Vector3.one * (size * (1f - f));
         }
     }

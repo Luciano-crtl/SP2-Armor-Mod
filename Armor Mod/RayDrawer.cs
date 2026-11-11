@@ -164,7 +164,7 @@ namespace ArmorFragments
 
         // A small colored ball that shrinks away. The "Landed" kind does not shrink: it stays,
         // a little smaller, until ClearPersistent is called.
-        public static void SpawnBubble(Vector3 position, RayKind kind)
+        public static void SpawnBubble(Vector3 position, RayKind kind, Transform anchor = null)
         {
             if (!initialized) Init();
             if (!available || kind == RayKind.None) return;
@@ -193,7 +193,7 @@ namespace ArmorFragments
 
             go.AddComponent<BubbleAnimation>().Init(
                 ArmorFragmentsPlugin.BubbleSize.Value,
-                ArmorFragmentsPlugin.BubbleLifetime.Value);
+                ArmorFragmentsPlugin.BubbleLifetime.Value, anchor);
         }
     }
 }
