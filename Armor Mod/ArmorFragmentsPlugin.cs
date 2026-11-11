@@ -24,6 +24,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> BubbleSize;
         internal static ConfigEntry<float> BubbleLifetime;
         internal static ConfigEntry<bool> MirrorLogToGameConsole;
+        internal static ConfigEntry<bool> LogNetworkDamage;
 
         // Shot simulation and X-ray view.
         internal static ConfigEntry<int> SimFragmentCount;
@@ -67,7 +68,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.2.2";
+        public const string Version = "0.2.3";
 
         private void Update()
         {
@@ -119,6 +120,9 @@ namespace ArmorFragments
             MirrorLogToGameConsole = Config.Bind("Debug", "MirrorLogToGameConsole", false,
                 "If true, also prints this plugin's log lines to the game's developer console. " +
                 "They then show up twice in LogOutput.log (once as 'Unity Log').");
+
+            LogNetworkDamage = Config.Bind("Debug", "LogNetworkDamage", false,
+                "If true, writes a log line for every piece of damage sent to another player's aircraft (many lines per shot).");
 
             SimFragmentCount = Config.Bind("Simulation", "SimulatedFragmentCount", 20,
                 new ConfigDescription(

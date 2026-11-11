@@ -412,7 +412,8 @@ namespace ArmorFragments
                     ArmorFragmentsPlugin.Log.LogWarning(
                         "PEACEFUL MODE is on: the server ignores damage to other players' aircraft (turn it off in the multiplayer settings)");
 
-                ArmorFragmentsPlugin.Log.LogInfo(
+                if (ArmorFragmentsPlugin.LogNetworkDamage.Value)
+                    ArmorFragmentsPlugin.Log.LogInfo(
                     "Remote damage sent: " + damage.ToString("F1") + " to '" + part.Part.Name + "' (part id " +
                     part.Part.Id + ") of player " + aircraft.NetworkAircraft.PlayerId +
                     ", attacker " + (Attacker.HasValue ? Attacker.Value.ToString() : "none"));
