@@ -257,6 +257,8 @@ namespace ArmorFragments.UI
                 "Pixels. Lower = cheaper to render.");
             FloatSetting(ArmorFragmentsPlugin.ImpactCameraFov, "Field of view",
                 "Degrees.", 1f, " deg");
+            ToggleSetting(ArmorFragmentsPlugin.ImpactCameraXRay, "X-ray on impact",
+                "Switches to the X-ray view the moment the shot hits, showing the damage as the fragments arrive.");
             ToggleSetting(ArmorFragmentsPlugin.ImpactCameraShadows, "Shadows",
                 "Off = the vehicle is lit but casts no shadows. Cheaper.");
         }

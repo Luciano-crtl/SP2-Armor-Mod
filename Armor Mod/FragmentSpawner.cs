@@ -40,6 +40,10 @@ namespace ArmorFragments
         // The shot simulator sets it for one shot, then clears it.
         public static Dictionary<PartScript, DamageRecord> DamageSink;
 
+        // Same idea for a REAL shot, for the impact camera's X-ray: what each part took, and when the
+        // drawn ray reaches it. (A separate one: DamageSink also changes how the rays are drawn.)
+        public static Dictionary<PartScript, DamageRecord> ImpactSink;
+
         // Who fired the shell being resolved (the game's player id; null for the simulated shot or when
         // unknown). Set by the cannon hit patch around each resolution, as the game does for its own shells.
         public static int? Attacker;
@@ -385,16 +389,19 @@ namespace ArmorFragments
             if (applyDamage) ApplyDamage(part, damage, point, dir);
             result.Damage += damage;   // counted even when not applied: "would-be" damage
 
-            if (DamageSink != null)
-            {
-                // 'arrival' is when the drawn ray's head reaches this point.
-                DamageRecord record;
-                if (!DamageSink.TryGetValue(part, out record))
-                    record.FirstTime = arrival;
-                record.Total += damage;
-                record.FirstTime = Mathf.Min(record.FirstTime, arrival);
-                DamageSink[part] = record;
-            }
+            // 'arrival' is when the drawn ray's head reaches this point.
+            if (DamageSink != null) Record(DamageSink, part, damage, arrival);
+            if (ImpactSink != null) Record(ImpactSink, part, damage, arrival);
+        }
+
+        private static void Record(Dictionary<PartScript, DamageRecord> sink, PartScript part, float damage, float arrival)
+        {
+            DamageRecord record;
+            if (!sink.TryGetValue(part, out record))
+                record.FirstTime = arrival;
+            record.Total += damage;
+            record.FirstTime = Mathf.Min(record.FirstTime, arrival);
+            sink[part] = record;
         }
 
         // Damages a part the way the game's own shells do. A part of a REMOTE aircraft (another player's)

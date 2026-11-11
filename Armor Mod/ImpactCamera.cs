@@ -36,6 +36,7 @@ namespace ArmorFragments
         private static Canvas canvas;
         private static RawImage image;
         private static RectTransform borderRect;
+        private static RectTransform backingRect;
         private static RectTransform imageRect;
 
         private static AircraftScript targetAircraft;
@@ -45,6 +46,15 @@ namespace ArmorFragments
         private static float startTime;
         private static bool active;
         private static bool shadowsApplied;
+
+        // The camera's own X-ray: built while the camera flies in, switched to when the shell arrives
+        // (the picture dips to dark and back while the real vehicle gives way to the ghosts).
+        private enum XState { Off, Waiting, FadeOut, FadeIn, Shown }
+        private static ImpactXRay xray;
+        private static XState xstate;
+        private static float xstateStart;
+        private const float FadeOutSeconds = 0.12f;
+        private const float FadeInSeconds = 0.2f;
 
         // Following the shell's ray
         private static TracerAnimation tracer;
@@ -112,6 +122,20 @@ namespace ArmorFragments
             CreateTexture(ArmorFragmentsPlugin.ImpactCameraResolution.Value);
             CreateCamera(mask);
             CreatePanel();
+
+            // The X-ray ghosts are made a few at a time over the next frames; the damage the parts have
+            // right now is noted here, before this impact's own damage is applied.
+            xray = null;
+            xstate = XState.Off;
+            if (ArmorFragmentsPlugin.ImpactCameraXRay.Value)
+            {
+                ImpactXRay candidate = new ImpactXRay(aircraft, point);
+                if (candidate.Available)
+                {
+                    xray = candidate;
+                    xstate = XState.Waiting;
+                }
+            }
 
             active = true;
             UpdatePose();
@@ -283,6 +307,14 @@ namespace ArmorFragments
             borderImage.raycastTarget = false;
             borderRect = border.GetComponent<RectTransform>();
 
+            // Dark behind the picture, so it can dip to dark when it changes look.
+            GameObject back = new GameObject("Backing");
+            back.transform.SetParent(panel.transform, false);
+            Image backImage = back.AddComponent<Image>();
+            backImage.color = new Color(0.07f, 0.07f, 0.08f, 1f);
+            backImage.raycastTarget = false;
+            backingRect = back.GetComponent<RectTransform>();
+
             GameObject picture = new GameObject("Picture");
             picture.transform.SetParent(panel.transform, false);
             image = picture.AddComponent<RawImage>();
@@ -290,7 +322,7 @@ namespace ArmorFragments
             image.raycastTarget = false;
             imageRect = picture.GetComponent<RectTransform>();
 
-            foreach (RectTransform rect in new[] { borderRect, imageRect })
+            foreach (RectTransform rect in new[] { borderRect, backingRect, imageRect })
             {
                 rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
             }
@@ -300,7 +332,7 @@ namespace ArmorFragments
         // Size and place the window (the settings may change while it is open).
         private static void Layout()
         {
-            if (imageRect == null || borderRect == null || texture == null) return;
+            if (imageRect == null || borderRect == null || backingRect == null || texture == null) return;
 
             float width = Screen.width * Mathf.Clamp(ArmorFragmentsPlugin.ImpactCameraWidthPercent.Value, 5f, 80f) / 100f;
             float height = width * texture.height / texture.width;
@@ -311,6 +343,8 @@ namespace ArmorFragments
             borderRect.sizeDelta = new Vector2(width + 2f * border, height + 2f * border);
             imageRect.anchoredPosition = new Vector2(-margin - border, -margin - border);
             imageRect.sizeDelta = new Vector2(width, height);
+            backingRect.anchoredPosition = imageRect.anchoredPosition;
+            backingRect.sizeDelta = imageRect.sizeDelta;
         }
 
         // ---- The camera's movement -------------------------------------------------
@@ -392,6 +426,7 @@ namespace ArmorFragments
 
             ApplySettings();
             UpdateFollow();
+            UpdateXRay();
             UpdatePose();
 
             // Hidden together with the rest of the flight UI; the camera rests while nobody sees it.
@@ -399,6 +434,59 @@ namespace ArmorFragments
             canvas.enabled = show;
             camera.enabled = show;
             Layout();
+        }
+
+        // Builds the X-ray ghosts, shows damage as it arrives, and switches the picture to them when the
+        // shell has reached the impact.
+        private static void UpdateXRay()
+        {
+            if (xray == null) return;
+
+            if (!xray.BuildDone) xray.BuildStep(3f);   // at most ~3 ms per frame
+            xray.Tick(camera.transform.position, followDone);
+
+            float seconds = Time.time - xstateStart;
+            switch (xstate)
+            {
+                case XState.Waiting:
+                    if (followDone && xray.BuildDone && xray.RimIdle)
+                    {
+                        xstate = XState.FadeOut;
+                        xstateStart = Time.time;
+                    }
+                    break;
+
+                case XState.FadeOut:
+                    SetPictureAlpha(Mathf.Lerp(1f, 0.05f, Mathf.Clamp01(seconds / FadeOutSeconds)));
+                    if (seconds >= FadeOutSeconds)
+                    {
+                        // The real vehicle is no longer drawn; the ghosts (on their own layer) are.
+                        camera.cullingMask = (1 << ImpactXRay.GhostLayer) | (1 << RayLayer);
+                        xstate = XState.FadeIn;
+                        xstateStart = Time.time;
+                    }
+                    break;
+
+                case XState.FadeIn:
+                    SetPictureAlpha(Mathf.Lerp(0.05f, 1f, Mathf.Clamp01(seconds / FadeInSeconds)));
+                    if (seconds >= FadeInSeconds)
+                    {
+                        SetPictureAlpha(1f);
+                        xstate = XState.Shown;
+                    }
+                    break;
+            }
+        }
+
+        private static void SetPictureAlpha(float alpha)
+        {
+            if (image != null) image.color = new Color(1f, 1f, 1f, alpha);
+        }
+
+        // What the fragments of an impact did to each part (only parts of the camera's vehicle matter).
+        public static void OnImpactResolved(Dictionary<PartScript, DamageRecord> sink, float impactTime)
+        {
+            if (active && xray != null) xray.AddEvents(sink, impactTime);
         }
 
         // Settings that can change while the camera is open take effect at once.
@@ -441,6 +529,12 @@ namespace ArmorFragments
             targetAircraft = null;
             anchorPart = null;
             tracer = null;
+            if (xray != null)
+            {
+                xray.Dispose();
+                xray = null;
+            }
+            xstate = XState.Off;
 
             if (cameraObject != null) Object.Destroy(cameraObject);
             if (panel != null) Object.Destroy(panel);
@@ -455,6 +549,7 @@ namespace ArmorFragments
             canvas = null;
             image = null;
             borderRect = null;
+            backingRect = null;
             imageRect = null;
             texture = null;
         }

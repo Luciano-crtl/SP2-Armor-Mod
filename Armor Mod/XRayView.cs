@@ -18,9 +18,9 @@ namespace ArmorFragments
 
         private static readonly List<Renderer> HiddenRenderers = new List<Renderer>();
         private static readonly List<GameObject> Ghosts = new List<GameObject>();
-        private static Material[] normalMaterials;   // one per damage level
-        private static Material[] armorMaterials;    // same, for parts tagged [ARM]
-        private static Material[] whiteMaterials;    // for rim-lit ghosts: color comes from the mesh
+        internal static Material[] normalMaterials;   // one per damage level
+        internal static Material[] armorMaterials;    // same, for parts tagged [ARM]
+        internal static Material[] whiteMaterials;    // for rim-lit ghosts: color comes from the mesh
         private static readonly List<RimGhost> RimList = new List<RimGhost>();
         private static readonly List<Reveal> Reveals = new List<Reveal>();
         private static readonly List<LiveEntry> LiveList = new List<LiveEntry>();
@@ -223,7 +223,7 @@ namespace ArmorFragments
             public int SubMeshes;
         }
 
-        private struct Look
+        internal struct Look
         {
             public Color Body;
             public float BodyAlpha;
@@ -243,14 +243,14 @@ namespace ArmorFragments
         }
 
         // The material level of a part: 0 is the neutral look, so any damage at all gets at least 1.
-        private static int LevelFor(float t, float taken)
+        internal static int LevelFor(float t, float taken)
         {
             int level = Mathf.RoundToInt(t * (Levels - 1));
             return taken > 0f ? Mathf.Max(1, level) : level;
         }
 
         // t: 0 = no damage (neutral, bluish), 1 = fully dark. A damaged part is yellow, orange or red.
-        private static Look ComputeLook(float t, bool isArmor)
+        internal static Look ComputeLook(float t, bool isArmor)
         {
             Look look = new Look();
             if (t <= 0f)
@@ -368,7 +368,7 @@ namespace ArmorFragments
             if (alive == 0) Hide();
         }
 
-        private static void SetMaterial(MeshRenderer renderer, int subMeshes, Material material)
+        internal static void SetMaterial(MeshRenderer renderer, int subMeshes, Material material)
         {
             Material[] materials = new Material[subMeshes];
             for (int i = 0; i < materials.Length; i++) materials[i] = material;
@@ -409,7 +409,7 @@ namespace ArmorFragments
         }
 
         // The renderers that make up a part's visible mesh.
-        private static IEnumerable<MeshRenderer> GhostSources(PartScript part)
+        internal static IEnumerable<MeshRenderer> GhostSources(PartScript part)
         {
             HashSet<MeshRenderer> seen = new HashSet<MeshRenderer>();
 
@@ -508,14 +508,14 @@ namespace ArmorFragments
         }
 
         // White materials: the visible color comes from each ghost's vertex colors.
-        private static void CreateWhiteMaterials(Shader shader)
+        internal static void CreateWhiteMaterials(Shader shader)
         {
             whiteMaterials = new Material[Levels];
             for (int i = 0; i < Levels; i++)
                 whiteMaterials[i] = MakeMaterial(shader, Color.white, i);
         }
 
-        private static void CreateMaterials(Shader shader)
+        internal static void CreateMaterials(Shader shader)
         {
             normalMaterials = new Material[Levels];
             armorMaterials = new Material[Levels];

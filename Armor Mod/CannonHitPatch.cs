@@ -74,6 +74,11 @@ namespace ArmorFragments
             // The rays drawn for this impact travel with the part that was hit.
             RayDrawer.Anchor = part.transform;
 
+            // What the fragments do to each part, for the impact camera's X-ray (only if it is open).
+            Dictionary<PartScript, DamageRecord> impactSink = ImpactCamera.IsActive ? new Dictionary<PartScript, DamageRecord>() : null;
+            FragmentSpawner.ImpactSink = impactSink;
+            float impactTime = Time.time;
+
             try
             {
                 PartPhysics.BeginShot();   // part densities and colliders are remembered per shot
@@ -104,6 +109,8 @@ namespace ArmorFragments
             {
                 FragmentSpawner.Attacker = null;
                 RayDrawer.Anchor = null;
+                FragmentSpawner.ImpactSink = null;
+                if (impactSink != null) ImpactCamera.OnImpactResolved(impactSink, impactTime);
             }
         }
 

@@ -39,6 +39,7 @@ namespace ArmorFragments
         internal static ConfigEntry<int> ImpactCameraResolution;
         internal static ConfigEntry<float> ImpactCameraFov;
         internal static ConfigEntry<bool> ImpactCameraShadows;
+        internal static ConfigEntry<bool> ImpactCameraXRay;
 
         // Shot simulation and X-ray view.
         internal static ConfigEntry<int> SimFragmentCount;
@@ -82,7 +83,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.5.2";
+        public const string Version = "0.6.0";
 
         private void Update()
         {
@@ -169,6 +170,9 @@ namespace ArmorFragments
             ImpactCameraFov = Config.Bind("ImpactCamera", "FieldOfView", 45f,
                 new ConfigDescription("Field of view (degrees) of the impact camera.",
                     new AcceptableValueRange<float>(15f, 90f)));
+            ImpactCameraXRay = Config.Bind("ImpactCamera", "XRay", true,
+                "If true, the impact camera switches to an X-ray view of the vehicle the moment the shell hits, " +
+                "showing the damage (yellow, orange, red) as the fragments reach each part.");
             ImpactCameraShadows = Config.Bind("ImpactCamera", "Shadows", false,
                 "If true, the impact camera draws shadows. Costs GPU time; off = the vehicle is lit but casts no shadows.");
 
