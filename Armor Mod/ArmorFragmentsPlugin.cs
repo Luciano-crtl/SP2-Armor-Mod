@@ -25,6 +25,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> BubbleLifetime;
         internal static ConfigEntry<bool> MirrorLogToGameConsole;
         internal static ConfigEntry<bool> LogNetworkDamage;
+        internal static ConfigEntry<bool> HostResolvesShots;
 
         // Shot simulation and X-ray view.
         internal static ConfigEntry<int> SimFragmentCount;
@@ -68,13 +69,15 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.2.3";
+        public const string Version = "0.3.0";
 
         private void Update()
         {
             UI.DesignerSection.Tick();
             XRayView.Tick();
             VehicleXRay.Tick();
+            NetSync.Tick();
+            HostResolver.Tick();
         }
 
         private void Awake()
@@ -123,6 +126,11 @@ namespace ArmorFragments
 
             LogNetworkDamage = Config.Bind("Debug", "LogNetworkDamage", false,
                 "If true, writes a log line for every piece of damage sent to another player's aircraft (many lines per shot).");
+
+            HostResolvesShots = Config.Bind("Multiplayer", "HostResolvesShots", true,
+                "Only matters when you host. If true, shells from players who do not run the mod are worked out " +
+                "here (armor, ricochet, fragments), using the cannon's [CAN] tag. Players who run the mod " +
+                "calculate their own shots and are left alone.");
 
             SimFragmentCount = Config.Bind("Simulation", "SimulatedFragmentCount", 20,
                 new ConfigDescription(
@@ -253,6 +261,16 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "Multiplies the fragment angle, same idea as ArmorRicochetMultiplier.",
                     new AcceptableValueRange<float>(0f, 10f)));
+
+            // The settings that decide what happens to other players. On someone else's server they come
+            // from the host (see NetSync); everything else (rays, X-ray, logs, simulated shot) stays yours.
+            NetSync.RegisterGlobal(
+                ApplyDamage, DefaultFragmentCount, BallisticRayRange, IgnoreGameDamageOnArmor,
+                DefaultShellHardness, ArmorResistance, RicochetFriction, RicochetRandomness,
+                DamagePerKiloJoule, DensityModifier, ConstantForceLoss, SimpleFragments, ShellFragmentShare,
+                SimpleFragmentArea, MaxPartsPerFragment, SpreadBaseAngle, AxisTilt, SpreadAnisotropy,
+                MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
+                FragmentRicochetAngle, FragmentRicochetMultiplier);
 
             // One patch failing (for example after a game update) must not stop the others.
             SafePatcher.PatchAll(new Harmony("com.yourname.armorfragments"), typeof(ArmorFragmentsPlugin).Assembly);

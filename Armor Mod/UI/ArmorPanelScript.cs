@@ -27,6 +27,8 @@ namespace ArmorFragments.UI
 
         private float nextRefresh;
         private bool rebuildRequested;
+        private bool builtLocked;   // were the host-controlled settings hidden when the rows were made?
+        private bool builtHost;     // ... and was this player the host?
         private bool visible = true;
         private int shownLogVersion = -1;
 
@@ -55,11 +57,14 @@ namespace ArmorFragments.UI
             shownLogVersion = -1;
 
             builder = new PanelBuilder(content);
+            builtLocked = NetSync.GlobalLocked;
+            builtHost = NetSync.IsHost;
 
             try
             {
                 BuildStatus();
                 BuildSimulation();
+                BuildMultiplayer();
                 BuildXRayPerformance();
                 BuildEnergyModel();
                 BuildFragments();
@@ -192,10 +197,15 @@ namespace ArmorFragments.UI
         private void BuildEnergyModel()
         {
             builder.Header("Energy model", collapsed: true);
-            builder.Text("Status", "All active");
+            builder.Text("Status", NetSync.GlobalLocked ? "Balance set by the host" : "All active");
 
             ToggleSetting(ArmorFragmentsPlugin.LogChordDiagnostics, "Log chord diagnostics",
                 "Each simulated shot writes how far the line travels inside every part to the log ([CHORD] lines).");
+            FloatSetting(ArmorFragmentsPlugin.VisualSpeedMultiplier, "Visual speed multiplier",
+                "Drawn rays move at their real speed (from energy) times this, and slow down as they lose energy.", 0.005f, "x");
+
+            // The rest decides what happens to other players: on someone else's server it is the host's.
+            if (NetSync.GlobalLocked) return;
 
             FloatSetting(ArmorFragmentsPlugin.DefaultShellHardness, "Default shell hardness",
                 "Shell hardness for cannons without a [CAN k=] tag. Used for the ricochet angle.", 5f, " %");
@@ -223,12 +233,24 @@ namespace ArmorFragments.UI
                 "How much the cone leans toward the plate's normal on slanted hits.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.SpreadAnisotropy, "Spread anisotropy",
                 "How much wider the cone is along the plane of incidence (1 = round).", 0.1f, "x");
-            FloatSetting(ArmorFragmentsPlugin.VisualSpeedMultiplier, "Visual speed multiplier",
-                "Drawn rays move at their real speed (from energy) times this, and slow down as they lose energy.", 0.005f, "x");
+        }
+
+        // Role in a multiplayer session, and the host's switch.
+        private void BuildMultiplayer()
+        {
+            builder.Header("Multiplayer", collapsed: true);
+            Live("Session", () => NetSync.Role);
+            if (NetSync.IsHost)
+            {
+                Live("Players with the mod", () => NetSync.ModdedCount.ToString());
+                ToggleSetting(ArmorFragmentsPlugin.HostResolvesShots, "Work out others' shells",
+                    "Shells from players who do not run the mod are worked out on your computer (needs their cannon to have a [CAN] tag).");
+            }
         }
 
         private void BuildFragments()
         {
+            if (NetSync.GlobalLocked) return;   // all of it is the host's call
             builder.Header("Fragments");
             ToggleSetting(ArmorFragmentsPlugin.ApplyDamage, "Apply damage",
                 "If on, fragments damage the parts they hit.");
@@ -244,6 +266,7 @@ namespace ArmorFragments.UI
 
         private void BuildRicochet()
         {
+            if (NetSync.GlobalLocked) return;
             builder.Header("Ricochet");
             IntSetting(ArmorFragmentsPlugin.MaxRicochets, "Max ricochets",
                 "How many times one ray may bounce. The bounce off the armor counts as the first. 0 turns ricochets off.");
@@ -317,8 +340,12 @@ namespace ArmorFragments.UI
             ConfigFile config = ArmorFragmentsPlugin.Instance.Config;
             foreach (KeyValuePair<ConfigDefinition, ConfigEntryBase> pair in
                      (IEnumerable<KeyValuePair<ConfigDefinition, ConfigEntryBase>>)config)
+            {
+                // On someone else's server the balance settings are the host's, not ours to reset.
+                if (NetSync.GlobalLocked && NetSync.IsGlobal(pair.Value)) continue;
                 pair.Value.BoxedValue = pair.Value.DefaultValue;
-            config.Save();
+            }
+            NetSync.SaveConfig();
 
             // Rebuilding destroys the button being clicked, so wait for Update.
             rebuildRequested = true;
@@ -365,7 +392,7 @@ namespace ArmorFragments.UI
                 entry.Value,
                 x => Mathf.RoundToInt(x).ToString(CultureInfo.InvariantCulture),
                 x => SetValue(entry, Mathf.Clamp(Mathf.RoundToInt(x), (int)min, (int)max), false),
-                x => entry.ConfigFile.Save());
+                x => NetSync.SaveConfig());
         }
 
         private void FloatSetting(ConfigEntry<float> entry, string label, string tooltip,
@@ -387,7 +414,7 @@ namespace ArmorFragments.UI
                 entry.Value,
                 x => x.ToString(format, CultureInfo.InvariantCulture) + unit,
                 x => SetValue(entry, Mathf.Clamp(Mathf.Round(x / step) * step, min, max), false),
-                x => entry.ConfigFile.Save());
+                x => NetSync.SaveConfig());
         }
 
         // "0" for whole steps, "0.0" for tenths, "0.00" for hundredths...
@@ -420,6 +447,9 @@ namespace ArmorFragments.UI
         protected void Update()
         {
             UpdateVisibility();
+
+            // Joined or left a server while the panel was open: show the rows that apply now.
+            if (NetSync.GlobalLocked != builtLocked || NetSync.IsHost != builtHost) rebuildRequested = true;
 
             if (rebuildRequested)
             {
@@ -470,7 +500,7 @@ namespace ArmorFragments.UI
         {
             try
             {
-                ArmorFragmentsPlugin.Instance.Config.Save();
+                NetSync.SaveConfig();
             }
             catch (Exception e)
             {
