@@ -224,7 +224,7 @@ namespace ArmorFragments
 
         private static System.Type FindType(string fullName)
         {
-            foreach (Assembly assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+            foreach (System.Reflection.Assembly assembly in System.AppDomain.CurrentDomain.GetAssemblies())
             {
                 System.Type type = assembly.GetType(fullName, false);
                 if (type != null) return type;
