@@ -30,6 +30,7 @@ namespace ArmorFragments
     internal sealed class ModuleTag
     {
         public float MinDamage = 1f;   // d: fragments weaker than this are ignored
+        public string Variable;        // v: name of the Funky Trees variable that carries the part's damage (null = from the part's name)
     }
 
     internal sealed class PartTags
@@ -95,7 +96,11 @@ namespace ArmorFragments
                 }
                 else if (kind == "MOD")
                 {
-                    tags.Module = new ModuleTag { MinDamage = Get(values, "d", 1f) };
+                    tags.Module = new ModuleTag
+                    {
+                        MinDamage = Get(values, "d", 1f),
+                        Variable = ReadText(block.Groups[2].Value, "v"),
+                    };
                 }
             }
 
@@ -116,7 +121,8 @@ namespace ArmorFragments
                 Append(name, "[CAN f=" + tags.Cannon.Fragments +
                        " k=" + Number(tags.Cannon.ShellHardness) + "]");
             if (tags.Module != null)
-                Append(name, "[MOD d=" + Number(tags.Module.MinDamage) + "]");
+                Append(name, "[MOD d=" + Number(tags.Module.MinDamage) +
+                       (string.IsNullOrEmpty(tags.Module.Variable) ? "" : " v=" + tags.Module.Variable) + "]");
 
             return name.Length == 0 ? fallback : name.ToString();
         }
@@ -132,6 +138,14 @@ namespace ArmorFragments
                     values[pair.Groups[1].Value] = number;
             }
             return values;
+        }
+
+        // The text after 'key=' in a block, or null.
+        private static string ReadText(string text, string key)
+        {
+            foreach (Match pair in Pair.Matches(text))
+                if (pair.Groups[1].Value == key) return pair.Groups[2].Value;
+            return null;
         }
 
         private static float Get(Dictionary<string, float> values, string key, float fallback)

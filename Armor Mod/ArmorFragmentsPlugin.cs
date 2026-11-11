@@ -69,7 +69,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.3.0";
+        public const string Version = "0.4.0";
 
         private void Update()
         {
@@ -78,6 +78,7 @@ namespace ArmorFragments
             VehicleXRay.Tick();
             NetSync.Tick();
             HostResolver.Tick();
+            ModuleOutputs.Tick();
         }
 
         private void Awake()

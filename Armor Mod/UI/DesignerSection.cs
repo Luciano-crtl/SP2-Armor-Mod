@@ -146,7 +146,9 @@ namespace ArmorFragments.UI
                 {
                     Slider(builder, tags, "Minimum damage", "Fragments weaker than this do nothing to the part.",
                         0f, 50f, 0.5f, tags.Module.MinDamage, "", v => tags.Module.MinDamage = v);
-                    builder.Text("Effects", "Not implemented yet");
+                    // The module reports how damaged it is (0 = intact, 1 = destroyed) as a Funky Trees variable.
+                    builder.Text("Funky Trees variable", ModuleOutputs.NameFor(part, tags));
+                    builder.Text("Value", "0 to 1: share of health lost");
                 }
             }
         }
@@ -198,6 +200,9 @@ namespace ArmorFragments.UI
             {
                 applying = false;
             }
+
+            // Make the module's variable show up (or go away) in the designer's variable lists right away.
+            if (createUndoStep) ModuleOutputs.RefreshDesignerVariables(part);
 
             if (createUndoStep)
             {
