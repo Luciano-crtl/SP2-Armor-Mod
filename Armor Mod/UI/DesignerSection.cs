@@ -144,8 +144,6 @@ namespace ArmorFragments.UI
                     on => Switch(tags, () => tags.Module = on ? new ModuleTag() : null));
                 if (tags.Module != null)
                 {
-                    Slider(builder, tags, "Minimum damage", "Fragments weaker than this do nothing to the part.",
-                        0f, 50f, 0.5f, tags.Module.MinDamage, "", v => tags.Module.MinDamage = v);
                     // The module reports how damaged it is (0 = intact, 1 = destroyed) as a Funky Trees variable.
                     builder.Text("Funky Trees variable", ModuleOutputs.NameFor(part, tags));
                     builder.Text("Value", "0 to 1: share of health lost");
