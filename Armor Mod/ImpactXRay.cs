@@ -54,6 +54,7 @@ namespace ArmorFragments
 
         private int nextBuild;
         private int partsBuilt;
+        private bool buildErrorLogged;
         private int rimVertices;
         private int rimRound;
         private bool rimIdle;
@@ -111,8 +112,20 @@ namespace ArmorFragments
             System.Diagnostics.Stopwatch timer = System.Diagnostics.Stopwatch.StartNew();
             while (nextBuild < entries.Count && timer.Elapsed.TotalMilliseconds < budgetMs)
             {
-                Build(entries[nextBuild]);
-                nextBuild++;
+                Entry entry = entries[nextBuild];
+                nextBuild++;   // first: a part that fails must not stop the others
+                try
+                {
+                    Build(entry);
+                }
+                catch (System.Exception e)
+                {
+                    if (!buildErrorLogged)
+                    {
+                        buildErrorLogged = true;
+                        ArmorFragmentsPlugin.Log.LogWarning("Impact X-ray: a part could not be built (shown once): " + e);
+                    }
+                }
             }
         }
 
@@ -296,7 +309,7 @@ namespace ArmorFragments
                 RimGhost ghost = rims[index];
                 if (ghost.Transform == null) continue;
 
-                if (ghost.NeedsWork(cameraWorld))
+                if (ghost.NeedsWork(cameraWorld, false))
                 {
                     busy = true;
                     budget -= ghost.Step(budget);

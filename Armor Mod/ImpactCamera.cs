@@ -54,6 +54,8 @@ namespace ArmorFragments
         private static ImpactXRay xray;
         private static XState xstate;
         private static float xstateStart;
+        private static float waitStart = -1f;   // when the shell reached the impact and the X-ray started waiting to switch
+        private const float MaxWaitSeconds = 0.3f;   // then it switches anyway; parts still being built appear as they are done
         private static bool mainHadGhostLayer;   // did the main camera draw the ghost layer before we turned it off?
         private static int mainHiddenLayer = -1;
         private const float FadeOutSeconds = 0.12f;
@@ -130,6 +132,7 @@ namespace ArmorFragments
             // right now is noted here, before this impact's own damage is applied.
             xray = null;
             xstate = XState.Off;
+            waitStart = -1f;
             if (ArmorFragmentsPlugin.ImpactCameraXRay.Value)
             {
                 ImpactXRay candidate = new ImpactXRay(aircraft, point);
@@ -447,17 +450,24 @@ namespace ArmorFragments
             if (xray == null) return;
 
             HideFromMainCamera(xray.GhostLayer);        // in case the game reset the main camera's layers
-            if (!xray.BuildDone) xray.BuildStep(3f);   // at most ~3 ms per frame
+            // Build as fast as is bearable: gently while the camera flies in, harder once the shell has arrived.
+            if (!xray.BuildDone) xray.BuildStep(followDone ? 14f : 6f);
             xray.Tick(camera.transform.position, followDone);
 
             float seconds = Time.time - xstateStart;
             switch (xstate)
             {
                 case XState.Waiting:
-                    if (followDone && xray.BuildDone && xray.RimIdle)
+                    if (followDone)
                     {
-                        xstate = XState.FadeOut;
-                        xstateStart = Time.time;
+                        if (waitStart < 0f) waitStart = Time.time;
+                        // Switch when everything is built, or after a short wait: the parts nearest the impact
+                        // are built first, and the rest appear as they are finished.
+                        if (xray.BuildDone || Time.time - waitStart > MaxWaitSeconds)
+                        {
+                            xstate = XState.FadeOut;
+                            xstateStart = Time.time;
+                        }
                     }
                     break;
 

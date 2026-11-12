@@ -87,12 +87,14 @@ namespace ArmorFragments
 
         // True if this ghost has (more) work to do for a camera at 'cameraWorld'.
         // Starts a new pass when the camera has moved enough since the last finished one.
-        public bool NeedsWork(Vector3 cameraWorld)
+        // trackCamera false: after the first pass, only a change of look starts another (for a camera that
+        // stays put relative to the vehicle: a spinning wheel would otherwise be redone every frame).
+        public bool NeedsWork(Vector3 cameraWorld, bool trackCamera = true)
         {
             if (passActive) return true;
 
             Vector3 local = Transform.InverseTransformPoint(cameraWorld);
-            if (hasLast && (local - lastCamera).sqrMagnitude < moveThresholdSqr) return false;
+            if (hasLast && (!trackCamera || (local - lastCamera).sqrMagnitude < moveThresholdSqr)) return false;
 
             cx = local.x; cy = local.y; cz = local.z;
             lastCamera = local;
