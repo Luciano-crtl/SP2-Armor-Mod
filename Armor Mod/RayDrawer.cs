@@ -24,6 +24,16 @@ namespace ArmorFragments
         public RayKind Final = RayKind.Miss;   // decides the line color
         public Transform Anchor;               // if set, the points travel with this transform
 
+        // How thick the ray is drawn, in meters: the diameter of what it shows (the shell's caliber, a
+        // fragment's width). 0 = not given (a default is used).
+        public float Width;
+
+        // Diameter in meters of a round section of this area (cm2).
+        public static float DiameterOf(float areaCm2)
+        {
+            return 2f * Mathf.Sqrt(Mathf.Max(areaCm2, 0f) / Mathf.PI) * 0.01f;
+        }
+
         // Drawn speed (m/s) for the stretch that ENDS at each point; 0 = use the default.
         // The first point's value is not used. It lets a ray slow down as it loses energy.
         public readonly List<float> SpeedTo = new List<float>();
@@ -135,9 +145,10 @@ namespace ArmorFragments
             LineRenderer lr = go.AddComponent<LineRenderer>();
             lr.useWorldSpace = true;
             lr.positionCount = 0;
-            lr.startWidth = lr.endWidth = (initial || thick)
-                ? ArmorFragmentsPlugin.InitialRayWidth.Value
-                : ArmorFragmentsPlugin.RayWidth.Value;
+            // As thick as what it shows (true to scale, times the setting), but never too thin to see.
+            float width = path.Width > 0f ? path.Width * ArmorFragmentsPlugin.RayWidthScale.Value
+                                          : (initial || thick ? 0.06f : 0.02f);
+            lr.startWidth = lr.endWidth = Mathf.Max(width, ArmorFragmentsPlugin.MinRayWidth.Value);
             lr.sharedMaterial = lineMaterial;   // shared: no new material per ray
             lr.shadowCastingMode = ShadowCastingMode.Off;
             lr.receiveShadows = false;

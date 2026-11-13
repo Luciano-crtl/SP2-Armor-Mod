@@ -107,10 +107,7 @@ namespace ArmorFragments
                 direction = camera.transform.forward;
             }
 
-            CannonTag cannon = new CannonTag
-            {
-                Fragments = ArmorFragmentsPlugin.SimFragmentCount.Value,
-            };
+            CannonTag cannon = null;   // the imaginary cannon has no properties of its own (the shell does)
             ShellInfo shell = new ShellInfo
             {
                 Mass = EnergyModel.ShellMassForCaliber(ArmorFragmentsPlugin.SimCaliber.Value),

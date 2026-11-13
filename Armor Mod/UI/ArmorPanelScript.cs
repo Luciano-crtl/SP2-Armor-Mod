@@ -151,9 +151,8 @@ namespace ArmorFragments.UI
                 });
             }
 
-            // The simulated cannon: the same two properties a cannon with a [CAN] tag has in the designer.
-            IntSetting(ArmorFragmentsPlugin.SimFragmentCount, "Simulated shell fragments",
-                "How many fragment rays a shell makes when it penetrates armor.");
+            // The simulated shell: what a cannon with a [CAN] tag has in the designer (the hardness) and what
+            // a real cannon gives its shell.
             FloatSetting(ArmorFragmentsPlugin.SimShellHardness, "Simulated shell hardness",
                 "How hard the shell is, compared with armor. 100 % is the reference. Harder shells ricochet less.", 5f, " %");
             // What a real cannon gives its shell. The mass follows from the caliber, as in the game.
@@ -298,8 +297,10 @@ namespace ArmorFragments.UI
                 "The game's own damage to [ARM] parts (impact, explosions, crashes) is ignored: armor is judged by the energy model only.");
             FloatSetting(ArmorFragmentsPlugin.DamagePerKiloJoule, "Damage per kJ",
                 "Part damage per kilojoule a fragment leaves in a part. This is the damage scale.", 0.1f, "");
-            IntSetting(ArmorFragmentsPlugin.DefaultFragmentCount, "Default fragments",
-                "Fragment rays made when a shell penetrates, for cannons without a [CAN f=] tag.");
+            FloatSetting(ArmorFragmentsPlugin.FragmentMass, "Fragment mass",
+                "Typical mass of one fragment. The number of fragments is the cloud's mass over this.", 0.5f, " g");
+            IntSetting(ArmorFragmentsPlugin.MaxFragments, "Max fragments",
+                "Most fragment rays one penetration makes (a limit on detail and cost; the cloud's energy does not change).");
             FloatSetting(ArmorFragmentsPlugin.BallisticRayRange, "Ballistic ray range",
                 "When a real shell stops in a non-armor part, a ray carries on this far looking for armor.", 1f, " m");
         }
@@ -325,10 +326,10 @@ namespace ArmorFragments.UI
             builder.Header("Ray display");
             ToggleSetting(ArmorFragmentsPlugin.DrawRays, "Draw rays",
                 "Shows each fragment ray and impact in the world.");
-            FloatSetting(ArmorFragmentsPlugin.RayWidth, "Ray width",
-                "Thickness of the drawn rays.", 0.005f, " m");
-            FloatSetting(ArmorFragmentsPlugin.InitialRayWidth, "Initial ray width",
-                "Thickness of the initial ray (the shell, or the simulated shot).", 0.005f, " m");
+            FloatSetting(ArmorFragmentsPlugin.RayWidthScale, "Ray width scale",
+                "Rays are as thick as what they show (the shell as wide as its caliber, a fragment as wide as the fragment). This multiplies that.", 0.1f, "x");
+            FloatSetting(ArmorFragmentsPlugin.MinRayWidth, "Thinnest ray",
+                "No ray is drawn thinner than this, so tiny fragments stay visible.", 0.001f, " m");
             FloatSetting(ArmorFragmentsPlugin.RayTrailLength, "Trail length",
                 "Length of the fading trail behind the moving ray.", 0.1f, " m");
             FloatSetting(ArmorFragmentsPlugin.BubbleSize, "Impact bubble size",

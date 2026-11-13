@@ -14,11 +14,12 @@ namespace ArmorFragments
         // These show up in BepInEx/config/com.yourname.armorfragments.cfg
         // after the first run, so you can tune them without rebuilding.
         internal static ConfigEntry<bool> ApplyDamage;
-        internal static ConfigEntry<int> DefaultFragmentCount;
+        internal static ConfigEntry<float> FragmentMass;
+        internal static ConfigEntry<int> MaxFragments;
         internal static ConfigEntry<float> BallisticRayRange;
         internal static ConfigEntry<bool> DrawRays;
-        internal static ConfigEntry<float> RayWidth;
-        internal static ConfigEntry<float> InitialRayWidth;
+        internal static ConfigEntry<float> RayWidthScale;
+        internal static ConfigEntry<float> MinRayWidth;
         internal static ConfigEntry<bool> IgnoreGameDamageOnArmor;
         internal static ConfigEntry<float> RayTrailLength;
         internal static ConfigEntry<float> BubbleSize;
@@ -43,7 +44,6 @@ namespace ArmorFragments
         internal static ConfigEntry<int> ImpactCameraGhostLayer;
 
         // Shot simulation and X-ray view.
-        internal static ConfigEntry<int> SimFragmentCount;
         internal static ConfigEntry<bool> XRayAfterSimulation;
         internal static ConfigEntry<UnityEngine.InputSystem.Key> VehicleXRayKey;
         internal static ConfigEntry<float> XRayRadius;
@@ -111,23 +111,31 @@ namespace ArmorFragments
 
             ApplyDamage = Config.Bind("Fragments", "ApplyDamage", true,
                 "If true, fragments damage the parts they hit.");
-            DefaultFragmentCount = Config.Bind("Fragments", "DefaultFragmentCount", 20,
+            FragmentMass = Config.Bind("Fragments", "FragmentMass", 10f,
                 new ConfigDescription(
-                    "Fragment rays made when a shell penetrates armor, for cannons without a [CAN f=] tag.",
-                    new AcceptableValueRange<int>(1, 200)));
+                    "Typical mass (grams) of one fragment. The number of fragments (rays) of a penetration is the cloud's " +
+                    "mass over this (halved for a fully brittle plate, doubled for an unbrittle one), within the limits.",
+                    new AcceptableValueRange<float>(0.5f, 500f)));
+            MaxFragments = Config.Bind("Fragments", "MaxFragments", 60,
+                new ConfigDescription(
+                    "Most fragment rays one penetration makes. It only limits detail (and the cost): the cloud's total " +
+                    "energy and mass do not change, so with fewer rays each one stands for more material.",
+                    new AcceptableValueRange<int>(5, 300)));
             BallisticRayRange = Config.Bind("Fragments", "BallisticRayRange", 100f,
                 new ConfigDescription(
                     "When a real shell stops in a part that is not armor, a ballistic ray carries on this far (m) looking for armor.",
                     new AcceptableValueRange<float>(1f, 1000f)));
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
-            RayWidth = Config.Bind("Debug", "RayWidth", 0.02f,
-                new ConfigDescription("Thickness of the drawn rays, in meters.",
-                    new AcceptableValueRange<float>(0.001f, 1f)));
-            InitialRayWidth = Config.Bind("Debug", "InitialRayWidth", 0.06f,
+            RayWidthScale = Config.Bind("Debug", "RayWidthScale", 1f,
                 new ConfigDescription(
-                    "Thickness of the initial ray (the shell, or the simulated shot from the camera), in meters.",
-                    new AcceptableValueRange<float>(0.001f, 1f)));
+                    "A drawn ray is as thick as the thing it shows: the shell as wide as its caliber, a fragment as wide " +
+                    "as the fragment. This multiplies that (1 = true size; raise it to see small fragments from afar).",
+                    new AcceptableValueRange<float>(0.1f, 50f)));
+            MinRayWidth = Config.Bind("Debug", "MinRayWidth", 0.004f,
+                new ConfigDescription(
+                    "No ray is drawn thinner than this (meters), so tiny fragments stay visible. 0 = true proportions only.",
+                    new AcceptableValueRange<float>(0f, 0.1f)));
             IgnoreGameDamageOnArmor = Config.Bind("Fragments", "IgnoreGameDamageOnArmor", true,
                 "If true, the game's own damage to parts with an [ARM] tag (shell impact, explosions, crashes) is ignored: " +
                 "armor is judged only by the energy model and cannot be destroyed.");
@@ -189,10 +197,6 @@ namespace ArmorFragments
                 "here (armor, ricochet, fragments), using the cannon's [CAN] tag. Players who run the mod " +
                 "calculate their own shots and are left alone.");
 
-            SimFragmentCount = Config.Bind("Simulation", "SimulatedFragmentCount", 20,
-                new ConfigDescription(
-                    "Fragment rays made by the simulated shell when it penetrates armor.",
-                    new AcceptableValueRange<int>(1, 200)));
             VehicleXRayKey = Config.Bind("Simulation", "VehicleXRayKey", UnityEngine.InputSystem.Key.F8,
                 "Key that shows your own vehicle in the X-ray view, coloured by the damage its parts have taken " +
                 "(yellow = a little, orange = damaged, red = a lot). Press again to switch it off. 'None' disables it.");
@@ -335,7 +339,7 @@ namespace ArmorFragments
             // The settings that decide what happens to other players. On someone else's server they come
             // from the host (see NetSync); everything else (rays, X-ray, logs, simulated shot) stays yours.
             NetSync.RegisterGlobal(
-                ApplyDamage, DefaultFragmentCount, BallisticRayRange, IgnoreGameDamageOnArmor,
+                ApplyDamage, FragmentMass, MaxFragments, BallisticRayRange, IgnoreGameDamageOnArmor,
                 DefaultShellHardness, ArmorResistance, RicochetFriction, RicochetRandomness,
                 DamagePerKiloJoule, DensityModifier, ConstantForceLoss, SimpleFragments, ShellFragmentShare,
                 SimpleFragmentArea, MaxPartsPerFragment, SpreadBaseAngle, AxisTilt, SpreadAnisotropy,

@@ -44,11 +44,12 @@ namespace ArmorFragments
         private const float SteelDensityKgPerCm3 = 0.00785f;
         private const float ShellShareOfMass = 0.2f;     // part of the shell's own mass that breaks up
         private const float GoldenAngle = 2.39996323f;   // radians: spreads the fragments around the axis
+        private const int MinFragments = 3;              // fewest rays that still show a cloud
 
         // shellBreaksUp: explosive ammunition (the shell itself breaks up on the plate, as before). For an
         // armor-piercing shell the fragments are the plate's own material only (spall): in proportion to
         // its brittleness, and never more than that material could carry at the shell's speed.
-        public static FragmentSpec[] Generate(int count, ArmorTag armor, ShellInfo shell, Vector3 direction,
+        public static FragmentSpec[] Generate(ArmorTag armor, ShellInfo shell, Vector3 direction,
                                               Vector3 normal, float angleDegrees, float residualEnergy,
                                               float absorbedEnergy, float effectiveThicknessMm,
                                               bool simple, bool shellBreaksUp, out CloudSummary summary)
@@ -69,7 +70,7 @@ namespace ArmorFragments
                 float most = 0.5f * spallMass * shell.Speed * shell.Speed;
                 fragmentEnergy = Mathf.Min(fragmentEnergy, most);
             }
-            if (count <= 0 || fragmentEnergy < 1f) return new FragmentSpec[0];
+            if (fragmentEnergy < 1f) return new FragmentSpec[0];
 
             // ---- Axis and plane of incidence --------------------------------------------------
             Vector3 d = direction.normalized;
@@ -115,6 +116,14 @@ namespace ArmorFragments
                 totalMass = brittle * plugMass;
             }
             totalMass = Mathf.Max(totalMass, 0.0001f);
+
+            // ---- How many fragments -------------------------------------------------------------
+            // The cloud's mass over the typical mass of one piece (a brittle plate breaks into smaller
+            // ones). The cap only limits detail: the cloud's total energy and mass do not change, so each
+            // ray of a capped cloud simply stands for more material.
+            float typicalMass = Mathf.Max(ArmorFragmentsPlugin.FragmentMass.Value / 1000f, 0.0001f) * Mathf.Lerp(2f, 0.5f, brittle);
+            int count = Mathf.Clamp(Mathf.RoundToInt(totalMass / typicalMass), MinFragments,
+                                    Mathf.Max(MinFragments, ArmorFragmentsPlugin.MaxFragments.Value));
 
             // ---- The fragments ----------------------------------------------------------------
             FragmentSpec[] fragments = new FragmentSpec[count];

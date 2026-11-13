@@ -76,10 +76,6 @@ namespace ArmorFragments
             LastImpact.Plate = plate;
             LastImpact.ClearCloud();
 
-            // How many fragment rays a penetrating shell makes: from the cannon's [CAN f=] tag.
-            int fragmentCount = Mathf.Clamp(
-                cannonTag != null ? cannonTag.Fragments : ArmorFragmentsPlugin.DefaultFragmentCount.Value,
-                1, 500);
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
             bool draw = ArmorFragmentsPlugin.DrawRays.Value;
 
@@ -87,7 +83,8 @@ namespace ArmorFragments
             // Everything that happens after the impact waits for it to arrive.
             if (leadTime < 0f)
             {
-                leadTime = BallisticRay.DrawSimpleTrack(point - direction * ShellLeadIn, point, shell.Energy, shell.Mass);
+                leadTime = BallisticRay.DrawSimpleTrack(point - direction * ShellLeadIn, point, shell.Energy, shell.Mass,
+                                                        shell.CaliberMm * 0.001f);
             }
 
             // 1) Ricochet: does this shell bounce off this armor at this angle? The critical angle
@@ -104,8 +101,8 @@ namespace ArmorFragments
                 Vector3 n = Vector3.Dot(normal, direction) > 0f ? -normal : normal;
                 Vector3 reflected = Vector3.Reflect(direction, n).normalized;
 
-                // The ricocheted ray starts at the impact point.
-                RayPath path = new RayPath();
+                // The ricocheted ray starts at the impact point (it is the shell: as thick as its caliber).
+                RayPath path = new RayPath { Width = shell.CaliberMm * 0.001f };
                 path.Add(point, RayKind.None);
 
                 // The armor bounce counts as the ray's first ricochet.
@@ -159,7 +156,7 @@ namespace ArmorFragments
             //    fragments; the cloud decides where they go, how heavy each is, and how much each carries.
             CloudSummary cloud;
             FragmentSpec[] fragments = FragmentCloud.Generate(
-                fragmentCount, armorTag, shell, direction, normal, angle, shellEnergy - absorbed,
+                armorTag, shell, direction, normal, angle, shellEnergy - absorbed,
                 absorbed, effectiveThickness, ArmorFragmentsPlugin.SimpleFragments.Value, shell.Explosive, out cloud);
             LastImpact.SetCloud(cloud);
 
@@ -169,7 +166,8 @@ namespace ArmorFragments
 
             for (int i = 0; i < fragments.Length; i++)
             {
-                RayPath path = new RayPath();
+                // As thick as the fragment is wide.
+                RayPath path = new RayPath { Width = RayPath.DiameterOf(fragments[i].AreaCm2) };
                 path.Add(point, RayKind.None);
 
                 // The fragment flies with its own energy, mass and size.

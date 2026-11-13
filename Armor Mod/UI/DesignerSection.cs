@@ -129,8 +129,6 @@ namespace ArmorFragments.UI
                     on => Switch(tags, () => tags.Cannon = on ? new CannonTag() : null));
                 if (tags.Cannon != null)
                 {
-                    Slider(builder, tags, "Fragments", "How many fragment rays a shell makes when it penetrates armor.",
-                        1f, 200f, 1f, tags.Cannon.Fragments, "", v => tags.Cannon.Fragments = Mathf.RoundToInt(v));
                     Slider(builder, tags, "Shell hardness", "Hardness of the shell: a harder shell is deflected less by the armor. 100% = reference.",
                         10f, 300f, 5f, tags.Cannon.ShellHardness, " %", v => tags.Cannon.ShellHardness = v);
                 }

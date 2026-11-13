@@ -180,13 +180,14 @@ namespace ArmorFragments
 
         // The shell's last meters before an impact (a single stretch at the shell's own speed).
         // Returns how many seconds it takes: whatever follows is drawn to start after that.
-        public static float DrawSimpleTrack(Vector3 start, Vector3 end, float shellEnergy, float shellMass)
+        public static float DrawSimpleTrack(Vector3 start, Vector3 end, float shellEnergy, float shellMass,
+                                            float diameterMeters)
         {
             float speed = VisualSpeed(shellEnergy, shellMass);
             float duration = Vector3.Distance(start, end) / speed;
             if (!ArmorFragmentsPlugin.DrawRays.Value) return duration;
 
-            RayPath path = new RayPath { Final = RayKind.ArmorImpact };
+            RayPath path = new RayPath { Final = RayKind.ArmorImpact, Width = diameterMeters };
             path.Add(start, RayKind.None);
             path.Add(end, RayKind.ArmorImpact, speed);
             RayDrawer.Animate(path, 0f, true);
@@ -206,7 +207,7 @@ namespace ArmorFragments
                                          Vector3 end, float leadIn, RayKind startMarker, RayKind endMarker,
                                          float delay = 0f, bool continuation = false)
         {
-            RayPath path = new RayPath { Final = RayKind.ArmorImpact };
+            RayPath path = new RayPath { Final = RayKind.ArmorImpact, Width = shell.CaliberMm * 0.001f };
             float time = 0f;
             float energy = shell.Energy;
             float speed = VisualSpeed(energy, shell.Mass);

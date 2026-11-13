@@ -19,10 +19,10 @@ namespace ArmorFragments
     }
 
     // Cannon: describes the shells it fires. (The shell's energy comes from its real mass and
-    // speed, so there is no penetration value any more; an old p= in a name is simply ignored.)
+    // speed, so there is no penetration value any more; an old p= in a name is simply ignored.
+    // So is an old f= (fragment count): how many fragments a plate makes is the plate's doing.)
     internal sealed class CannonTag
     {
-        public int Fragments = 20;         // f: fragment rays created when the shell penetrates
         public float ShellHardness = 100f; // k: percent, 100 = reference (ricochet)
     }
 
@@ -87,11 +87,7 @@ namespace ArmorFragments
                 }
                 else if (kind == "CAN")
                 {
-                    tags.Cannon = new CannonTag
-                    {
-                        Fragments = Mathf.Clamp(Mathf.RoundToInt(Get(values, "f", 20f)), 1, 500),
-                        ShellHardness = Get(values, "k", 100f),
-                    };
+                    tags.Cannon = new CannonTag { ShellHardness = Get(values, "k", 100f) };
                 }
                 else if (kind == "MOD")
                 {
@@ -113,8 +109,7 @@ namespace ArmorFragments
                 Append(name, "[ARM t=" + Number(tags.Armor.Thickness) + " h=" + Number(tags.Armor.Hardness) +
                        " b=" + Number(tags.Armor.Brittleness) + "]");
             if (tags.Cannon != null)
-                Append(name, "[CAN f=" + tags.Cannon.Fragments +
-                       " k=" + Number(tags.Cannon.ShellHardness) + "]");
+                Append(name, "[CAN k=" + Number(tags.Cannon.ShellHardness) + "]");
             if (tags.Module != null)
                 Append(name, string.IsNullOrEmpty(tags.Module.Variable)
                     ? "[MOD]" : "[MOD v=" + tags.Module.Variable + "]");
