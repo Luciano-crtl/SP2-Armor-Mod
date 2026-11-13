@@ -84,7 +84,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.6.2";
+        public const string Version = "0.6.3";
 
         private void Update()
         {
@@ -327,6 +327,7 @@ namespace ArmorFragments
 
             // One patch failing (for example after a game update) must not stop the others.
             SafePatcher.PatchAll(new Harmony("com.yourname.armorfragments"), typeof(ArmorFragmentsPlugin).Assembly);
+            CompatibilityCheck.Run();   // says in the log what a game update has changed
             Log.LogInfo("Armor Fragments loaded!");
         }
     }

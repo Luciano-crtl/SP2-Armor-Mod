@@ -409,17 +409,59 @@ namespace ArmorFragments
         }
 
         // The renderers that make up a part's visible mesh.
+        // The renderers in the game's own list for a part. Read by reflection on purpose: a game update
+        // changed the type of RendererMaterialMap.Renderer, and code compiled against the old type died with
+        // MissingMethodException. This way a change of type cannot break it (and a failure here only loses
+        // this list: the meshes found by GhostSources below still work).
+        private static System.Type mapType;
+        private static System.Reflection.PropertyInfo mapRenderer;
+        private static System.Reflection.PropertyInfo mapsProperty;
+        private static bool mapErrorLogged;
+
+        private static List<MeshRenderer> MappedRenderers(PartScript part)
+        {
+            List<MeshRenderer> found = new List<MeshRenderer>();
+            try
+            {
+                PartMaterialScript materials = part.PartMaterialScript;
+                if (materials == null) return found;
+
+                if (mapsProperty == null)
+                    mapsProperty = typeof(PartMaterialScript).GetProperty("RendererMaps");
+                System.Collections.IEnumerable maps = mapsProperty != null ? mapsProperty.GetValue(materials, null) as System.Collections.IEnumerable : null;
+                if (maps == null) return found;
+
+                foreach (object map in maps)
+                {
+                    if (map == null) continue;
+                    if (mapType != map.GetType())
+                    {
+                        mapType = map.GetType();
+                        mapRenderer = mapType.GetProperty("Renderer");
+                    }
+                    MeshRenderer renderer = mapRenderer != null ? mapRenderer.GetValue(map, null) as MeshRenderer : null;
+                    if (renderer != null) found.Add(renderer);
+                }
+            }
+            catch (System.Exception e)
+            {
+                if (!mapErrorLogged)
+                {
+                    mapErrorLogged = true;
+                    ArmorFragmentsPlugin.Log.LogWarning("X-ray: the game's renderer list could not be read (shown once): " + e.Message);
+                }
+            }
+            return found;
+        }
+
         internal static IEnumerable<MeshRenderer> GhostSources(PartScript part)
         {
             HashSet<MeshRenderer> seen = new HashSet<MeshRenderer>();
 
             // The game's own list of the part's renderers (includes ones that are switched off
             // because the part is drawn as part of a combined mesh).
-            if (part.PartMaterialScript != null)
-            {
-                foreach (PartMaterialScript.RendererMaterialMap map in part.PartMaterialScript.RendererMaps)
-                    if (map.Renderer != null && seen.Add(map.Renderer)) yield return map.Renderer;
-            }
+            foreach (MeshRenderer renderer in MappedRenderers(part))
+                if (seen.Add(renderer)) yield return renderer;
 
             // Any other mesh that is currently visible (propeller blades, for example).
             foreach (MeshRenderer renderer in part.GetComponentsInChildren<MeshRenderer>())
