@@ -15,7 +15,10 @@ namespace ArmorFragments
         // Energy model, joules.
         public static float ShellEnergy;     // what the shell carried
         public static float Absorbed;        // what the armor took
-        public static float Residual;        // what is left for the fragments
+        public static float Residual;        // what is left after the armor
+        public static float ShellAfter;      // what the shell keeps after the plate (armor-piercing shells)
+        public static float Deflection;      // degrees the plate turned the shell
+        public static int Plate;             // which plate of the chain this impact is (1 = the first)
 
         // Fragment cloud of the last penetrating shot (zero when there was none).
         public static float SigmaX, SigmaY, AxisTilt;   // degrees

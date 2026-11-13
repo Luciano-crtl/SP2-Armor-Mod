@@ -68,6 +68,9 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> ConstantForceLoss;
         internal static ConfigEntry<bool> SimpleFragments;
         internal static ConfigEntry<float> ShellFragmentShare;
+        internal static ConfigEntry<float> MaxDeflection;
+        internal static ConfigEntry<int> MaxPlates;
+        internal static ConfigEntry<bool> SimShellExplosive;
         internal static ConfigEntry<float> SimpleFragmentArea;
         internal static ConfigEntry<int> MaxPartsPerFragment;
         internal static ConfigEntry<float> SpreadBaseAngle;
@@ -249,10 +252,24 @@ namespace ArmorFragments
                 "Off = fragments with their own mass, energy and speed (central ones carry more). On = equal energy and mass, fixed size (simpler).");
             ShellFragmentShare = Config.Bind("Energy", "ShellFragmentShare", 0.2f,
                 new ConfigDescription(
-                    "Share of the energy left after the armor that becomes fragments even if the plate does not " +
+                    "Explosive ammunition only: share of the energy left after the armor that becomes fragments even if the plate does not " +
                     "shatter at all (the shell breaking up by itself). The plate's brittleness adds to it. " +
                     "0 = only the plate makes fragments, 1 = all the leftover energy becomes fragments.",
                     new AcceptableValueRange<float>(0f, 1f)));
+            MaxDeflection = Config.Bind("Energy", "MaxDeflection", 6f,
+                new ConfigDescription(
+                    "Most (degrees) a plate turns an armor-piercing shell that goes through it, toward the plate's normal. " +
+                    "The real turn is this x sin(hit angle) x sqrt(plate hardness / shell hardness) x min(1, thickness / caliber): " +
+                    "none head-on, more on slanted, hard, thick plates. 0 = shells fly straight on.",
+                    new AcceptableValueRange<float>(0f, 30f)));
+            MaxPlates = Config.Bind("Energy", "MaxPlates", 4,
+                new ConfigDescription(
+                    "Most plates one armor-piercing shell may be resolved against (it flies on after each plate it " +
+                    "goes through, so spaced armor counts plate by plate).",
+                    new AcceptableValueRange<int>(1, 10)));
+            SimShellExplosive = Config.Bind("Simulation", "SimulatedShellExplosive", false,
+                "Simulated shell: off = armor-piercing (goes through plates and flies on), on = explosive (breaks up on the plate). " +
+                "A real cannon uses its own 'Projectile Type' (Basic = armor-piercing, Explosive).");
             SimpleFragmentArea = Config.Bind("Energy", "SimpleFragmentAreaCm2", 0.5f,
                 new ConfigDescription("Cross-section (cm2) of every fragment in simple mode.",
                     new AcceptableValueRange<float>(0.01f, 20f)));
@@ -322,7 +339,7 @@ namespace ArmorFragments
                 DefaultShellHardness, ArmorResistance, RicochetFriction, RicochetRandomness,
                 DamagePerKiloJoule, DensityModifier, ConstantForceLoss, SimpleFragments, ShellFragmentShare,
                 SimpleFragmentArea, MaxPartsPerFragment, SpreadBaseAngle, AxisTilt, SpreadAnisotropy,
-                MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
+                MaxDeflection, MaxPlates, MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
                 FragmentRicochetAngle, FragmentRicochetMultiplier);
 
             // One patch failing (for example after a game update) must not stop the others.

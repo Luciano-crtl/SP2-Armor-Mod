@@ -58,10 +58,12 @@ namespace ArmorFragments
         // angle: 0 = head-on, 90 = grazing (same convention as the hit log).
         // leadTime: seconds the initial ray (the shell) takes to reach the armor, when the caller
         //           has already drawn it. Negative = draw the usual short shell track here.
+        // plate: which plate of a chain this is (an armor-piercing shell that goes through a plate flies on
+        //        and may meet another one; 1 = the first).
         public static ImpactOutcome Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag, ShellInfo shell,
                                  Vector3 point, Vector3 direction,
                                  Vector3 normal, float angle, bool applyDamage,
-                                 bool simulated = false, float leadTime = -1f)
+                                 bool simulated = false, float leadTime = -1f, int plate = 1)
         {
             string tag = simulated ? "[SIM] " : "";
 
@@ -69,6 +71,9 @@ namespace ArmorFragments
             LastImpact.ShellEnergy = shell.Energy;
             LastImpact.Absorbed = 0f;
             LastImpact.Residual = 0f;
+            LastImpact.ShellAfter = 0f;
+            LastImpact.Deflection = 0f;
+            LastImpact.Plate = plate;
             LastImpact.ClearCloud();
 
             // How many fragment rays a penetrating shell makes: from the cannon's [CAN f=] tag.
@@ -155,7 +160,7 @@ namespace ArmorFragments
             CloudSummary cloud;
             FragmentSpec[] fragments = FragmentCloud.Generate(
                 fragmentCount, armorTag, shell, direction, normal, angle, shellEnergy - absorbed,
-                absorbed, effectiveThickness, ArmorFragmentsPlugin.SimpleFragments.Value, out cloud);
+                absorbed, effectiveThickness, ArmorFragmentsPlugin.SimpleFragments.Value, shell.Explosive, out cloud);
             LastImpact.SetCloud(cloud);
 
             int partsHit = 0;
@@ -184,8 +189,10 @@ namespace ArmorFragments
             }
 
             if (fragments.Length == 0)
-                ArmorFragmentsPlugin.Log.LogInfo(tag + "No fragments: too little energy left over after the armor (" +
-                                                 EnergyModel.Kilojoules(shellEnergy - absorbed) + ")");
+                ArmorFragmentsPlugin.Log.LogInfo(tag + "No fragments: " +
+                    (shell.Explosive ? "too little energy left over after the armor ("
+                                     : "the plate sheds none (brittleness, thickness or leftover energy too low) (") +
+                    EnergyModel.Kilojoules(shellEnergy - absorbed) + ")");
             else
                 ArmorFragmentsPlugin.Log.LogInfo(
                     tag + "Fragment cloud: " + fragments.Length + " fragments, " + EnergyModel.Kilojoules(cloud.TotalEnergy) +
@@ -200,7 +207,89 @@ namespace ArmorFragments
                 tag + "Fragments: " + partsHit + " of " + fragments.Length + " rays hit a part, " +
                 ricochets + " ricochets, total damage " + totalDamage.ToString("F1") +
                 (applyDamage ? "" : " (not applied)"));
+
+            // 4) An armor-piercing shell is not spent by the plate: what the plate did not take and did not
+            //    turn into fragments goes on, bent a little toward the plate's normal. (Explosive ammunition
+            //    breaks up here, with all its leftover energy in the fragments, as it always has.)
+            if (!shell.Explosive)
+            {
+                float spalled = fragments.Length > 0 ? cloud.TotalEnergy : 0f;
+                ContinueAfterPlate(armor, armorTag, cannonTag, shell, point, direction, normal, angle,
+                                   shellEnergy, shellEnergy - absorbed - spalled, effectiveThickness,
+                                   applyDamage, simulated, leadTime, plate, tag);
+            }
             return ImpactOutcome.Penetrated;
+        }
+
+        // The shell has gone through 'armor' with 'energyAfter' joules left. It leaves the far side of the
+        // plate (the collider's own thickness along its line), turned by the plate's deflection, and flies
+        // on as a ballistic ray; if that meets another plate, the next one of the chain is resolved.
+        //   timeAtPlate: seconds after the impact at which the shell reached this plate (the drawn ray's time)
+        private static void ContinueAfterPlate(PartScript armor, ArmorTag armorTag, CannonTag cannonTag, ShellInfo shell,
+                                               Vector3 point, Vector3 direction, Vector3 normal, float angle,
+                                               float energyIn, float energyAfter, float effectiveThicknessMm,
+                                               bool applyDamage, bool simulated, float timeAtPlate, int plate, string tag)
+        {
+            int maxPlates = Mathf.Max(1, ArmorFragmentsPlugin.MaxPlates.Value);
+            if (plate >= maxPlates)
+            {
+                ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell stopped after " + plate + " plate" + (plate == 1 ? "" : "s") +
+                                                 " (the limit): " + EnergyModel.Kilojoules(energyAfter) + " left");
+                return;
+            }
+            if (energyAfter <= energyIn * EnergyModel.StopFraction)
+            {
+                ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell spent in the plate (" + EnergyModel.Kilojoules(energyAfter) + " left)");
+                return;
+            }
+
+            // Where it leaves the plate: how far the line goes inside the plate's colliders.
+            const float stepBack = 0.05f;
+            float entry;
+            float exit;
+            float chord = PartPhysics.Chord(armor, point - direction * stepBack, direction, 5f, out entry, out exit);
+            float inside = chord > 0.001f
+                ? Mathf.Max(exit - stepBack, 0.005f)
+                : Mathf.Max(effectiveThicknessMm * 0.001f, 0.005f);   // the colliders gave nothing: use the tag's thickness
+            Vector3 exitPoint = point + direction * inside;
+
+            // The plate turns it toward the plate's normal (into the plate, away from the shooter).
+            float deflection = EnergyModel.DeflectionDegrees(armorTag, shell, angle);
+            Vector3 facing = Vector3.Dot(normal, direction) > 0f ? -normal : normal;   // normal facing the shell
+            Vector3 newDirection = Vector3.RotateTowards(direction, -facing, deflection * Mathf.Deg2Rad, 0f).normalized;
+
+            ShellInfo next = shell;
+            next.Speed = Mathf.Sqrt(2f * energyAfter / Mathf.Max(shell.Mass, 0.000001f));
+
+            LastImpact.ShellAfter = energyAfter;
+            LastImpact.Deflection = Vector3.Angle(direction, newDirection);
+
+            // The drawn ray crosses the plate's thickness, slowing down, then leaves.
+            float insideTime = inside / BallisticRay.VisualSpeed(0.5f * (energyIn + energyAfter), shell.Mass);
+
+            ArmorFragmentsPlugin.Log.LogInfo(
+                tag + "Shell goes through plate " + plate + " with " + EnergyModel.Kilojoules(energyAfter) + " of " +
+                EnergyModel.Kilojoules(energyIn) + ", turned " + LastImpact.Deflection.ToString("F1") + " deg");
+
+            ShellFlight.Continue(exitPoint + newDirection * 0.01f, newDirection, next, cannonTag,
+                                 null, armor, timeAtPlate + insideTime, 0f, RayKind.None,
+                                 applyDamage, simulated, plate + 1, true);
+        }
+
+        // The shell itself leaves energy in every ordinary part it flew through: that is their damage.
+        // 'skip' is a part that already took the game's own impact damage (a real shell's first contact).
+        // Returns the damage (applied or not). startDelay: seconds after the impact at which the ray started.
+        public static float DepositCrossings(BallisticRay.Result ray, Vector3 from, Vector3 direction,
+                                             PartScript skip, bool applyDamage, float startDelay)
+        {
+            TraceResult total = default;
+            foreach (BallisticRay.Crossed crossing in ray.Crossings)
+            {
+                if (crossing.Part == null || crossing.Part == skip) continue;
+                Deposit(crossing.Part, crossing.Dissipated, from + direction * crossing.Distance, direction,
+                        applyDamage, startDelay + crossing.ArrivalTime, ref total);
+            }
+            return total.Damage;
         }
 
         // What a flying piece of metal carries: its energy, mass and cross-section.

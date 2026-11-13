@@ -96,6 +96,10 @@ namespace ArmorFragments.UI
             Live("Shell energy", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.ShellEnergy) : "-");
             Live("Absorbed by armor", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Absorbed) : "-");
             Live("Energy left", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Residual) : "-");
+            Live("Plate", () => LastImpact.HasData && LastImpact.Plate > 0 ? LastImpact.Plate.ToString() : "-");
+            Live("Shell after the plate", () => LastImpact.ShellAfter <= 0f
+                ? "-"
+                : EnergyModel.Kilojoules(LastImpact.ShellAfter) + ", turned " + LastImpact.Deflection.ToString("F1") + " deg");
             Live("Fragment budget", () => LastImpact.FragmentEnergy <= 0f
                 ? "-"
                 : EnergyModel.Kilojoules(LastImpact.FragmentEnergy) + ", " + (LastImpact.FragmentMass * 1000f).ToString("F0") +
@@ -155,6 +159,8 @@ namespace ArmorFragments.UI
             // What a real cannon gives its shell. The mass follows from the caliber, as in the game.
             FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Simulated shell velocity",
                 "Speed of the imaginary shell.", 10f, " m/s");
+            ToggleSetting(ArmorFragmentsPlugin.SimShellExplosive, "Simulated shell explosive",
+                "Off = armor-piercing: it goes through plates and flies on. On = explosive: it breaks up on the plate. A real cannon uses its own Projectile Type (Basic = armor-piercing).");
             FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Simulated shell caliber",
                 "Caliber of the imaginary shell. It sets the area the armor has to open and, with it, the shell's mass.", 1f, " mm");
             Live("Calculated shell mass", () =>
@@ -223,7 +229,11 @@ namespace ArmorFragments.UI
             ToggleSetting(ArmorFragmentsPlugin.SimpleFragments, "Simple fragments",
                 "Off = each fragment has its own mass, energy and speed. On = equal and fixed.");
             FloatSetting(ArmorFragmentsPlugin.ShellFragmentShare, "Shell fragment share",
-                "Share of the leftover energy that becomes fragments even with an unbrittle plate (the shell breaking up).", 0.05f, "");
+                "Explosive ammunition only: share of the leftover energy that becomes fragments even with an unbrittle plate (the shell breaking up).", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.MaxDeflection, "Max deflection",
+                "Most a plate turns an armor-piercing shell that goes through it (degrees). The real turn grows with the hit angle, the plate's hardness and thickness.", 0.5f, " deg");
+            IntSetting(ArmorFragmentsPlugin.MaxPlates, "Max plates",
+                "Most plates one armor-piercing shell is resolved against (it flies on after each).");
             FloatSetting(ArmorFragmentsPlugin.SimpleFragmentArea, "Simple fragment area",
                 "Cross-section of every fragment in simple mode.", 0.1f, " cm2");
             IntSetting(ArmorFragmentsPlugin.MaxPartsPerFragment, "Parts per fragment",

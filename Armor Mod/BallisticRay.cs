@@ -58,8 +58,9 @@ namespace ArmorFragments
         // same law the fragments follow), and stops at the first armor part, at anything that is not a
         // part (the ground, for example), or when its energy runs out.
         //   enteredPart: the part a real shell has just stopped in (its ray starts inside it)
+        //   ignorePart:  a part to leave out altogether (the plate a shell has just gone through)
         public static Result Trace(Vector3 origin, Vector3 direction, float maxDistance,
-                                   PartScript enteredPart, ShellInfo shell)
+                                   PartScript enteredPart, ShellInfo shell, PartScript ignorePart = null)
         {
             Result result = new Result(true);
             PartPhysics.BeginShot();
@@ -90,6 +91,7 @@ namespace ArmorFragments
 
                 PartScript part = collider.GetComponentInParent<PartScript>();
                 if (part != null && part == enteredPart) continue;
+                if (part != null && part == ignorePart) continue;
                 if (part != null && done.Contains(part)) continue;   // another collider of a part already crossed
 
                 if (!result.HasFirstPoint)
@@ -197,8 +199,12 @@ namespace ArmorFragments
         //   leadIn:      meters drawn before 'start' (the shell arriving), 0 for none
         //   startMarker: bubble at 'start' (a real shell has just hit a part there)
         //   endMarker:   bubble at 'end' (the armor impact, or where the ray stopped)
+        //   delay:       seconds to wait before it starts moving (a shell that left a plate starts later)
+        //   continuation: the ray of a shell that has gone through a plate: thick like the shell's, but it
+        //                 is not "the impact" (the impact camera follows only the first)
         public static float DrawShellRay(Vector3 start, Vector3 direction, ref Result ray, ShellInfo shell,
-                                         Vector3 end, float leadIn, RayKind startMarker, RayKind endMarker)
+                                         Vector3 end, float leadIn, RayKind startMarker, RayKind endMarker,
+                                         float delay = 0f, bool continuation = false)
         {
             RayPath path = new RayPath { Final = RayKind.ArmorImpact };
             float time = 0f;
@@ -257,7 +263,11 @@ namespace ArmorFragments
                 path.Markers[path.Markers.Count - 1] = endMarker;
             }
 
-            if (ArmorFragmentsPlugin.DrawRays.Value) RayDrawer.Animate(path, 0f, true);
+            if (ArmorFragmentsPlugin.DrawRays.Value)
+            {
+                if (continuation) RayDrawer.Animate(path, delay, false, true);
+                else RayDrawer.Animate(path, delay, true);
+            }
             return time;
         }
     }

@@ -143,6 +143,7 @@ namespace ArmorFragments
             Rigidbody body = projectile.GetComponent<Rigidbody>();
 
             float caliber = projectile.transform.localScale.x * 1000f;
+            bool explosive = ProjectileIsExplosive(projectile);   // if the cannon is gone, from the shell itself
             if (cannonScript != null && cannonScript.PartScript != null)
             {
                 foreach (PartModifierData modifier in cannonScript.PartScript.Part.Modifiers)
@@ -151,6 +152,8 @@ namespace ArmorFragments
                     if (data != null)
                     {
                         caliber = data.CaliberInMilimeters;
+                        // The game's own 'Projectile Type' setting of the cannon: Basic or Explosive.
+                        explosive = data.AmmoType == CannonData.ProjectileType.Explosive;
                         break;
                     }
                 }
@@ -162,58 +165,38 @@ namespace ArmorFragments
                 Speed = speed,
                 CaliberMm = caliber,
                 Hardness = cannonTag != null ? cannonTag.ShellHardness : ArmorFragmentsPlugin.DefaultShellHardness.Value,
+                Explosive = explosive,
             };
+        }
+
+        private static readonly System.Reflection.FieldInfo ExplosiveField =
+            HarmonyLib.AccessTools.Field(typeof(CannonProjectileScript), "_isExplosive");
+
+        // The shell's own flag (set on the projectile prefab that matches the cannon's projectile type).
+        private static bool ProjectileIsExplosive(CannonProjectileScript projectile)
+        {
+            try
+            {
+                return ExplosiveField != null && (bool)ExplosiveField.GetValue(projectile);
+            }
+            catch (System.Exception)
+            {
+                return true;   // unknown: as before this was a choice
+            }
         }
 
         // The shell has stopped in 'stoppedIn', which is not armor. The ray goes on in the shell's
         // direction, flying through other non-armor parts (paying energy in each, the first one
         // included) and meets the first armor part with the energy it has left, under the same
         // rules (and the same damage) as a real shell that had hit it directly.
-        // The parts it crosses take no damage from this ray: the first one already took the game's
-        // own impact damage, and the others are not touched by a shell that "stopped" before them.
+        // The first part already took the game's own impact damage; the others take what the shell
+        // leaves in them (ShellFlight).
         private static void ContinueAsBallisticRay(PartScript stoppedIn, CannonTag cannon, ShellInfo shell,
                                                    Vector3 from, Vector3 direction)
         {
-            BallisticRay.Result ray = BallisticRay.Trace(
-                from, direction, ArmorFragmentsPlugin.BallisticRayRange.Value, stoppedIn, shell);
-
-            // Where the ray ends: at the armor, or where it stopped.
-            Vector3 end;
-            RayKind endMarker;
-            if (ray.Armor != null) { end = ray.Hit.point; endMarker = RayKind.ArmorImpact; }
-            else if (ray.RanOutOfEnergy) { end = ray.StopPoint; endMarker = RayKind.Hit; }
-            else if (ray.HasFirstPoint) { end = ray.FirstPoint; endMarker = RayKind.Miss; }
-            else { end = from; endMarker = RayKind.None; }
-
-            // The initial ray: the shell's last meters, the stop point, then on through the ordinary
-            // parts (slowing down in each) up to the armor or wherever it stops.
-            float leadTime = BallisticRay.DrawShellRay(
-                from, direction, ref ray, shell, end, FragmentSpawner.ShellLeadIn, RayKind.Hit, endMarker);
-
-            if (ray.Armor == null)
-            {
-                ArmorFragmentsPlugin.Log.LogInfo(
-                    "Shell stopped in a non-armor part; its ballistic ray found no armor" +
-                    (ray.StoppedBy != null ? " (" + ray.StoppedBy + ")" : ""));
-                return;
-            }
-
-            float angle = Vector3.Angle(direction, ray.Hit.normal);
-            angle = Mathf.Min(angle, 180f - angle);
-
-            ArmorFragmentsPlugin.Log.LogInfo(
-                "Shell stopped in a non-armor part; its ballistic ray passed through " +
-                ray.PassedThrough + " parts and met armor '" + ray.Part.Part.Name + "' at " +
-                ray.Hit.distance.ToString("F1") + " m with " + EnergyModel.Kilojoules(ray.Energy) +
-                " of " + EnergyModel.Kilojoules(shell.Energy));
-
-            // It reaches the armor slower than it hit the first part.
-            ShellInfo atArmor = shell;
-            atArmor.Speed = Mathf.Min(shell.Speed, Mathf.Sqrt(2f * ray.Energy / Mathf.Max(shell.Mass, 0.000001f)));
-
-            FragmentSpawner.Spawn(ray.Part, ray.Armor, cannon, atArmor, ray.Hit.point, direction,
-                ray.Hit.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value,
-                simulated: false, leadTime: leadTime);
+            ShellFlight.Continue(from, direction, shell, cannon, stoppedIn, null, 0f,
+                                 FragmentSpawner.ShellLeadIn, RayKind.Hit,
+                                 ArmorFragmentsPlugin.ApplyDamage.Value, false, 1, false);
         }
     }
 }

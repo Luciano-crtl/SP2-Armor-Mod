@@ -67,6 +67,8 @@ namespace ArmorFragments
                 Member(typeof(CannonData), "ProjectileVolume", typeof(float));
                 Member(typeof(CannonData), "ProjectileVelocity", typeof(float));
                 Member(typeof(CannonData), "ProjectileLifetime", typeof(float));
+                Member(typeof(CannonData), "AmmoType", typeof(CannonData.ProjectileType));
+                Member(typeof(CannonProjectileScript), "_isExplosive", typeof(bool));
 
                 // Multiplayer
                 Method(typeof(NetworkAircraftScript), "DamagePart");

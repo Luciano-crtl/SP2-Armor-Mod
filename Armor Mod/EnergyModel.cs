@@ -11,6 +11,10 @@ namespace ArmorFragments
         public float CaliberMm;
         public float Hardness;   // percent, 100 = reference (from the cannon's [CAN k=] or the defaults)
 
+        // Explosive ammunition (the game's 'Explosive' projectile type) breaks up on the plate, as it
+        // always has. Anything else is armor-piercing: it goes through the plate and flies on.
+        public bool Explosive;
+
         // Kinetic energy: 1/2 m v^2.
         public float Energy
         {
@@ -100,6 +104,24 @@ namespace ArmorFragments
                         ", multiplier " + ArmorFragmentsPlugin.ArmorRicochetMultiplier.Value.ToString("F2") +
                         ", random " + jitter.ToString("+0.0;-0.0");
             return angle;
+        }
+
+        // How far (degrees) a plate turns an armor-piercing shell that goes through it, toward the plate's
+        // normal (the shell "straightens up"):
+        //     max x sin(obliquity) x sqrt(armor hardness / shell hardness) x min(1, thickness / caliber)
+        //  - obliquity: none when head-on, more the more slanted the hit (0 = head-on, 90 = grazing);
+        //  - hardness: a harder plate bends the shell more, a harder shell resists (the ratio is kept
+        //    between 1/4 and 4, so the factor goes from 0.5 to 2);
+        //  - thickness over caliber: a thin plate hardly turns a big shell.
+        public static float DeflectionDegrees(ArmorTag armor, ShellInfo shell, float angleDegrees)
+        {
+            float max = ArmorFragmentsPlugin.MaxDeflection.Value;
+            if (max <= 0f) return 0f;
+
+            float obliquity = Mathf.Sin(Mathf.Clamp(angleDegrees, 0f, 90f) * Mathf.Deg2Rad);
+            float hardness = Mathf.Sqrt(Mathf.Clamp(armor.Hardness / Mathf.Max(shell.Hardness, 1f), 0.25f, 4f));
+            float thickness = Mathf.Clamp01(armor.Thickness / Mathf.Max(shell.CaliberMm, 1f));
+            return max * obliquity * hardness * thickness;
         }
 
         // Energy the shell keeps after bouncing: the part of its motion along the surface survives

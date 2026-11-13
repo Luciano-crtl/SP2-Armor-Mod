@@ -117,6 +117,7 @@ namespace ArmorFragments
                 Speed = ArmorFragmentsPlugin.SimShellVelocity.Value,
                 CaliberMm = ArmorFragmentsPlugin.SimCaliber.Value,
                 Hardness = ArmorFragmentsPlugin.SimShellHardness.Value,
+                Explosive = ArmorFragmentsPlugin.SimShellExplosive.Value,
             };
 
             // The shell flies through every part that is not armor (leaving energy in each) and stops
