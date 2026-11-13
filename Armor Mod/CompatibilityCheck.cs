@@ -49,6 +49,7 @@ namespace ArmorFragments
                 Member(typeof(AircraftScript), "VariableSystem", typeof(VariableSystemScript));
                 Member(typeof(AircraftScript), "Parts", null);
                 Member(typeof(AircraftScript), "MainCockpit", null);
+                Method(typeof(BodyScript), "DisconnectParts");
                 Member(typeof(AircraftScript), "LoadContext", null);
                 Method(typeof(AircraftScript), "GetPartById");
                 Method(typeof(VariableSystemScript), "AddVariable", typeof(string));

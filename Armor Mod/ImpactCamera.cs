@@ -386,6 +386,46 @@ namespace ArmorFragments
             camera.farClipPlane = Mathf.Max(60f, (firstSegment + distance) * 6f);
         }
 
+        // The game is about to switch off the bodies of these destroyed parts (BodyScript.DisconnectParts). While
+        // they still have their place: freeze their X-ray copies there, and if the camera is attached to one of
+        // them, move it to the cockpit with the same view.
+        public static void OnPartsDisconnecting(PartScript part)
+        {
+            if (!active || part == null) return;
+
+            // The game switches off the whole group the part belongs to.
+            List<PartScript> affected = new List<PartScript>();
+            if (part.PartGroup != null && part.PartGroup.Parts != null) affected.AddRange(part.PartGroup.Parts);
+            else affected.Add(part);
+
+            bool referenceAffected = false;
+            foreach (PartScript p in affected)
+            {
+                if (p == null) continue;
+                if (xray != null) xray.Freeze(p);
+                if (reference != null && p.transform == reference) referenceAffected = true;
+            }
+
+            if (referenceAffected) RebaseToCockpit();
+        }
+
+        // Moves what the camera is attached to from the (destroyed) part that was hit to the vehicle's cockpit,
+        // keeping the same view, using the exact place it has right now.
+        private static void RebaseToCockpit()
+        {
+            Transform next = CockpitOf(targetAircraft);
+            if (next == null || next == reference || reference == null) return;
+
+            Vector3 impactNow = reference.TransformPoint(impactLocal);
+            Vector3 directionNow = reference.TransformDirection(directionLocal).normalized;
+            reference = next;
+            impactLocal = next.InverseTransformPoint(impactNow);
+            directionLocal = next.InverseTransformDirection(directionNow);
+            lastImpactWorld = impactNow;
+            lastDirectionWorld = directionNow;
+            ArmorFragmentsPlugin.Log.LogInfo("Impact camera: the part that was hit is destroyed; following the vehicle's cockpit");
+        }
+
         // The vehicle's main cockpit: it stays on the vehicle as long as the vehicle does.
         public static Transform CockpitOf(AircraftScript aircraft)
         {

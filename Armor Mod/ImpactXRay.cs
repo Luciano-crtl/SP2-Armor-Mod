@@ -11,10 +11,12 @@ namespace ArmorFragments
     // camera draws (the main camera never sees them), so the real vehicle is left alone. When the camera
     // wants the X-ray look it stops drawing the real vehicle's layers and draws these instead.
     //
-    // The copies are NOT children of the parts. When a part is destroyed the game switches off its whole
-    // body, and anything attached to it would vanish just when it matters; so the copies hang from one
-    // holder that follows the vehicle (its main cockpit), each at the place its part had when the camera
-    // opened. A part destroyed earlier is put where it was the last time it was seen alive.
+    // While a part is alive its copies are children of its meshes, so they follow it (wheels turn, turrets
+    // swing: the picture stays true to the vehicle). When a part is destroyed the game switches off its
+    // whole body, and anything attached would vanish just when it matters; so the moment before the game
+    // does that (it announces it: see PartDisconnectPatch) its copies are moved to a holder that follows the
+    // vehicle (its main cockpit), exactly where they were. They stay there, shown as destroyed.
+    // A part destroyed before this camera opened is put where it was the last time it was seen alive.
     //
     // It is built a little at a time while the camera flies toward the impact, so there is no hitch, and
     // the rim glow is worked out once, because the camera stays still relative to the vehicle.
@@ -46,7 +48,8 @@ namespace ArmorFragments
             public bool WasDestroyed;       // already switched off (destroyed earlier) when the camera opened
             public float Baseline;          // damage the part had when the camera opened
             public float Health;
-            public Matrix4x4 ToHolder;      // the part's place in the holder's space
+            public bool Frozen;             // its copies hang from the holder (the part is destroyed), not from its meshes
+            public Matrix4x4 ToHolder;      // the part's place in the holder's space (only when Frozen)
             public int Level;
             public bool Built;
             public readonly List<GhostInfo> Ghosts = new List<GhostInfo>();
@@ -129,6 +132,7 @@ namespace ArmorFragments
                     Part = part,
                     IsArmor = TagCodec.Parse(data.Name).Armor != null,
                     WasDestroyed = !alive,
+                    Frozen = !alive,
                     Baseline = part.PartDamage,   // before this impact's damage is applied
                     Health = Mathf.Max(part.MaxHealth, 1f),
                     ToHolder = toHolder,
@@ -197,20 +201,29 @@ namespace ArmorFragments
                 MeshFilter filter = source.GetComponent<MeshFilter>();
                 if (filter == null || filter.sharedMesh == null) continue;
 
-                Matrix4x4 sourceToPart = entry.Part.transform.worldToLocalMatrix * source.transform.localToWorldMatrix;
-                entry.Ghosts.Add(MakeGhost(filter.sharedMesh, entry, entry.ToHolder * sourceToPart, t, level));
+                if (entry.Frozen)
+                {
+                    // Destroyed: in the holder, where the part was.
+                    Matrix4x4 sourceToPart = entry.Part.transform.worldToLocalMatrix * source.transform.localToWorldMatrix;
+                    entry.Ghosts.Add(MakeGhost(filter.sharedMesh, entry, holder.transform, entry.ToHolder * sourceToPart, t, level));
+                }
+                else
+                {
+                    // Alive: a child of the mesh, so it goes where the part goes.
+                    entry.Ghosts.Add(MakeGhost(filter.sharedMesh, entry, source.transform, null, t, level));
+                }
             }
             entry.Level = level;
             entry.Built = true;
             partsBuilt++;
         }
 
-        private GhostInfo MakeGhost(Mesh mesh, Entry entry, Matrix4x4 placeInHolder, float t, int level)
+        private GhostInfo MakeGhost(Mesh mesh, Entry entry, Transform parent, Matrix4x4? place, float t, int level)
         {
             GameObject ghost = new GameObject("ArmorXRayGhost");
             ghost.layer = GhostLayer;
-            ghost.transform.SetParent(holder.transform, false);
-            Place(ghost.transform, placeInHolder);
+            ghost.transform.SetParent(parent, false);
+            if (place.HasValue) Place(ghost.transform, place.Value);
 
             MeshFilter filter = ghost.AddComponent<MeshFilter>();
             MeshRenderer renderer = ghost.AddComponent<MeshRenderer>();
@@ -266,6 +279,44 @@ namespace ArmorFragments
             target.localPosition = m.GetColumn(3);
             target.localRotation = Quaternion.LookRotation(forward, up);
             target.localScale = new Vector3(sx, sy, sz);
+        }
+
+        // ---- Destroyed parts ---------------------------------------------------------
+
+        // The game is about to switch this part's body off (it is destroyed): its copies stop following it and
+        // stay where they are, in the holder. Called BEFORE the game does it, so the part still has its place.
+        public void Freeze(PartScript part)
+        {
+            Entry entry;
+            if (holder == null || !byPart.TryGetValue(part, out entry) || entry.Frozen) return;
+
+            // The holder is brought up to date first, so the place stored is exact.
+            if (reference != null) holder.transform.SetPositionAndRotation(reference.position, reference.rotation);
+
+            entry.Frozen = true;
+            entry.ToHolder = holder.transform.worldToLocalMatrix * part.transform.localToWorldMatrix;
+            Remembered[part] = entry.ToHolder;
+
+            // Copies already made move from the part's meshes to the holder, keeping their world place.
+            foreach (GhostInfo ghost in entry.Ghosts)
+            {
+                if (ghost.Renderer == null) continue;
+                Transform t = ghost.Renderer.transform;
+                Matrix4x4 world = t.localToWorldMatrix;
+                t.SetParent(holder.transform, false);
+                Place(t, holder.transform.worldToLocalMatrix * world);
+            }
+        }
+
+        // Safety net: a part whose body was switched off without being announced (its copies are already
+        // hidden with it) is frozen where it stands. Slightly late, so slightly less exact.
+        public void CatchSwitchedOff()
+        {
+            foreach (Entry entry in entries)
+            {
+                if (entry.Frozen || !entry.Built || entry.Part == null) continue;
+                if (!entry.Part.gameObject.activeInHierarchy) Freeze(entry.Part);
+            }
         }
 
         // A line for the log: what was built, and the state of a few ghosts (to find out why they would not show).
@@ -337,6 +388,8 @@ namespace ArmorFragments
         {
             if (reference != null && holder != null)
                 holder.transform.SetPositionAndRotation(reference.position, reference.rotation);
+
+            if (Time.frameCount % 8 == 0) CatchSwitchedOff();
 
             float now = Time.time;
             foreach (Entry entry in withEvents)
@@ -420,6 +473,39 @@ namespace ArmorFragments
             foreach (RimGhost rim in rims)
                 if (rim.Mesh != null) Object.Destroy(rim.Mesh);
             rims.Clear();
+        }
+    }
+
+    // The game switches off the whole body of a destroyed part inside BodyScript.DisconnectParts. Ahead of it,
+    // each part about to go is announced to the impact camera, so its X-ray copies can be frozen in place.
+    // (The list is of a type private to the game, so it is read as plain objects.)
+    [HarmonyLib.HarmonyPatch(typeof(BodyScript), "DisconnectParts")]
+    internal static class PartDisconnectPatch
+    {
+        private static System.Reflection.PropertyInfo partProperty;
+
+        private static void Prefix(object __0)
+        {
+            if (!ImpactCamera.IsActive) return;
+
+            try
+            {
+                System.Collections.IEnumerable items = __0 as System.Collections.IEnumerable;
+                if (items == null) return;
+
+                foreach (object item in items)
+                {
+                    if (item == null) continue;
+                    if (partProperty == null || partProperty.DeclaringType != item.GetType())
+                        partProperty = item.GetType().GetProperty("Part");
+                    PartScript part = partProperty != null ? partProperty.GetValue(item, null) as PartScript : null;
+                    if (part != null) ImpactCamera.OnPartsDisconnecting(part);
+                }
+            }
+            catch (System.Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("Could not follow a part being destroyed: " + e.Message);
+            }
         }
     }
 }
