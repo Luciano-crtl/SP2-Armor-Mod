@@ -207,7 +207,7 @@ namespace ArmorFragments
                                          Vector3 end, float leadIn, RayKind startMarker, RayKind endMarker,
                                          float delay = 0f, bool continuation = false)
         {
-            RayPath path = new RayPath { Final = RayKind.ArmorImpact, Width = shell.CaliberMm * 0.001f };
+            RayPath path = new RayPath { Final = RayKind.ArmorImpact, Width = shell.CaliberMm * 0.001f, Continuation = continuation };
             float time = 0f;
             float energy = shell.Energy;
             float speed = VisualSpeed(energy, shell.Mass);

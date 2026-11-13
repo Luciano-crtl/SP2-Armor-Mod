@@ -73,6 +73,7 @@ namespace ArmorFragments
 
             // The rays drawn for this impact travel with the part that was hit.
             RayDrawer.Anchor = part.transform;
+            RayDrawer.FallbackAnchor = ImpactCamera.CockpitOf(part.Aircraft);
 
             // What the fragments do to each part, for the impact camera's X-ray (only if it is open).
             Dictionary<PartScript, DamageRecord> impactSink = ImpactCamera.IsActive ? new Dictionary<PartScript, DamageRecord>() : null;
@@ -109,6 +110,7 @@ namespace ArmorFragments
             {
                 FragmentSpawner.Attacker = null;
                 RayDrawer.Anchor = null;
+                RayDrawer.FallbackAnchor = null;
                 FragmentSpawner.ImpactSink = null;
                 if (impactSink != null) ImpactCamera.OnImpactResolved(impactSink, impactTime);
             }

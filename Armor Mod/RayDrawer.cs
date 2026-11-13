@@ -23,10 +23,15 @@ namespace ArmorFragments
         public readonly List<RayKind> Markers = new List<RayKind>();
         public RayKind Final = RayKind.Miss;   // decides the line color
         public Transform Anchor;               // if set, the points travel with this transform
+        public Transform FallbackAnchor;       // ... and with this one if the first is switched off (a destroyed part)
 
         // How thick the ray is drawn, in meters: the diameter of what it shows (the shell's caliber, a
         // fragment's width). 0 = not given (a default is used).
         public float Width;
+
+        // The ray of a shell that has just gone through a plate: it continues the one that arrived, so it
+        // does not fade in from nothing (see TracerAnimation).
+        public bool Continuation;
 
         // Diameter in meters of a round section of this area (cm2).
         public static float DiameterOf(float areaCm2)
@@ -76,6 +81,10 @@ namespace ArmorFragments
         // While set, the rays drawn are attached to this transform (the part that was hit), so a moving
         // target carries them along instead of leaving them behind.
         public static Transform Anchor;
+
+        // What the rays follow if the anchor part is destroyed (the game then switches its whole body off and
+        // it stays where it was while the vehicle drives on): the vehicle's cockpit.
+        public static Transform FallbackAnchor;
 
         private static Material lineMaterial;                 // white: the color comes from the line itself
         private static readonly Material[] BubbleMaterials = new Material[6];   // one per RayKind
@@ -155,6 +164,7 @@ namespace ArmorFragments
             lr.enabled = false;                 // the animation turns it on when it starts
 
             path.Anchor = Anchor;
+            path.FallbackAnchor = FallbackAnchor;
             TracerAnimation tracer = go.AddComponent<TracerAnimation>();
             tracer.Init(path, lr, ColorOf(path.Final), delay, ArmorFragmentsPlugin.RayTrailLength.Value, initial);
             if (initial)

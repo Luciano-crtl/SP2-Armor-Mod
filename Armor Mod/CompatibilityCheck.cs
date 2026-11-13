@@ -48,6 +48,7 @@ namespace ArmorFragments
                 Member(typeof(AircraftScript), "Velocity", typeof(Vector3));
                 Member(typeof(AircraftScript), "VariableSystem", typeof(VariableSystemScript));
                 Member(typeof(AircraftScript), "Parts", null);
+                Member(typeof(AircraftScript), "MainCockpit", null);
                 Member(typeof(AircraftScript), "LoadContext", null);
                 Method(typeof(AircraftScript), "GetPartById");
                 Method(typeof(VariableSystemScript), "AddVariable", typeof(string));

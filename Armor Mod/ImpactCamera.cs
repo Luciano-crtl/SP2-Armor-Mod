@@ -41,7 +41,9 @@ namespace ArmorFragments
         private static RectTransform imageRect;
 
         private static AircraftScript targetAircraft;
-        private static PartScript anchorPart;      // the part that was hit; the camera moves with it
+        private static Transform reference;        // what the camera moves with: the part that was hit (or, if that is destroyed, the vehicle's cockpit)
+        private static Vector3 lastImpactWorld;    // where the impact and the shot's direction were last frame (in the world)
+        private static Vector3 lastDirectionWorld;
         private static Vector3 impactLocal;        // the impact point and the shot's direction, in that part's space
         private static Vector3 directionLocal;
         private static float startTime;
@@ -111,9 +113,11 @@ namespace ArmorFragments
         private static void Start(PartScript hit, AircraftScript aircraft, Vector3 point, Vector3 direction)
         {
             targetAircraft = aircraft;
-            anchorPart = hit;
+            reference = hit.transform;
             impactLocal = hit.transform.InverseTransformPoint(point);
             directionLocal = hit.transform.InverseTransformDirection(direction);
+            lastImpactWorld = point;
+            lastDirectionWorld = direction;
             startTime = Time.time;
 
             // The shell's ray is drawn right after this call: the camera follows the first one.
@@ -135,7 +139,7 @@ namespace ArmorFragments
             waitStart = -1f;
             if (ArmorFragmentsPlugin.ImpactCameraXRay.Value)
             {
-                ImpactXRay candidate = new ImpactXRay(aircraft, point);
+                ImpactXRay candidate = new ImpactXRay(aircraft, point, hit.transform);
                 if (candidate.Available)
                 {
                     xray = candidate;
@@ -361,11 +365,12 @@ namespace ArmorFragments
         // the shell has arrived it stays, and keeps moving with the hit part.
         private static void UpdatePose()
         {
-            if (anchorPart == null || camera == null) return;
+            if (reference == null || camera == null) return;
 
-            Transform part = anchorPart.transform;
-            Vector3 impact = part.TransformPoint(impactLocal);
-            Vector3 direction = part.TransformDirection(directionLocal).normalized;
+            Vector3 impact = reference.TransformPoint(impactLocal);
+            Vector3 direction = reference.TransformDirection(directionLocal).normalized;
+            lastImpactWorld = impact;
+            lastDirectionWorld = direction;
 
             float progress = followDone ? firstSegment
                 : (tracer != null ? Mathf.Min(tracer.HeadDistance, firstSegment) : 0f);
@@ -379,6 +384,28 @@ namespace ArmorFragments
             Vector3 position = impact - direction * back + right * (0.35f * distance) + Vector3.up * (0.2f * distance);
             camera.transform.SetPositionAndRotation(position, Quaternion.LookRotation(impact - position, Vector3.up));
             camera.farClipPlane = Mathf.Max(60f, (firstSegment + distance) * 6f);
+        }
+
+        // The vehicle's main cockpit: it stays on the vehicle as long as the vehicle does.
+        public static Transform CockpitOf(AircraftScript aircraft)
+        {
+            return aircraft != null && aircraft.MainCockpit != null ? aircraft.MainCockpit.transform : null;
+        }
+
+        // When the part that was hit is destroyed the game switches its whole body off, and it stays where it
+        // was while the vehicle drives on. The camera then moves with the vehicle's cockpit instead, keeping
+        // the same view.
+        private static void EnsureReference()
+        {
+            if (reference != null && reference.gameObject.activeInHierarchy) return;
+
+            Transform next = CockpitOf(targetAircraft);
+            if (next == null || next == reference || !next.gameObject.activeInHierarchy) return;
+
+            reference = next;
+            impactLocal = next.InverseTransformPoint(lastImpactWorld);
+            directionLocal = next.InverseTransformDirection(lastDirectionWorld);
+            ArmorFragmentsPlugin.Log.LogInfo("Impact camera: the part that was hit is gone; following the vehicle's cockpit");
         }
 
         // Finds the shell's ray and checks whether it has reached the impact.
@@ -415,7 +442,7 @@ namespace ArmorFragments
             if (!active) return;
 
             if (!ArmorFragmentsPlugin.ImpactCameraEnabled.Value || camera == null || targetAircraft == null ||
-                anchorPart == null || FlightSceneScript.Instance == null)
+                reference == null || FlightSceneScript.Instance == null)
             {
                 Stop();
                 return;
@@ -432,6 +459,7 @@ namespace ArmorFragments
             }
 
             ApplySettings();
+            EnsureReference();
             UpdateFollow();
             UpdateXRay();
             UpdatePose();
@@ -574,7 +602,7 @@ namespace ArmorFragments
             if (active) ArmorFragmentsPlugin.Log.LogInfo("Impact camera off");
             active = false;
             targetAircraft = null;
-            anchorPart = null;
+            reference = null;
             tracer = null;
             if (xray != null)
             {

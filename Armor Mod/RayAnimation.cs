@@ -22,8 +22,13 @@ namespace ArmorFragments
         private float delay;
         private float trailTime;
         private int nextMarker;
+        private Color color;
+        private bool continuation;    // continues a ray that arrived: its tail does not fade in at the start
+        private bool tailFaded;
         private Transform anchor;     // the points travel with it (null = fixed in the world)
         private Vector3[] local;      // the points in the anchor's space
+        private Transform fallback;   // used instead if the anchor's part is destroyed (switched off)
+        private Vector3[] localFallback;
         private bool started;
         private readonly List<Vector3> visible = new List<Vector3>();
 
@@ -36,16 +41,31 @@ namespace ArmorFragments
             get { return cumulativeDistance != null && cumulativeDistance.Length > 1 ? cumulativeDistance[1] : 0f; }
         }
 
+        // The transform the path is following now: its anchor, or the fallback once the anchor is switched off.
+        private Transform ActiveAnchor
+        {
+            get
+            {
+                if (anchor != null && anchor.gameObject.activeInHierarchy) return anchor;
+                return fallback != null ? fallback : anchor;
+            }
+        }
+
         // A point of the path now: moved along with the anchor if there is one (and it still exists).
         private Vector3 P(int i)
         {
-            return anchor != null ? anchor.TransformPoint(local[i]) : path.Points[i];
+            if (anchor != null && anchor.gameObject.activeInHierarchy) return anchor.TransformPoint(local[i]);
+            if (fallback != null) return fallback.TransformPoint(localFallback[i]);
+            if (anchor != null) return anchor.TransformPoint(local[i]);   // frozen where it was switched off
+            return path.Points[i];
         }
 
         internal void Init(RayPath path, LineRenderer line, Color color, float delay, float trailLength, bool initial)
         {
             this.path = path;
             this.line = line;
+            this.color = color;
+            this.continuation = path.Continuation;
             this.delay = delay;
             startTime = Time.time;
 
@@ -78,6 +98,12 @@ namespace ArmorFragments
                 local = new Vector3[n];
                 for (int i = 0; i < n; i++) local[i] = anchor.InverseTransformPoint(path.Points[i]);
             }
+            fallback = path.FallbackAnchor;
+            if (fallback != null)
+            {
+                localFallback = new Vector3[n];
+                for (int i = 0; i < n; i++) localFallback[i] = fallback.InverseTransformPoint(path.Points[i]);
+            }
 
             // The shell's ray reaches its impact (the second point) at this moment.
             if (initial && n > 1) RayDrawer.NoteImpact(startTime + delay + cumulativeTime[1]);
@@ -92,13 +118,23 @@ namespace ArmorFragments
 
             if (!started) { started = true; line.enabled = true; }
 
+            // A ray that continues another (a shell that left a plate) starts as bright as the one that arrived,
+            // and its tail fades in over the trail time, as if both were one ray. Without this its first
+            // stretch would be see-through and the ray would look cut in two at the plate.
+            if (continuation && !tailFaded)
+            {
+                float alpha = Mathf.Clamp01(1f - t / Mathf.Max(trailTime, 0.0001f));
+                line.startColor = new Color(color.r, color.g, color.b, alpha);
+                if (alpha <= 0f) tailFaded = true;
+            }
+
             float tailTime = t - trailTime;
             if (tailTime >= totalTime) { Destroy(gameObject); return; }
 
             // A bubble appears when the head reaches each marked point.
             while (nextMarker < cumulativeTime.Length && cumulativeTime[nextMarker] <= t)
             {
-                RayDrawer.SpawnBubble(P(nextMarker), path.Markers[nextMarker], anchor);
+                RayDrawer.SpawnBubble(P(nextMarker), path.Markers[nextMarker], ActiveAnchor);
                 nextMarker++;
             }
 

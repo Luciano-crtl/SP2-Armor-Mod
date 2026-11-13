@@ -7,9 +7,14 @@ using UnityEngine.Rendering;
 namespace ArmorFragments
 {
     // The impact camera's own X-ray: see-through copies of the hit vehicle's meshes, coloured by damage
-    // (yellow, orange, red). They live on a layer only the impact camera draws (the main camera never
-    // sees them), so the real vehicle is left alone. When the camera wants the X-ray look it stops
-    // drawing the real vehicle's layers and draws these instead.
+    // (yellow, orange, red; almost black red for a destroyed part). They live on a layer only the impact
+    // camera draws (the main camera never sees them), so the real vehicle is left alone. When the camera
+    // wants the X-ray look it stops drawing the real vehicle's layers and draws these instead.
+    //
+    // The copies are NOT children of the parts. When a part is destroyed the game switches off its whole
+    // body, and anything attached to it would vanish just when it matters; so the copies hang from one
+    // holder that follows the vehicle (its main cockpit), each at the place its part had when the camera
+    // opened. A part destroyed earlier is put where it was the last time it was seen alive.
     //
     // It is built a little at a time while the camera flies toward the impact, so there is no hitch, and
     // the rim glow is worked out once, because the camera stays still relative to the vehicle.
@@ -38,13 +43,19 @@ namespace ArmorFragments
         {
             public PartScript Part;
             public bool IsArmor;
-            public float Baseline;     // damage the part had when the camera opened
+            public bool WasDestroyed;       // already switched off (destroyed earlier) when the camera opened
+            public float Baseline;          // damage the part had when the camera opened
             public float Health;
+            public Matrix4x4 ToHolder;      // the part's place in the holder's space
             public int Level;
             public bool Built;
             public readonly List<GhostInfo> Ghosts = new List<GhostInfo>();
             public readonly List<DamageEvent> Events = new List<DamageEvent>();
         }
+
+        // Where each part was, in the vehicle's frame, the last time it was seen alive: a part that was
+        // destroyed before this camera opened is shown there.
+        private static readonly Dictionary<PartScript, Matrix4x4> Remembered = new Dictionary<PartScript, Matrix4x4>();
 
         private readonly List<Entry> entries = new List<Entry>();
         private readonly Dictionary<PartScript, Entry> byPart = new Dictionary<PartScript, Entry>();
@@ -52,12 +63,15 @@ namespace ArmorFragments
         private readonly List<GameObject> ghostObjects = new List<GameObject>();
         private readonly List<RimGhost> rims = new List<RimGhost>();
 
+        private Transform reference;   // what the holder follows (the vehicle's main cockpit)
+        private GameObject holder;
+
         private int nextBuild;
         private int partsBuilt;
-        private bool buildErrorLogged;
         private int rimVertices;
         private int rimRound;
         private bool rimIdle;
+        private bool buildErrorLogged;
 
         // False if no see-through shader exists in this build (then there is no X-ray).
         public bool Available { get; private set; }
@@ -73,25 +87,51 @@ namespace ArmorFragments
             get { return rimIdle; }
         }
 
-        public ImpactXRay(AircraftScript aircraft, Vector3 impact)
+        // fallbackReference: what to follow if the vehicle has no main cockpit (the part that was hit).
+        public ImpactXRay(AircraftScript aircraft, Vector3 impact, Transform fallbackReference)
         {
             GhostLayer = Mathf.Clamp(ArmorFragmentsPlugin.ImpactCameraGhostLayer.Value, 0, 31);
+
             Shader shader = RayDrawer.GetShader();
             if (shader == null) return;
             if (XRayView.normalMaterials == null) XRayView.CreateMaterials(shader);
             if (XRayView.whiteMaterials == null) XRayView.CreateWhiteMaterials(shader);
+
+            Transform cockpit = aircraft.MainCockpit != null ? aircraft.MainCockpit.transform : null;
+            reference = cockpit != null ? cockpit : fallbackReference;
+            if (reference == null) return;
+
+            holder = new GameObject("ArmorImpactXRay");
+            holder.transform.SetPositionAndRotation(reference.position, reference.rotation);
+
+            ForgetGoneParts();
 
             foreach (PartData data in aircraft.Parts)
             {
                 PartScript part = data != null ? data.PartScript : null;
                 if (part == null) continue;
 
+                // Alive: its place now (and remembered). Switched off (destroyed): where it was last seen.
+                bool alive = part.gameObject.activeInHierarchy;
+                Matrix4x4 toHolder;
+                if (alive)
+                {
+                    toHolder = holder.transform.worldToLocalMatrix * part.transform.localToWorldMatrix;
+                    Remembered[part] = toHolder;
+                }
+                else if (!Remembered.TryGetValue(part, out toHolder))
+                {
+                    continue;   // never seen alive: nothing says where it was
+                }
+
                 Entry entry = new Entry
                 {
                     Part = part,
                     IsArmor = TagCodec.Parse(data.Name).Armor != null,
+                    WasDestroyed = !alive,
                     Baseline = part.PartDamage,   // before this impact's damage is applied
                     Health = Mathf.Max(part.MaxHealth, 1f),
+                    ToHolder = toHolder,
                 };
                 entries.Add(entry);
                 byPart[part] = entry;
@@ -102,6 +142,19 @@ namespace ArmorFragments
                 (a.Part.transform.position - impact).sqrMagnitude.CompareTo((b.Part.transform.position - impact).sqrMagnitude));
 
             Available = true;
+        }
+
+        // Parts that no longer exist at all are dropped from the memory.
+        private static void ForgetGoneParts()
+        {
+            if (Remembered.Count < 2000) return;
+
+            List<PartScript> gone = new List<PartScript>();
+            foreach (PartScript part in Remembered.Keys)
+                if (part == null) gone.Add(part);
+            foreach (PartScript part in gone) Remembered.Remove(part);
+
+            if (Remembered.Count > 8000) Remembered.Clear();
         }
 
         // ---- Building ----------------------------------------------------------------
@@ -133,27 +186,31 @@ namespace ArmorFragments
         {
             if (entry.Part == null) return;
 
-            float now = Time.time;
-            float taken = DamageAt(entry, now);
-            float t = Level01(entry, taken);
-            int level = XRayView.LevelFor(t, taken);
+            float taken = DamageAt(entry, Time.time);
+            float t;
+            int level = LevelOf(entry, taken, out t);
 
+            // The meshes come from the game's own list for the part; this works even if the part has been
+            // switched off, because it only reads data and positions.
             foreach (MeshRenderer source in XRayView.GhostSources(entry.Part))
             {
                 MeshFilter filter = source.GetComponent<MeshFilter>();
                 if (filter == null || filter.sharedMesh == null) continue;
-                entry.Ghosts.Add(MakeGhost(source, filter.sharedMesh, entry, t, level));
+
+                Matrix4x4 sourceToPart = entry.Part.transform.worldToLocalMatrix * source.transform.localToWorldMatrix;
+                entry.Ghosts.Add(MakeGhost(filter.sharedMesh, entry, entry.ToHolder * sourceToPart, t, level));
             }
             entry.Level = level;
             entry.Built = true;
             partsBuilt++;
         }
 
-        private GhostInfo MakeGhost(MeshRenderer source, Mesh mesh, Entry entry, float t, int level)
+        private GhostInfo MakeGhost(Mesh mesh, Entry entry, Matrix4x4 placeInHolder, float t, int level)
         {
             GameObject ghost = new GameObject("ArmorXRayGhost");
             ghost.layer = GhostLayer;
-            ghost.transform.SetParent(source.transform, false);
+            ghost.transform.SetParent(holder.transform, false);
+            Place(ghost.transform, placeInHolder);
 
             MeshFilter filter = ghost.AddComponent<MeshFilter>();
             MeshRenderer renderer = ghost.AddComponent<MeshRenderer>();
@@ -162,7 +219,7 @@ namespace ArmorFragments
 
             bool useRim = ArmorFragmentsPlugin.XRayRimLook.Value && mesh.isReadable &&
                           rimVertices + mesh.vertexCount <= ArmorFragmentsPlugin.XRayMaxRimKiloVertices.Value * 1000;
-            XRayView.Look look = XRayView.ComputeLook(t, entry.IsArmor);
+            XRayView.Look look = XRayView.ComputeLook(t, entry.IsArmor, level == XRayView.DestroyedLevel);
 
             if (useRim)
             {
@@ -192,11 +249,34 @@ namespace ArmorFragments
             return info;
         }
 
+        // Puts a transform at the place (position, rotation and scale, mirrored or not) a matrix describes.
+        private static void Place(Transform target, Matrix4x4 m)
+        {
+            Vector3 c0 = m.GetColumn(0);
+            Vector3 c1 = m.GetColumn(1);
+            Vector3 c2 = m.GetColumn(2);
+
+            float sy = Mathf.Max(c1.magnitude, 0.000001f);
+            float sz = Mathf.Max(c2.magnitude, 0.000001f);
+            Vector3 up = c1 / sy;
+            Vector3 forward = c2 / sz;
+            Vector3 right = Vector3.Cross(up, forward);   // the third axis of a right-handed rotation
+            float sx = Vector3.Dot(c0, right);            // negative if the part is mirrored
+
+            target.localPosition = m.GetColumn(3);
+            target.localRotation = Quaternion.LookRotation(forward, up);
+            target.localScale = new Vector3(sx, sy, sz);
+        }
+
         // A line for the log: what was built, and the state of a few ghosts (to find out why they would not show).
         public string Describe()
         {
             System.Text.StringBuilder text = new System.Text.StringBuilder();
-            text.Append(partsBuilt).Append(" of ").Append(entries.Count).Append(" parts, ")
+            int destroyed = 0;
+            foreach (Entry entry in entries) if (entry.WasDestroyed) destroyed++;
+
+            text.Append(partsBuilt).Append(" of ").Append(entries.Count).Append(" parts (")
+                .Append(destroyed).Append(" already destroyed), ")
                 .Append(ghostObjects.Count).Append(" ghosts (").Append(rims.Count).Append(" rim-lit, ")
                 .Append(rimVertices).Append(" rim vertices), on layer ").Append(GhostLayer);
 
@@ -239,26 +319,33 @@ namespace ArmorFragments
             return damage;
         }
 
-        // 0..1: how dark the part is shown ('fully dark at' of its health lost).
-        private static float Level01(Entry entry, float taken)
+        // The look level of a part with this much damage: 0..1 darkness ('fully dark at' of its health lost),
+        // and the special level for a destroyed part (100% or more of its health lost, or already switched off).
+        private static int LevelOf(Entry entry, float taken, out float t)
         {
             float fullDark = Mathf.Max(ArmorFragmentsPlugin.XRayDarkPercent.Value / 100f, 0.01f);
-            return Mathf.Clamp01(taken / entry.Health / fullDark);
+            t = Mathf.Clamp01(taken / entry.Health / fullDark);
+            bool destroyed = entry.WasDestroyed || taken >= entry.Health;
+            return XRayView.LevelFor(t, taken, destroyed);
         }
 
         // ---- Every frame -------------------------------------------------------------
 
-        // Shows damage as it arrives and, once the camera is still ('settled'), brings the rim glow up to date.
+        // Follows the vehicle, shows damage as it arrives and, once the camera is still ('settled'),
+        // brings the rim glow up to date.
         public void Tick(Vector3 cameraWorld, bool settled)
         {
+            if (reference != null && holder != null)
+                holder.transform.SetPositionAndRotation(reference.position, reference.rotation);
+
             float now = Time.time;
             foreach (Entry entry in withEvents)
             {
-                if (!entry.Built || entry.Part == null) continue;
+                if (!entry.Built) continue;
 
                 float taken = DamageAt(entry, now);
-                float t = Level01(entry, taken);
-                int level = XRayView.LevelFor(t, taken);
+                float t;
+                int level = LevelOf(entry, taken, out t);
                 if (level == entry.Level) continue;
 
                 entry.Level = level;
@@ -270,7 +357,7 @@ namespace ArmorFragments
 
         private static void ApplyLook(Entry entry, float t, int level)
         {
-            XRayView.Look look = XRayView.ComputeLook(t, entry.IsArmor);
+            XRayView.Look look = XRayView.ComputeLook(t, entry.IsArmor, level == XRayView.DestroyedLevel);
             foreach (GhostInfo ghost in entry.Ghosts)
             {
                 if (ghost.Renderer == null) continue;
@@ -325,8 +412,9 @@ namespace ArmorFragments
 
         public void Dispose()
         {
-            foreach (GameObject ghost in ghostObjects)
-                if (ghost != null) Object.Destroy(ghost);
+            // The holder owns every ghost.
+            if (holder != null) Object.Destroy(holder);
+            holder = null;
             ghostObjects.Clear();
 
             foreach (RimGhost rim in rims)

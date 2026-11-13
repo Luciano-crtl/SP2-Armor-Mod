@@ -16,6 +16,9 @@ namespace ArmorFragments
     {
         private const int Levels = 12;
 
+        // Beyond the damage levels: a part with 100% or more damage (destroyed). Almost black red.
+        internal const int DestroyedLevel = Levels;
+
         private static readonly List<Renderer> HiddenRenderers = new List<Renderer>();
         private static readonly List<GameObject> Ghosts = new List<GameObject>();
         internal static Material[] normalMaterials;   // one per damage level
@@ -144,7 +147,7 @@ namespace ArmorFragments
                 // How dark it ends up: damage as a fraction of the part's health, scaled so that
                 // 'fullDark' of the health lost means fully dark.
                 float t = Mathf.Clamp01(entry.Taken / Mathf.Max(part.MaxHealth, 1f) / fullDark);
-                int level = LevelFor(t, entry.Taken);
+                int level = LevelFor(t, entry.Taken, entry.Taken >= Mathf.Max(part.MaxHealth, 1f));
 
                 // The ghost starts neutral. A part that takes damage changes look when the
                 // first fragment reaches it.
@@ -243,16 +246,25 @@ namespace ArmorFragments
         }
 
         // The material level of a part: 0 is the neutral look, so any damage at all gets at least 1.
-        internal static int LevelFor(float t, float taken)
+        internal static int LevelFor(float t, float taken, bool destroyed = false)
         {
+            if (destroyed) return DestroyedLevel;
             int level = Mathf.RoundToInt(t * (Levels - 1));
             return taken > 0f ? Mathf.Max(1, level) : level;
         }
 
         // t: 0 = no damage (neutral, bluish), 1 = fully dark. A damaged part is yellow, orange or red.
-        internal static Look ComputeLook(float t, bool isArmor)
+        internal static Look ComputeLook(float t, bool isArmor, bool destroyed = false)
         {
             Look look = new Look();
+            if (destroyed)
+            {
+                look.Body = new Color(0.09f, 0.00f, 0.00f);
+                look.BodyAlpha = 0.85f;
+                look.Rim = new Color(0.38f, 0.01f, 0.01f);
+                look.RimAlpha = 0.95f;
+                return look;
+            }
             if (t <= 0f)
             {
                 look.Body = isArmor ? new Color(0.55f, 0.85f, 1.00f) : new Color(0.78f, 0.82f, 0.88f);
@@ -333,7 +345,7 @@ namespace ArmorFragments
         // Gives a part's ghosts the look of 'level' (t is the matching 0..1 darkness).
         private static void ApplyLook(List<GhostInfo> ghosts, float t, int level, bool isArmor)
         {
-            Look look = ComputeLook(t, isArmor);
+            Look look = ComputeLook(t, isArmor, level == DestroyedLevel);
             foreach (GhostInfo ghost in ghosts)
             {
                 if (ghost == null || ghost.Renderer == null) continue;
@@ -359,7 +371,7 @@ namespace ArmorFragments
 
                 float taken = entry.Part.PartDamage;
                 float t = Mathf.Clamp01(taken / Mathf.Max(entry.Part.MaxHealth, 1f) / fullDark);
-                int level = LevelFor(t, taken);
+                int level = LevelFor(t, taken, taken >= Mathf.Max(entry.Part.MaxHealth, 1f));
                 if (level == entry.Level) continue;
 
                 entry.Level = level;
@@ -552,15 +564,15 @@ namespace ArmorFragments
         // White materials: the visible color comes from each ghost's vertex colors.
         internal static void CreateWhiteMaterials(Shader shader)
         {
-            whiteMaterials = new Material[Levels];
-            for (int i = 0; i < Levels; i++)
+            whiteMaterials = new Material[Levels + 1];   // the last one: destroyed
+            for (int i = 0; i <= Levels; i++)
                 whiteMaterials[i] = MakeMaterial(shader, Color.white, i);
         }
 
         internal static void CreateMaterials(Shader shader)
         {
-            normalMaterials = new Material[Levels];
-            armorMaterials = new Material[Levels];
+            normalMaterials = new Material[Levels + 1];   // the last one: destroyed
+            armorMaterials = new Material[Levels + 1];
 
             // Level 0: almost invisible (no damage). Levels 1..: yellow, orange, red, more solid as the damage grows.
             Color normalLight = new Color(0.70f, 0.80f, 0.95f, 0.04f);
@@ -580,6 +592,11 @@ namespace ArmorFragments
                 normalMaterials[i] = MakeMaterial(shader, damage, i);
                 armorMaterials[i] = MakeMaterial(shader, damage, i);
             }
+
+            // Destroyed: almost black red, nearly solid, drawn over everything else.
+            Color destroyedColor = new Color(0.09f, 0f, 0f, 0.90f);
+            normalMaterials[DestroyedLevel] = MakeMaterial(shader, destroyedColor, DestroyedLevel);
+            armorMaterials[DestroyedLevel] = MakeMaterial(shader, destroyedColor, DestroyedLevel);
         }
     }
 }
