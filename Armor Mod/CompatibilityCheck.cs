@@ -41,7 +41,7 @@ namespace ArmorFragments
 
                 // X-ray
                 Member(typeof(PartMaterialScript), "RendererMaps", null);
-                Member(typeof(PartMaterialScript.RendererMaterialMap), "Renderer", typeof(MeshRenderer));
+                Member(typeof(PartMaterialScript.RendererMaterialMap), "Renderer", typeof(Renderer));   // since game 0.7.10.100 (was MeshRenderer)
 
                 // Aircraft and variables
                 Member(typeof(AircraftScript), "RemoteAircraft", typeof(bool));
