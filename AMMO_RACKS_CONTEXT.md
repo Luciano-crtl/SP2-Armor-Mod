@@ -4,8 +4,9 @@ Reference for the ammo-rack feature and what it changes in cannons, damage and v
 `ammo-rack`, built on v0.7.0. Player summary: `PATCH_NOTES.md`.
 
 ## Goal
-Vehicles are killed through damaged modules, not part explosions: the armor shell stays intact and the vehicle
-is knocked out from the inside. Ammo racks are the first such module.
+Armored vehicles are killed through damaged modules, not part explosions: the armor shell stays intact and the
+vehicle is killed from the inside. Ammo racks are the first such module, and a rack exploding is always a kill.
+Vehicles without armor die as in the base game.
 
 ## Files
 New:
@@ -15,7 +16,7 @@ New:
 - `RackGrid.cs`: measures a rack's shape, packs the rounds, line-vs-rounds test, removal order, rounds mesh.
 - `RackVisualizer.cs`: see-through racks with their rounds in the designer.
 - `AmmoRackXRay.cs`: live rounds of your own racks in the X-ray.
-- `VehicleRules.cs`: whether the game may explode a vehicle, and which parts take the mod's damage.
+- `VehicleRules.cs`: whether the game may explode a vehicle, which parts take the mod's damage, and the kill.
 - `Net/RackFireSync.cs`: gives other players' copies of the cook-off fires the owner's look (message 202).
 
 Changed: `FragmentSpawner.cs`, `ShellFlight.cs`, `Net/NetSync.cs`, `PartTags.cs`, `ArmorFragmentsPlugin.cs`,
@@ -84,7 +85,9 @@ Changed: `FragmentSpawner.cs`, `ShellFlight.cs`, `Net/NetSync.cs`, `PartTags.cs`
 - `Ignite`: knocks the vehicle out, lights the game's fire at half size (`DressBurnOut`; `KeepBurning` sets
   `_duration` to MaxValue and `_requiresFuel` false), and explodes after `CookOffBurnSeconds` (10). A burning rack
   doesn't feed.
-- `Explode`: pounds = rounds left x `ExplosiveLb` x `BlastStrength`, capped at `MaxBlastLb` (120); sets `_boom`.
+- `Explode`: pounds = rounds left x `ExplosiveLb` x `BlastStrength`, capped at `MaxBlastLb` (120); sets `_boom`;
+  after the blast, `VehicleRules.Kill` kills the vehicle (unless the rack broke off first). A rack that burns out
+  with no rounds left doesn't explode and doesn't kill.
 - `Blast` (returns where the blast leaves the hull: the nearest `[VNT]`, or 0.5 m above the rack):
   - Bang: `CreateExplosion(BlastType, at, size, ...)`, size = lb x 0.8/250 x `BlastVisualPercent` (75%). Visual
     only: `AmmoRackBlastPatch` gives `HandleExplosiveBlast` an empty part list for blasts in `Recent` (3 m, 3 s).
@@ -102,12 +105,19 @@ Changed: `FragmentSpawner.cs`, `ShellFlight.cs`, `Net/NetSync.cs`, `PartTags.cs`
   - Remote vehicles are damaged through `NetworkAircraft.DamagePart`. Racks hit roll their own chance.
 
 ## Vehicle death (`VehicleRules`)
-- `GameMayExplode(aircraft)` = not knocked out and `GameDamageExplosions` (default false). Used by the
-  `QueueExplosion` patch and both `ExplodePart` patches (never `ExplodePart` on a rack). The game reaches these
-  only from damage: `PartScript.OnDamaged` (damage ≥ `DamageLimit` → `QueueExplosion(MainCockpit, 100)`),
+- `GameMayExplode(aircraft)` = not knocked out and (no `[ARM]` part or `GameDamageExplosions`, default false):
+  unarmored vehicles keep the base game's damage explosions. Used by the `QueueExplosion` patch and both
+  `ExplodePart` patches (never `ExplodePart` on a rack). The game reaches these only from damage:
+  `PartScript.OnDamaged` (damage ≥ `DamageLimit` → `QueueExplosion(MainCockpit, 100)`),
   `OnPartDamageLevelIncreased` (roll on `DamageDisconnect` parts and destroyed parts; a cockpit-group part →
   `QueueExplosion`), `FuelTankScript`, `PropellerAssemblyScript`, `ExplosionScript`. Parts only disconnect
-  inside `ExplodePart`, so destroyed parts stay attached and the game never counts the vehicle destroyed.
+  inside `ExplodePart`, so on an armored vehicle destroyed parts stay attached.
+- The game's death: `AircraftStructureChanged` → `CheckForCriticalDamage` (parts left / initial non-weapon parts,
+  or wing area left, below `CriticalDamageThreshold`) → `MarkAsCriticallyDamaged` (sets `CriticallyDamaged`, raises
+  `AircraftKilled` in `OnLateUpdate`: kill credit, kill cam, respawn; `NetworkAircraftScript.OnAircraftKilled`
+  tells the other players). An armored vehicle loses no parts, so `VehicleRules.Kill` calls
+  `MarkAsCriticallyDamaged` (reflection) itself, in the owner's game, when a rack explodes. Planned: kills
+  decided by modules in general; a rack exploding stays a kill.
 - `TakesModDamage(part, tags)`: armor never; `[MOD]`/`[AMM]` always; other parts only when the vehicle has no
   `[ARM]` part (`IsArmored`, cached) or `ArmoredStructureDamage` is on. Used by `FragmentSpawner.Deposit` and the
   blast.
@@ -171,6 +181,7 @@ Changed: `FragmentSpawner.cs`, `ShellFlight.cs`, `Net/NetSync.cs`, `PartTags.cs`
   Action<PooledWriter>, Channel)`; part messages: type (1 byte), part id (2), payload.
 
 ## Open items
+- Kills decided by modules in general (planned); a rack exploding stays a kill.
 - HE/APHE filler doesn't add to the cook-off (propellant only, by choice).
 - Per-piece hits for other players' shots (see Multiplayer).
 - If shell shapes change, `AmmoRound` must follow: racks, the hit check and the drawing read from it.

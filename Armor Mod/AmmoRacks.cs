@@ -759,15 +759,19 @@ namespace ArmorFragments
             Vector3 ventAt = Blast(rack, center, pounds);   // before the wreck: it may destroy the vent part
             WreckInsides(rack, center, ventAt, pounds);
             SyncCannons(rack.Group);
+
+            // A rack going up is the vehicle's kill switch: the game's own death (kill credit, kill cam, respawn),
+            // when it actually explodes, not while it burns. A rack that broke off the vehicle first doesn't kill it.
+            if (!rack.BrokenOff) VehicleRules.Kill(rack.Aircraft, "ammo rack '" + rack.Label + "' exploded");
         }
 
         // ---- Knocked out -----------------------------------------------------------------
         //
         // A vehicle with a burning or exploded rack is a knocked-out shell: the game's own explosions for it are
         // off (AircraftScript.QueueExplosion, the "vehicle destroyed" blast, and BodyScript.ExplodePart, which blows
-        // single parts off and, for a part of the cockpit's group, queues that blast), even when
-        // GameDamageExplosions is on. Parts can still reach full damage. The game doesn't count the vehicle as
-        // destroyed: Funky Trees on <group>_boom or the modules' damage can cut its controls.
+        // single parts off and, for a part of the cockpit's group, queues that blast), on any vehicle. Parts can
+        // still reach full damage. When the rack explodes, the vehicle is killed (VehicleRules.Kill: the game's own
+        // death, without breaking anything).
 
         private static readonly HashSet<AircraftScript> KnockedOut = new HashSet<AircraftScript>();
 
@@ -1404,7 +1408,7 @@ namespace ArmorFragments
     }
 
     // The game blows a vehicle up only because of damage (a part of the cockpit's group exploding, or the damage
-    // limit). Off for a knocked-out vehicle (AmmoRacks.KnockOut), and for every vehicle while the game's damage
+    // limit). Off for a knocked-out vehicle (AmmoRacks.KnockOut), and for armored vehicles while the game's damage
     // explosions are off (VehicleRules).
     [HarmonyPatch(typeof(AircraftScript), "QueueExplosion")]
     internal static class KnockedOutVehicleExplosionPatch

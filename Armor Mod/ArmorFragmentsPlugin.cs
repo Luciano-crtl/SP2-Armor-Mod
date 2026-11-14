@@ -176,11 +176,11 @@ namespace ArmorFragments
                 "If true, the game's own damage to parts with an [ARM] tag (shell impact, explosions, crashes) is ignored: " +
                 "armor is judged only by the energy model and cannot be destroyed.");
             GameDamageExplosions = Config.Bind("Fragments", "GameDamageExplosions", false,
-                "If false, the game never blows parts or vehicles up because of damage, on any vehicle: no 'part explodes' " +
-                "roll on damaged parts, no vehicle explosion at the damage limit, no delayed fuel tank or propeller " +
-                "explosions, no explosion chains. Vehicles are knocked out through their modules and ammo racks, and keep " +
-                "their shape; destroyed parts stay attached (wings don't fall off). Weapons' own explosions are not " +
-                "affected. True = the game's usual behavior.");
+                "If false, the game never blows an armored vehicle (any [ARM] part) or its parts up because of damage: no " +
+                "'part explodes' roll on damaged parts, no vehicle explosion at the damage limit, no delayed fuel tank or " +
+                "propeller explosions, no explosion chains. Armored vehicles keep their shape and are killed when an ammo " +
+                "rack explodes. Vehicles without armor always behave as in the base game. Weapons' own explosions are not " +
+                "affected. True = the game's usual behavior on armored vehicles too.");
             ArmoredStructureDamage = Config.Bind("Fragments", "ArmoredStructureDamage", false,
                 "If false, on a vehicle with armor ([ARM] parts) only damage modules ([MOD]) and ammo " +
                 "racks ([AMM]) take the mod's damage (shells and fragments); the rest of the structure only slows them down. " +
