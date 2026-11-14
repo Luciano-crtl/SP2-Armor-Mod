@@ -23,7 +23,7 @@ Tanks now carry their ammunition in racks. Racks set off by hits burn, then expl
 ### Cook-offs
 - **Only the rounds are the target.** A hit counts only if it passes through a round still in the rack, so the hitbox shrinks as you fire and a half-empty rack is safe at the top. Each piece of a shot is checked on its own: the shell, plate spall, and HE or APHE burst fragments, including HE spall through thin armor.
 - **The chance to set it off:**
-  - **Direct hits:** a shell punching through the cases is likely to set them off. That's about 64% for a 20 mm APHE, about 95% for a 37 mm, and certain for 75 mm and up. The shell counts with its full width, so it can't slip between packed rounds, even fired straight along them.
+  - **Direct hits:** a shell punching through the cases is likely to set them off. That's about 64% for a 20 mm APHE, about 95% for a 37 mm, and certain for 75 mm and up. The shell counts with its full width, so it can't slip between packed rounds, even fired straight along them, and it counts just the same right after going through armor into a rack behind it.
   - **Fragments:** count by the energy they leave in the rounds. They add up, but a few small ones rarely do it alone.
   - **Hits add up:** several hits count like one hit of their total.
   - **Destroyed racks:** the hit that destroys a rack always sets it off, if it goes through its rounds.
@@ -41,6 +41,7 @@ Tanks now carry their ammunition in racks. Racks set off by hits burn, then expl
 
   - **Inside your vehicle:** it hits only damage modules and other ammo racks, which roll their own chance, so a cook-off can chain.
   - **Outside, from where the blast leaves the hull:** it hits other vehicles nearby. Armor never takes damage; armored vehicles are hit in their modules and racks, and unarmored vehicles in every part.
+  - **Armor shields:** armor between the blast and a part protects it, in proportion to how much there is. Every 10 mm of effective armor (thickness ÷ cos of the angle) halves the pressure, so a 20 mm plate leaves a quarter and 64 mm about 1%. Outside, the burning vehicle's own armor doesn't count, since the blast is already out at the vent.
 - **Bang and fire jet:** the cook-off vents through the nearest part marked **Cook-off vent** (a fuselage at the turret ring, or a hatch), or just above the rack. There's one bomb-style bang, 75% of a game bomb of the same weight, then a jet of fire for 3 to 10 s. The bang is only for show; the blast physics does all the damage.
 - **The wreck keeps burning:** the jet settles into a fire that never goes out (only water puts it out), and every other cook-off vent catches fire a moment later.
 - **Knocked out, not blown apart:** once a rack catches fire, the game can no longer blow the vehicle up. Racks themselves are never destroyed or exploded by the game.
@@ -83,6 +84,7 @@ Tanks now carry their ammunition in racks. Racks set off by hits burn, then expl
   | `CookOffTNTEfficiency` | 25% | Share of the propellant that counts as a real explosion |
   | `CookOffWreckKPa` | 1000 | Blast pressure that wrecks a part |
   | `CookOffDamageKPa` | 200 | Blast pressure below which nothing is damaged |
+  | `CookOffArmorHalvingMm` | 10 | mm of armor in the way that halves the blast pressure |
   | `BlastStrength` | | Multiplies each round's pounds |
   | `MaxBlastLb` | 120 | Cap on one rack's pounds |
   | `BlastVisualPercent` | 75% | Size of the bang |

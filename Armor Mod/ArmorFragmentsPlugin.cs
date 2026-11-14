@@ -108,6 +108,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> CookOffTNTEfficiency;
         internal static ConfigEntry<float> CookOffWreckKPa;
         internal static ConfigEntry<float> CookOffDamageKPa;
+        internal static ConfigEntry<float> CookOffArmorHalvingMm;
         internal static ConfigEntry<float> BlastStrength;
         internal static ConfigEntry<string> BlastType;
         internal static ConfigEntry<float> MaxBlastLb;
@@ -466,6 +467,12 @@ namespace ArmorFragments
                     "Blast overpressure (kPa) below which the cook-off does no damage; between this and CookOffWreckKPa the " +
                     "damage grows with the log of the pressure. 200 kPa = 29 psi.",
                     new AcceptableValueRange<float>(1f, 100000f)));
+            CookOffArmorHalvingMm = Config.Bind("AmmoRacks", "CookOffArmorHalvingMm", 10f,
+                new ConfigDescription(
+                    "Armor between a cook-off and a part shields it: every this many mm of effective armor on the line " +
+                    "(thickness / cos of the angle) halves the blast's pressure. At 10: a 20 mm plate leaves a quarter, " +
+                    "64 mm about 1%.",
+                    new AcceptableValueRange<float>(0.1f, 1000f)));
             BlastStrength = Config.Bind("AmmoRacks", "BlastStrength", 1f,
                 new ConfigDescription(
                     "Multiplies each round's explosive equivalent (at 1: a 50 mm round at 835 m/s is about 0.58 lb, so " +
@@ -504,7 +511,7 @@ namespace ArmorFragments
                 MaxDeflection, MaxPlates, MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
                 FragmentRicochetAngle, FragmentRicochetMultiplier,
                 AmmoRacksEnabled, CaseDiameterRatio, CaseLitresPerMJ, RoundSpacingPercent,
-                CookOffEnergyKJ, CookOffDirectHit, CookOffBurnSeconds, CookOffTNTEfficiency, CookOffWreckKPa, CookOffDamageKPa,
+                CookOffEnergyKJ, CookOffDirectHit, CookOffBurnSeconds, CookOffTNTEfficiency, CookOffWreckKPa, CookOffDamageKPa, CookOffArmorHalvingMm,
                 BlastStrength, BlastType, MaxBlastLb, BlastVisualPercent);
 
             // One patch failing (for example after a game update) must not stop the others.

@@ -300,7 +300,12 @@ namespace ArmorFragments
                 tag + "Shell goes through plate " + plate + " with " + EnergyModel.Kilojoules(energyAfter) + " of " +
                 EnergyModel.Kilojoules(energyIn) + ", turned " + LastImpact.Deflection.ToString("F1") + " deg");
 
-            ShellFlight.Continue(exitPoint + newDirection * 0.01f, newDirection, next, cannonTag,
+            // The ray starts a little BACK inside the plate (which it ignores), not past its back face: a part
+            // touching that face (an ammo rack behind the armor) has its surface right there, and a ray that
+            // starts inside a collider never sees it (Jakniphe's test: a 100 mm through a 64 mm plate "went
+            // through 0 parts" with the rack right behind it).
+            float backOff = Mathf.Min(0.02f, inside * 0.5f);
+            ShellFlight.Continue(exitPoint - newDirection * backOff, newDirection, next, cannonTag,
                                  null, armor, timeAtPlate + insideTime, 0f, RayKind.None,
                                  applyDamage, simulated, plate + 1, true, bounces);
         }

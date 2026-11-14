@@ -1079,7 +1079,8 @@ namespace ArmorFragments
             Collect(nearest, center, reach, rack, true);
             Collect(nearest, ventAt, reach, rack, false);
 
-            int inside = 0, outside = 0;
+            int inside = 0, outside = 0, shielded = 0;
+            float halvingMm = Mathf.Max(ArmorFragmentsPlugin.CookOffArmorHalvingMm.Value, 0.1f);
             HashSet<AircraftScript> others = new HashSet<AircraftScript>();
             foreach (KeyValuePair<PartScript, Vector3> pair in nearest)
             {
@@ -1092,7 +1093,17 @@ namespace ArmorFragments
                 float distance = Vector3.Distance(pair.Value, origin);
                 if (distance >= reach) continue;
 
+                // Armor in the way shields in proportion to how much of it there is (Jakniphe): every
+                // CookOffArmorHalvingMm of effective thickness halves the pressure. Outside, the burning vehicle's
+                // own armor doesn't count (the blast is already out, at the vent).
                 float pressure = Overpressure(Mathf.Max(distance, 0.05f) / cubeRoot);
+                float armorMm = ArmorBetween(origin, pair.Value, part, own ? null : rack.Aircraft);
+                if (armorMm > 0f) pressure *= Mathf.Pow(0.5f, armorMm / halvingMm);
+                if (pressure <= onsetKPa)
+                {
+                    if (armorMm > 0f) shielded++;
+                    continue;
+                }
                 float share = Mathf.Log(pressure / onsetKPa) / Mathf.Log(wreckKPa / onsetKPa);   // 0 at onset, 1 = wrecked
                 float damage = part.MaxHealth * Mathf.Clamp(share, 0f, 2f);
                 if (damage <= 0f) continue;
@@ -1112,7 +1123,33 @@ namespace ArmorFragments
             ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' cook-off: " + Fmt(pounds, "F0") + " lb at " +
                 Fmt(ArmorFragmentsPlugin.CookOffTNTEfficiency.Value, "F0") + "% = " + Fmt(tntKg, "F1") + " kg of TNT; wrecks within " +
                 Fmt(wreckWithin, "F1") + " m, damages out to " + Fmt(reach, "F1") + " m; damaged " + inside +
-                " module(s) / rack(s) inside, " + outside + " part(s) of " + others.Count + " other vehicle(s) outside");
+                " module(s) / rack(s) inside, " + outside + " part(s) of " + others.Count + " other vehicle(s) outside" +
+                (shielded > 0 ? "; " + shielded + " part(s) in range saved by armor in the way" : ""));
+        }
+
+        // Effective armor (mm) on the straight line from the blast to a part: each [ARM] part crossed counts its
+        // thickness / cos(angle), as for shells (the angle limited to ~78 deg). Parts of 'skip' don't count.
+        private static float ArmorBetween(Vector3 from, Vector3 to, PartScript target, AircraftScript skip)
+        {
+            Vector3 line = to - from;
+            float distance = line.magnitude;
+            if (distance < 0.01f) return 0f;
+            Vector3 direction = line / distance;
+
+            float total = 0f;
+            HashSet<PartScript> counted = new HashSet<PartScript>();
+            foreach (RaycastHit hit in Physics.RaycastAll(from, direction, distance, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.collider == null || hit.collider.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                PartScript part = hit.collider.GetComponentInParent<PartScript>();
+                if (part == null || part == target || part.Part == null || !counted.Add(part)) continue;
+                if (skip != null && part.Aircraft == skip) continue;
+                ArmorTag armor = TagCodec.Parse(part.Part.Name).Armor;
+                if (armor == null) continue;
+                float cos = Mathf.Abs(Vector3.Dot(hit.normal, direction));
+                total += armor.Thickness / Mathf.Max(cos, 0.2f);
+            }
+            return total;
         }
 
         // Parts with a collider within 'radius' of 'from': own = the rack's own vehicle only, else everyone else.
