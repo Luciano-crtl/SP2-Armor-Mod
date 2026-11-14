@@ -331,14 +331,12 @@ Motivo: no teste da fase B os fragmentos penetravam muito mais que a AP. Causas:
 ## v0.7.0 (versão atual)
 Reúne tudo desde a v0.6.3: munição AP/APHE/HE, fragmentos como projéteis, feixes, brittleness, explosões no cenário, ricochete como raio, dano do jogo desligado em canhões com `[CAN]`, velocidade real dos raios fora da câmera de impacto e do tiro simulado. Changelog para os testadores gerado na conversa (estilo do Discord).
 
-## Porta-munição `[AMM]` e mudanças nos canhões (contribuição de Jakniphe, branch `ammo-rack`)
-**Leia `AMMO_RACKS_CONTEXT.md`**: é a referência atual e única (em inglês) do porta-munição e do que ele mudou em canhões, dano e na morte dos veículos. O histórico de commits guarda passos que foram substituídos; aquele arquivo descreve o código como ele é agora. Resumo para o jogador: `PATCH_NOTES.md`.
-
-Resumo das decisões do Jakniphe:
-- **Objetivo:** matar veículos pelos módulos danificados, sem destruir a casca ("kills volumétricos"); o porta-munição é o primeiro módulo.
+## Porta-munição `[AMM]` e mudanças nos canhões (Jakniphe, branch `ammo-rack`)
+Referência completa (em inglês): `AMMO_RACKS_CONTEXT.md`. Resumo para o jogador: `PATCH_NOTES.md`.
+- **Objetivo:** matar veículos pelos módulos danificados, sem destruir a casca; o porta-munição é o primeiro módulo.
 - **Porta-munição:** fuselagem `[AMM g= o=]` guarda projéteis inteiros do tamanho do canhão (`[CAN g=]`), encaixados na forma real; substitui o Ammo Count.
-- **Cook-off:** só conta o que atravessa um projétil ainda no rack. Chance = 1 − (1 − 50%)^(projéteis que atravessaram) × e^(−kJ/100). O projétil é um tubo do seu calibre e conta a energia que leva. Queima 10 s e explode.
-- **Explosão:** física real (Mills, 25% de eficiência em TNT); só ela causa dano, dentro (módulos e racks) e fora (outros veículos, a partir do respiro `[VNT]`). A blindagem no caminho protege (cada 10 mm reduz a pressão à metade). O estouro do jogo é só visual.
-- **Morte do veículo, em todos os veículos:** `GameDamageExplosions` desligado (o jogo não explode peças nem veículos por dano). `ArmoredStructureDamage` desligado: em veículo blindado só `[MOD]` e `[AMM]` levam dano do mod.
-- **Correção no seu código:** `ContinueAfterPlate` recomeça o raio do projétil na face da frente da placa. Antes recomeçava 1 cm depois da face de trás, dentro de qualquer peça encostada, e não a via.
-- **Pendente:** acerto peça por peça no multiplayer (atualização separada); carga explosiva (HE/APHE) não entra no cook-off (decisão).
+- **Cook-off:** só conta o que atravessa um projétil ainda no rack. Chance = 1 − (1 − 50%)^(projéteis que atravessaram) × e^(−kJ/100); o projétil é um tubo do seu calibre e conta a energia que leva. Queima 10 s e explode.
+- **Explosão:** física real (Mills, 25% de eficiência em TNT); é o único dano, dentro (módulos e racks) e fora (outros veículos, a partir do respiro `[VNT]`); a blindagem no caminho protege (cada 10 mm reduz a pressão à metade). O estouro do jogo é só visual.
+- **Morte do veículo, em todos os veículos:** `GameDamageExplosions` desligado (o jogo não explode peças nem veículos por dano); `ArmoredStructureDamage` desligado (em veículo blindado só `[MOD]` e `[AMM]` levam dano do mod).
+- **No seu código:** `ContinueAfterPlate` recomeça o raio do projétil na face da frente da placa; `DepositCrossings` e `Accumulate` informam o porta-munição.
+- **Pendente:** acerto peça por peça no multiplayer; carga explosiva (HE/APHE) não entra no cook-off (decisão).
