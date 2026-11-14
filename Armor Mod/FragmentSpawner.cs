@@ -429,6 +429,7 @@ namespace ArmorFragments
                 foreach (BallisticRay.Crossed crossing in ray.Crossings)
                 {
                     if (crossing.Part == null || crossing.Part == skip) continue;
+                    shellEnergyIn = crossing.EnergyIn;   // what the shell carries into this part (an ammo rack's direct hit)
                     Deposit(crossing.Part, crossing.Dissipated, from + direction * crossing.Distance, direction,
                             applyDamage, startDelay + crossing.ArrivalTime, ref total);
                 }
@@ -436,6 +437,7 @@ namespace ArmorFragments
             finally
             {
                 depositingShell = false;
+                shellEnergyIn = 0f;
                 EndBatch();
             }
             return total.Damage;
@@ -725,11 +727,12 @@ namespace ArmorFragments
         }
 
         private static bool depositingShell;   // true while DepositCrossings lays down the shell's own path
+        private static float shellEnergyIn;    // J the shell carries into the part being deposited
 
         private static void Accumulate(PartScript part, float damage, Vector3 point, Vector3 dir)
         {
             // An ammo rack judges each piece's path against its rounds before the pieces are summed up.
-            AmmoRacks.NotePiece(part, damage, point, dir, depositingShell);
+            AmmoRacks.NotePiece(part, damage, point, dir, depositingShell, depositingShell ? shellEnergyIn : 0f);
 
             if (batchDepth <= 0)
             {

@@ -491,13 +491,17 @@ namespace ArmorFragments
         {
             public float Through;     // damage of the pieces whose path crossed rounds
             public int Shells;        // how many of them were the shell itself (a direct hit), not fragments
+            public float ShellKJ;     // what those shells carried into the rack
         }
 
         private static readonly Dictionary<PartScript, Pieces> ThroughRounds = new Dictionary<PartScript, Pieces>();
         private static int throughFrame = -1;
 
-        // shell: the piece is the shell itself (FragmentSpawner.DepositCrossings), not a fragment.
-        public static void NotePiece(PartScript part, float damage, Vector3 point, Vector3 direction, bool shell)
+        // shell: the piece is the shell itself (FragmentSpawner.DepositCrossings), not a fragment; shellEnergyJ is
+        // what it carries into the rack. A shell through the cartridges counts with that energy, not with what it
+        // happens to lose there (Jakniphe's test: a 100 mm went through 855 kg of rounds losing almost nothing,
+        // "0 kJ into its rounds", and took 3 shots).
+        public static void NotePiece(PartScript part, float damage, Vector3 point, Vector3 direction, bool shell, float shellEnergyJ)
         {
             Rack rack;
             if (damage <= 0f || part == null || !RackOf.TryGetValue(part, out rack) || rack.Grid == null) return;
@@ -512,7 +516,9 @@ namespace ArmorFragments
             if (!ThroughRounds.TryGetValue(part, out pieces)) ThroughRounds[part] = pieces = new Pieces();   // kept empty too: pieces hit it, none through its rounds
             if (rack.Grid.Remaining <= 0 || !rack.Grid.HitsRounds(part.transform, point, direction)) return;
             pieces.Through += damage;
-            if (shell) pieces.Shells++;
+            if (!shell) return;
+            pieces.Shells++;
+            pieces.ShellKJ += Mathf.Max(shellEnergyJ, 0f) / 1000f;
         }
 
         private static bool TakeNoted(PartScript part, out Pieces pieces)
@@ -568,7 +574,8 @@ namespace ArmorFragments
                     return;
                 }
                 rise = pieces.Through / Mathf.Max(part.MaxHealth, 1f);
-                kiloJoules = pieces.Through / perKiloJoule;
+                // Fragments by what they left in the rounds, shells by what they carried into them.
+                kiloJoules = pieces.Through / perKiloJoule + pieces.ShellKJ;
                 shells = pieces.Shells;
             }
             else
@@ -583,7 +590,8 @@ namespace ArmorFragments
                 }
                 kiloJoules = rise * Mathf.Max(part.MaxHealth, 1f) / perKiloJoule;
             }
-            levels += ", " + Fmt(kiloJoules, "F0") + " kJ into its rounds" + (shells > 0 ? ", shell through them (direct hit)" : "");
+            levels += ", " + Fmt(kiloJoules, "F0") + " kJ into its rounds" +
+                      (shells > 0 ? " (shell through them, a direct hit carrying " + Fmt(pieces.ShellKJ, "F0") + " kJ)" : "");
 
             if (destroyedNow)
             {

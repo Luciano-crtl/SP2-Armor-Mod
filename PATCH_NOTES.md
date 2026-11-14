@@ -20,8 +20,8 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
   - **What counts:** a hit only matters if it passes through the part of a rack that still holds rounds. A half-empty rack is safe at the top.
   - **Every piece counts:** a shot can reach a rack as the shell itself, as spall from a plate, or as the fragments of an HE or APHE burst, including HE spall through thin armor. Each piece's path is checked against the rounds, and only the damage of the pieces that went through rounds counts toward a cook-off.
   - **Chance, from what hits the rounds:** 1 - (1 - 50%)^(shells through the rounds) x e^(-kJ into the rounds / 100 kJ).
-    - **Direct hits:** a shell punching through the cases has a 50% chance to set them off whatever its size, plus its energy. That's about 60% for a 20 mm APHE (usually within 2 shots), 85-90% for a 37 mm, and near certain for 75 mm and up.
-    - **Fragments:** they count by energy only. 100 kJ into the rounds gives 63%, 300 kJ 95%, so a few small fragments rarely do it alone.
+    - **Direct hits:** a shell punching through the cases has a 50% chance to set them off whatever its size, plus the energy it carries into them. That's about 64% for a 20 mm APHE (usually within 2 shots), about 95% for a 37 mm, and certain for 75 mm and up.
+    - **Fragments:** they count by the energy they leave in the rounds. 100 kJ gives 63%, 300 kJ 95%, so a few small fragments rarely do it alone.
     - **Only rounds count:** the energy is what pieces whose path crosses a round still in the rack leave there. The hitbox is the space the remaining rounds take up, and it shrinks as you fire.
     - **Hits add up:** several hits count like one hit of their total.
     - **Independent of the rack:** it doesn't depend on the rack's health or the Damage per kJ setting.
