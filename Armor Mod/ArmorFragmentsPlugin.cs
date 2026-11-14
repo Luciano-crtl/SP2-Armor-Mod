@@ -105,6 +105,9 @@ namespace ArmorFragments
         internal static ConfigEntry<float> CookOffEnergyKJ;
         internal static ConfigEntry<float> CookOffDirectHit;
         internal static ConfigEntry<float> CookOffBurnSeconds;
+        internal static ConfigEntry<float> CookOffTNTEfficiency;
+        internal static ConfigEntry<float> CookOffWreckKPa;
+        internal static ConfigEntry<float> CookOffDamageKPa;
         internal static ConfigEntry<float> BlastStrength;
         internal static ConfigEntry<string> BlastType;
         internal static ConfigEntry<float> MaxBlastLb;
@@ -445,6 +448,23 @@ namespace ArmorFragments
                 new ConfigDescription("How long (s) a burning rack burns before it explodes, every time (Jakniphe: a " +
                     "consistent 10 s; replaces the random CookOffDelayMin/Max).",
                     new AcceptableValueRange<float>(0f, 120f)));
+            CookOffTNTEfficiency = Config.Bind("AmmoRacks", "CookOffTNTEfficiency", 25f,
+                new ConfigDescription(
+                    "How much of a cook-off's propellant counts as a real explosion, in % of its TNT equivalent (a " +
+                    "cook-off is an inefficient detonation). It sets the charge of the blast that wrecks the damage " +
+                    "modules and racks inside: at 25%, a 96 lb rack is 10.9 kg of TNT, wrecking within 2.7 m and " +
+                    "damaging out to 4.8 m. The reach grows with the cube root of the charge.",
+                    new AcceptableValueRange<float>(0.1f, 100f)));
+            CookOffWreckKPa = Config.Bind("AmmoRacks", "CookOffWreckKPa", 1000f,
+                new ConfigDescription(
+                    "Blast overpressure (kPa) that wrecks a damage module or rack (its whole health; twice that at most, " +
+                    "closer in). 1000 kPa = 145 psi.",
+                    new AcceptableValueRange<float>(10f, 100000f)));
+            CookOffDamageKPa = Config.Bind("AmmoRacks", "CookOffDamageKPa", 200f,
+                new ConfigDescription(
+                    "Blast overpressure (kPa) below which the cook-off does no damage; between this and CookOffWreckKPa the " +
+                    "damage grows with the log of the pressure. 200 kPa = 29 psi.",
+                    new AcceptableValueRange<float>(1f, 100000f)));
             BlastStrength = Config.Bind("AmmoRacks", "BlastStrength", 1f,
                 new ConfigDescription(
                     "Multiplies each round's explosive equivalent (at 1: a 50 mm round at 835 m/s is about 0.58 lb, so " +
@@ -477,7 +497,8 @@ namespace ArmorFragments
                 MaxDeflection, MaxPlates, MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
                 FragmentRicochetAngle, FragmentRicochetMultiplier,
                 AmmoRacksEnabled, CaseDiameterRatio, CaseLitresPerMJ, RoundSpacingPercent,
-                CookOffEnergyKJ, CookOffDirectHit, CookOffBurnSeconds, BlastStrength, BlastType, MaxBlastLb);
+                CookOffEnergyKJ, CookOffDirectHit, CookOffBurnSeconds, CookOffTNTEfficiency, CookOffWreckKPa, CookOffDamageKPa,
+                BlastStrength, BlastType, MaxBlastLb);
 
             // One patch failing (for example after a game update) must not stop the others.
             SafePatcher.PatchAll(new Harmony("com.yourname.armorfragments"), typeof(ArmorFragmentsPlugin).Assembly);

@@ -1028,41 +1028,97 @@ namespace ArmorFragments
             return false;
         }
 
-        // The cook-off cooks what is inside: the vehicle's damage modules ([MOD]) and other ammo racks ([AMM])
-        // within a radius that grows with the cook-off (0.5 m + 1 m per 50 lb, up to 4 m: 50 lb -> 1.5 m; halved
-        // from the first version after Jakniphe's test, where 96 lb reached 4.9 m) take up to twice their health
-        // (destroyed in the inner half, less farther out). Nothing else of the vehicle is touched: the game's own
-        // blast is kept off it (AmmoRackBlastPatch, which also skips the game's blast damage), so armor and
-        // structure keep the shape. Racks hit this way roll their own chance (chain).
+        // The cook-off cooks what is inside: the vehicle's damage modules ([MOD]) and other ammo racks ([AMM]),
+        // by real blast physics (Jakniphe: "more in reality with blast radius formulas", and a cook-off is an
+        // inefficient detonation):
+        //  - Charge: W = the propellant's TNT equivalent (the rack's pounds, in kg) x CookOffTNTEfficiency (25%).
+        //  - Hopkinson-Cranz scaling: what a blast does depends on the scaled distance Z = R / W^(1/3) (m/kg^1/3),
+        //    so the reach grows with the cube root of the rounds left, not in proportion.
+        //  - Peak overpressure (Mills' fit for a free-air blast): P = 1772/Z^3 - 114/Z^2 + 108/Z kPa.
+        //  - Damage: none below CookOffDamageKPa (200 kPa), the part's whole health at CookOffWreckKPa (1000 kPa:
+        //    wrecked), up to twice it closer in; in between it grows with ln(P), as damage does with pressure.
+        //  - R is the distance to the part's nearest surface (its colliders), not its center.
+        // Example at 25%: 96 lb (42 rounds of 100 mm) is 10.9 kg of TNT: wrecks within 2.7 m, damages out to 4.8 m.
+        // Nothing else of the vehicle is touched: the game's own blast is kept off it (AmmoRackBlastPatch, which
+        // also skips the game's blast damage), so armor and structure keep the shape. Racks hit this way roll their
+        // own chance (chain).
         private static void WreckInsides(Rack rack, Vector3 center, float pounds)
         {
             AircraftScript aircraft = rack.Aircraft;
             if (aircraft == null || aircraft.Aircraft == null || aircraft.Aircraft.Assembly == null) return;
-            float radius = Mathf.Clamp(0.5f + pounds / 50f, 0.5f, 4f);
 
-            List<PartScript> targets = new List<PartScript>();
+            float tntKg = pounds * 0.4536f * Mathf.Clamp(ArmorFragmentsPlugin.CookOffTNTEfficiency.Value, 0f, 100f) / 100f;
+            if (tntKg <= 0f) return;
+            float cubeRoot = Mathf.Pow(tntKg, 1f / 3f);
+            float onsetKPa = Mathf.Max(ArmorFragmentsPlugin.CookOffDamageKPa.Value, 1f);
+            float wreckKPa = Mathf.Max(ArmorFragmentsPlugin.CookOffWreckKPa.Value, onsetKPa * 1.01f);
+            float reach = ScaledDistanceAt(onsetKPa) * cubeRoot;       // m: no damage beyond
+            float wreckWithin = ScaledDistanceAt(wreckKPa) * cubeRoot;  // m: for the log
+
+            int hit = 0;
             foreach (PartData data in aircraft.Aircraft.Assembly.Parts)
             {
                 PartScript part = data != null ? data.PartScript : null;
                 if (part == null || part == rack.Part) continue;
                 PartTags tags = TagCodec.Parse(data.Name);
                 if (tags.Armor != null || (tags.Module == null && tags.AmmoRack == null)) continue;
-                if ((part.transform.position - center).sqrMagnitude < radius * radius) targets.Add(part);
-            }
 
-            int hit = 0;
-            foreach (PartScript part in targets)
-            {
-                if (part == null) continue;
-                Vector3 away = part.transform.position - center;
-                float damage = part.MaxHealth * 2f * (1f - away.magnitude / radius);
+                Vector3 nearest = NearestPoint(part, center);
+                float distance = Vector3.Distance(nearest, center);
+                if (distance >= reach) continue;
+
+                float pressure = Overpressure(Mathf.Max(distance, 0.05f) / cubeRoot);
+                float share = Mathf.Log(pressure / onsetKPa) / Mathf.Log(wreckKPa / onsetKPa);   // 0 at onset, 1 = wrecked
+                float damage = part.MaxHealth * Mathf.Clamp(share, 0f, 2f);
                 if (damage <= 0f) continue;
-                part.OnDamaged(rack.Attacker, damage, part.transform.position,
-                               away.sqrMagnitude > 1e-6f ? away.normalized : Vector3.up);
+
+                Vector3 away = part.transform.position - center;
+                part.OnDamaged(rack.Attacker, damage, nearest, away.sqrMagnitude > 1e-6f ? away.normalized : Vector3.up);
                 hit++;
             }
-            ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' cooked " + hit + " damage modules / racks inside the vehicle (within " +
-                                             Fmt(radius, "F1") + " m; armor and structure untouched)");
+            ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' cook-off: " + Fmt(pounds, "F0") + " lb at " +
+                Fmt(ArmorFragmentsPlugin.CookOffTNTEfficiency.Value, "F0") + "% = " + Fmt(tntKg, "F1") + " kg of TNT; wrecks within " +
+                Fmt(wreckWithin, "F1") + " m, damages out to " + Fmt(reach, "F1") + " m; cooked " + hit +
+                " damage modules / racks (armor and structure untouched)");
+        }
+
+        // Mills (1987): peak incident overpressure, kPa, at scaled distance z (m/kg^1/3) from a TNT charge.
+        private static float Overpressure(float z)
+        {
+            return 1772f / (z * z * z) - 114f / (z * z) + 108f / z;
+        }
+
+        // The scaled distance at which the overpressure falls to this (it only falls with distance).
+        private static float ScaledDistanceAt(float kPa)
+        {
+            float near = 0.05f, far = 200f;
+            for (int i = 0; i < 60; i++)
+            {
+                float mid = 0.5f * (near + far);
+                if (Overpressure(mid) > kPa) near = mid;
+                else far = mid;
+            }
+            return 0.5f * (near + far);
+        }
+
+        // The point of the part closest to the blast (its colliders), or its center if it has none.
+        private static Vector3 NearestPoint(PartScript part, Vector3 from)
+        {
+            Vector3 best = part.transform.position;
+            float bestDistance = (best - from).sqrMagnitude;
+            foreach (Collider collider in PartPhysics.Colliders(part))
+            {
+                if (collider == null || !collider.enabled) continue;
+                MeshCollider mesh = collider as MeshCollider;
+                Vector3 point = mesh != null && !mesh.convex ? collider.bounds.ClosestPoint(from) : collider.ClosestPoint(from);
+                float distance = (point - from).sqrMagnitude;
+                if (distance < bestDistance)
+                {
+                    best = point;
+                    bestDistance = distance;
+                }
+            }
+            return best;
         }
 
         private static string Fmt(float value, string format)
