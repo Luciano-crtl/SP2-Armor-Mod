@@ -95,6 +95,20 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetAngle;
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
+        // Ammo racks ([AMM] fuselages, see AmmoRacks.cs).
+        internal static ConfigEntry<bool> AmmoRacksEnabled;
+        internal static ConfigEntry<float> CaseDiameterRatio;
+        internal static ConfigEntry<float> CaseLitresPerMJ;
+        internal static ConfigEntry<float> RoundSpacingPercent;
+        internal static ConfigEntry<float> CookOffSensitivity;
+        internal static ConfigEntry<float> CookOffDelayMin;
+        internal static ConfigEntry<float> CookOffDelayMax;
+        internal static ConfigEntry<float> BlastStrength;
+        internal static ConfigEntry<string> BlastType;
+        internal static ConfigEntry<float> MaxBlastLb;
+        internal static ConfigEntry<bool> ShowRacksInDesigner;   // local: only changes what you see
+        internal static ConfigEntry<bool> DebugDumpShape;        // local: diagnostic file
+
         // Shown in the log and the panel, to tell which build the game is really running.
         public const string Version = "0.7.0";
 
@@ -106,6 +120,9 @@ namespace ArmorFragments
             NetSync.Tick();
             HostResolver.Tick();
             ModuleOutputs.Tick();
+            AmmoRacks.Tick();
+            RackVisualizer.Tick();
+            AmmoRackXRay.Tick();
             ImpactCamera.Tick();
         }
 
@@ -385,6 +402,52 @@ namespace ArmorFragments
 
             // The settings that decide what happens to other players. On someone else's server they come
             // from the host (see NetSync); everything else (rays, X-ray, logs, simulated shot) stays yours.
+            AmmoRacksEnabled = Config.Bind("AmmoRacks", "Enabled", true,
+                "If true, fuselages with an [AMM] tag are ammo racks: they hold the rounds of the cannons in their " +
+                "group ([CAN g=]), and can catch fire and explode when hit.");
+            CaseDiameterRatio = Config.Bind("AmmoRacks", "CaseDiameterRatio", 1.3f,
+                new ConfigDescription("A round's case is this many times wider than the caliber (its widest part).",
+                    new AcceptableValueRange<float>(1f, 2f)));
+            CaseLitresPerMJ = Config.Bind("AmmoRacks", "CaseLitresPerMJ", 2f,
+                new ConfigDescription(
+                    "Case volume per MJ of muzzle energy: faster guns need more propellant, so longer rounds. " +
+                    "2 matches the Pz III's 50 mm guns (KwK 38: 29 cm case, KwK 39: 43 cm).",
+                    new AcceptableValueRange<float>(0.5f, 10f)));
+            RoundSpacingPercent = Config.Bind("AmmoRacks", "RoundSpacingPercent", 10f,
+                new ConfigDescription("Gap between rounds across the rack (the rack's own structure), as a percentage of the round's width.",
+                    new AcceptableValueRange<float>(0f, 50f)));
+            CookOffSensitivity = Config.Bind("AmmoRacks", "CookOffSensitivity", 3f,
+                new ConfigDescription(
+                    "Chance a hit on a rack's rounds sets it on fire = 1 - e^(-this x rise of its damage level " +
+                    "(0..1, the damage modules' scale)). At 3, losing a third of its health gives 63%.",
+                    new AcceptableValueRange<float>(0f, 20f)));
+            CookOffDelayMin = Config.Bind("AmmoRacks", "CookOffDelayMin", 5f,
+                new ConfigDescription("Shortest time (s) a burning rack takes to explode.",
+                    new AcceptableValueRange<float>(0f, 60f)));
+            CookOffDelayMax = Config.Bind("AmmoRacks", "CookOffDelayMax", 20f,
+                new ConfigDescription("Longest time (s) a burning rack takes to explode (like the game's fuel tanks: 5 to 20).",
+                    new AcceptableValueRange<float>(0f, 120f)));
+            BlastStrength = Config.Bind("AmmoRacks", "BlastStrength", 1f,
+                new ConfigDescription(
+                    "Multiplies each round's explosive equivalent (at 1: a 50 mm round at 835 m/s is about 0.58 lb, so " +
+                    "~90 of them make about 55 lb). The cook-off is sized like the game's own bombs: Boom 25 (250 lb) = 0.8.",
+                    new AcceptableValueRange<float>(0f, 10f)));
+            MaxBlastLb = Config.Bind("AmmoRacks", "MaxBlastLb", 120f,
+                new ConfigDescription("Most pounds of explosive one rack's cook-off can be, however many rounds it holds.",
+                    new AcceptableValueRange<float>(1f, 1000f)));
+            BlastType = Config.Bind("AmmoRacks", "BlastType", "BombExplosion",
+                new ConfigDescription(
+                    "The game explosion a cook-off vents as (a pillar of them, from the rack up through the nearest " +
+                    "[VNT] part, or straight up). Sizes are worked out in the bombs' scale (Boom 25 = 250 lb = 0.8), so " +
+                    "other types will look bigger or smaller.",
+                    new AcceptableValueList<string>("BombExplosion", "GeneralExplosion", "MissileExplosion", "RocketExplosion")));
+            ShowRacksInDesigner = Config.Bind("AmmoRacks", "ShowInDesigner", true,
+                "If true, ammo racks are drawn see-through in the designer with their rounds inside (they can still be " +
+                "clicked). Only changes what you see.");
+            DebugDumpShape = Config.Bind("AmmoRacks", "DebugDumpShape", false,
+                "Diagnostic: each time the designer re-measures an ammo rack, write its shape, round positions and " +
+                "measurement to BepInEx/ammo-rack-shape.obj (overwritten each time).");
+
             NetSync.RegisterGlobal(
                 ApplyDamage, FragmentMass, MaxVisualFragments, BallisticRayRange, IgnoreGameDamageOnArmor,
                 DefaultShellHardness, ArmorResistance, RicochetFriction, RicochetRandomness,
@@ -393,7 +456,9 @@ namespace ArmorFragments
                 FragmentArmorFactor, DefaultShellBrittleness,
                 SimpleFragmentArea, MaxPartsPerFragment, SpreadBaseAngle, AxisTilt, SpreadAnisotropy,
                 MaxDeflection, MaxPlates, MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
-                FragmentRicochetAngle, FragmentRicochetMultiplier);
+                FragmentRicochetAngle, FragmentRicochetMultiplier,
+                AmmoRacksEnabled, CaseDiameterRatio, CaseLitresPerMJ, RoundSpacingPercent,
+                CookOffSensitivity, CookOffDelayMin, CookOffDelayMax, BlastStrength, BlastType, MaxBlastLb);
 
             // One patch failing (for example after a game update) must not stop the others.
             SafePatcher.PatchAll(new Harmony("com.yourname.armorfragments"), typeof(ArmorFragmentsPlugin).Assembly);

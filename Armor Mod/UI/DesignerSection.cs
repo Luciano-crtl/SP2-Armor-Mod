@@ -9,6 +9,7 @@ using Assets.Scripts.Craft.Parts.Modifiers.Propulsion.Jet;
 using Assets.Scripts.Craft.Parts.Modifiers.Propulsion.Propeller;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
 using Assets.Scripts.Design.UI.PartProperties;
+using Assets.Scripts.UI.Controls;
 using HarmonyLib;
 using Jundroo.Juicy.Widgets;
 using UnityEngine;
@@ -26,6 +27,27 @@ namespace ArmorFragments.UI
         private static readonly MethodInfo UpdateCommonProperties =
             AccessTools.Method(typeof(PartPropertiesPanelScript), "UpdateCommonPartProperties");
 
+        // Re-asks every property's visibility callback (hides a rack-fed cannon's Ammo Count at once).
+        private static readonly MethodInfo RefreshPropertyVisibilities =
+            AccessTools.Method(typeof(GenericPartPropertiesScript), "RefreshPropertyVisibilities");
+
+        private static void RefreshGenericPanels()
+        {
+            if (RefreshPropertyVisibilities == null) return;
+            foreach (GenericPartPropertiesScript script in
+                     UnityEngine.Object.FindObjectsByType<GenericPartPropertiesScript>(FindObjectsSortMode.None))
+            {
+                try
+                {
+                    RefreshPropertyVisibilities.Invoke(script, null);
+                }
+                catch (Exception)
+                {
+                    // a panel being torn down: nothing to refresh
+                }
+            }
+        }
+
         private static PartPropertiesPanelScript panel;   // the designer's properties panel
         private static Widget container;                  // our section inside it
         private static PartScript part;                   // the selected part
@@ -35,6 +57,20 @@ namespace ArmorFragments.UI
         private static bool builtExplosive;               // was the cannon's Projectile Type 'Explosive' when the rows were made?
         private static bool builtCannonRows;              // ... and did the rows include the cannon's ammunition ones?
         private static float nextPoll;                    // (unscaled time) of the next look at the cannon's Projectile Type
+
+        // Rows whose text follows the part's shape (ammo rack capacity): re-measured when it changes.
+        private sealed class LiveBlock
+        {
+            public TextControl[] Controls;
+            public Func<string> Signature;   // cheap: changes when the texts would
+            public Func<string[]> Texts;     // may be slow (measures racks)
+            public string LastSignature;
+        }
+
+        private static readonly System.Collections.Generic.List<LiveBlock> liveBlocks =
+            new System.Collections.Generic.List<LiveBlock>();
+        private static float nextLiveCheck;
+        private const float LiveInterval = 0.5f;
 
         // Called once when the designer's properties panel is created.
         public static void Attach(PartPropertiesPanelScript properties)
@@ -65,6 +101,7 @@ namespace ArmorFragments.UI
         // click handler, because rebuilding destroys the very control being clicked.
         public static void Tick()
         {
+            RefreshLiveRows();
             if (!rebuildPending)
             {
                 PollProjectileType();
@@ -74,6 +111,7 @@ namespace ArmorFragments.UI
             try
             {
                 Rebuild();
+                RefreshGenericPanels();   // tags changed or another part was selected
             }
             catch (Exception e)
             {
@@ -135,6 +173,7 @@ namespace ArmorFragments.UI
             builtCannonRows = false;
             if (container == null) return;   // the designer was closed
 
+            liveBlocks.Clear();
             foreach (Widget child in container.Widgets.ToList())
                 child.Destroy();
 
@@ -149,11 +188,7 @@ namespace ArmorFragments.UI
             bool canModule = Has<JEngineData>() || Has<TurboshaftData>() || Has<JetEngineData>() ||
                              Has<FuelTankData>() || Has<PropellerAssemblyData>() || Has<JFuselageData>();
 
-            if (!canArmor && !canCannon && !canModule)
-            {
-                container.Visible = false;
-                return;
-            }
+            // Every part can be an ammo rack cook-off vent, so the section always shows (other parts: only that).
             container.Visible = true;
 
             PartTags tags = TagCodec.ParseCopy(part.Part.Name);
@@ -184,6 +219,13 @@ namespace ArmorFragments.UI
                     "Describes the shells this cannon fires.",
                     tags.Cannon != null,
                     on => Switch(tags, () => tags.Cannon = on ? new CannonTag() : null));
+
+                // Estimated penetration (Jakniphe: "so we can see its stats"), for every cannon: the energy
+                // model's own rule for a real hit, at the muzzle, against armor of the current resistance.
+                PartScript gunPart = part;
+                Live(builder, new[] { "Shell energy", "Penetration 0 / 30 / 60 deg" },
+                     () => PenetrationSignature(gunPart), () => PenetrationTexts(gunPart));
+
                 if (tags.Cannon != null)
                 {
                     Slider(builder, tags, "Shell hardness", "Hardness of the shell: a harder shell is deflected less by the armor. 100% = reference.",
@@ -217,6 +259,15 @@ namespace ArmorFragments.UI
                             0f, 100f, 5f, tags.Cannon.Brittleness ?? ArmorFragmentsPlugin.DefaultShellBrittleness.Value, " %",
                             v => tags.Cannon.Brittleness = v);
                     }
+
+                    // Ammo racks feeding this cannon (the group is edited as g= in the name). When racks feed
+                    // it, the game's Ammo Count slider is hidden (AmmoCountVisibilityPatch) and these rows say
+                    // how many rounds it really has.
+                    PartScript cannonPart = part;
+                    string group = AmmoRacks.GroupName(tags.Cannon.Group);
+                    builder.Text("Ammo group", group);
+                    Live(builder, new[] { "Ammo from", "Rounds", "Round (W x L)", "Shell" },
+                         () => GroupSignature(cannonPart, group), () => CannonTexts(cannonPart, group));
                 }
             }
 
@@ -233,6 +284,218 @@ namespace ArmorFragments.UI
                     builder.Text("Value", "0 to 1: share of health lost");
                 }
             }
+
+            if (canArmor)   // fuselages: the same parts that can be armor
+            {
+                builder.Toggle("Ammo rack",
+                    "Makes this fuselage an ammo rack: it holds the rounds of the cannons in its group ([CAN g=]), " +
+                    "and can catch fire and explode when its rounds are hit.",
+                    tags.AmmoRack != null,
+                    on => Switch(tags, () => tags.AmmoRack = on ? new AmmoRackTag() : null));
+                if (tags.AmmoRack != null)
+                {
+                    PartScript rackPart = part;
+                    string group = AmmoRacks.GroupName(tags.AmmoRack.Group);
+                    string prefix = AmmoRacks.VariablePrefix(group);
+                    builder.Text("Ammo group", group);
+                    Slider(builder, tags, "Empty order", "Racks of a group empty from the lowest number up. 0 = after the numbered ones.",
+                        0f, 20f, 1f, tags.AmmoRack.Order ?? 0, "",
+                        v => tags.AmmoRack.Order = v < 0.5f ? (int?)null : Mathf.RoundToInt(v));
+                    if (tags.Armor != null)
+                        builder.Text("Warning", "Armor: holds no rounds");
+                    Live(builder, new[] { "Status", "Rounds held", "Layout", "Lost to shape", "Space (L x W x H)", "Round (W x L)", "Shell", "Rounds weight" },
+                         () => AmmoRacks.DesignRackSignature(rackPart, group), () => RackTexts(rackPart, group, tags.Armor != null));
+                    builder.Text("Rounds variable", prefix + "_rounds");
+                    builder.Text("Fire variable", prefix + "_fire");
+                    builder.Toggle("See-through racks",
+                        "Draws every ammo rack see-through in the designer, with its rounds inside. Clicking still selects the part.",
+                        ArmorFragmentsPlugin.ShowRacksInDesigner.Value,
+                        on => ArmorFragmentsPlugin.ShowRacksInDesigner.Value = on);
+                    builder.Text("Boom variable", prefix + "_boom (for detachers)");
+                }
+            }
+
+            builder.Toggle("Cook-off vent",
+                "Ammo rack cook-offs vent through this part: the pillar of fire runs from the rack to the nearest vent, " +
+                "then straight up. Mark a turret ring or a hatch. With no vent, it rises straight up from the rack.",
+                tags.Vent != null,
+                on => Switch(tags, () => tags.Vent = on ? new VentTag() : null));
+        }
+
+        // ---- Ammo rack read-outs ---------------------------------------------------------
+
+        // Several short rows that are measured together and refreshed when 'signature' changes.
+        private static void Live(PanelBuilder builder, string[] labels, Func<string> signature, Func<string[]> texts)
+        {
+            LiveBlock block = new LiveBlock { Signature = signature, Texts = texts, Controls = new TextControl[labels.Length] };
+            block.LastSignature = Safe(signature);
+            string[] values = SafeTexts(texts, labels.Length);
+            for (int i = 0; i < labels.Length; i++)
+                block.Controls[i] = builder.Text(labels[i], values[i]);
+            liveBlocks.Add(block);
+        }
+
+        private static void RefreshLiveRows()
+        {
+            if (liveBlocks.Count == 0 || container == null || part == null) return;
+            if (Time.unscaledTime < nextLiveCheck) return;
+            nextLiveCheck = Time.unscaledTime + LiveInterval;
+
+            foreach (LiveBlock block in liveBlocks)
+            {
+                string signature = Safe(block.Signature);
+                if (signature == block.LastSignature) continue;
+                block.LastSignature = signature;
+                string[] values = SafeTexts(block.Texts, block.Controls.Length);
+                for (int i = 0; i < block.Controls.Length; i++)
+                    block.Controls[i].ValueText.Text = values[i];
+            }
+        }
+
+        private static string Safe(Func<string> text)
+        {
+            try
+            {
+                return text();
+            }
+            catch (Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("Ammo rack read-out failed: " + e.Message);
+                return "?";
+            }
+        }
+
+        private static string[] SafeTexts(Func<string[]> texts, int count)
+        {
+            string[] values = null;
+            try
+            {
+                values = texts();
+            }
+            catch (Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("Ammo rack read-out failed: " + e.Message);
+            }
+            string[] result = new string[count];
+            for (int i = 0; i < count; i++)
+                result[i] = values != null && i < values.Length && values[i] != null ? values[i] : "?";
+            return result;
+        }
+
+        // Status, Rounds held, Layout, Lost to shape, Space (L x W x H), Round (W x L), Shell
+        private static string[] RackTexts(PartScript rackPart, string group, bool isArmor)
+        {
+            if (isArmor) return new[] { "Armor: holds nothing", "0", "-", "-", "-", "-", "-", "-" };
+
+            AmmoRound round;
+            int cannons;
+            bool mixed;
+            if (!AmmoRacks.DesignRound(rackPart, group, out round, out cannons, out mixed))
+                return new[] { "No cannon in group", "0", "-", "-", "-", "-", "-", "-" };
+
+            RackGrid grid = RackGrid.Measure(rackPart, round);
+            bool measured = grid.Problem == null;
+            bool hasGrid = grid.Slots > 0 && grid.Columns > 0 && grid.Layers > 0;
+            return new[]
+            {
+                measured && mixed ? "OK (mixed cannons)" : grid.Status,
+                grid.Capacity.ToString(CultureInfo.InvariantCulture),
+                hasGrid ? "up to " + grid.Slots + " long x " + grid.Columns + " wide x " + grid.Layers + " high" : "-",
+                grid.LostToShape.ToString(CultureInfo.InvariantCulture),
+                grid.InsideLength > 0f ? Cm(grid.InsideLength) + " x " + Cm(grid.InsideWidth) + " x " + Cm(grid.InsideHeight) + " cm" : "-",
+                round.ShortSize(),
+                round.ShortShell(),
+                (grid.Capacity * round.RoundMass).ToString("F0", CultureInfo.InvariantCulture) + " kg (added in flight)",
+            };
+        }
+
+        // Ammo from, Rounds, Round (W x L), Shell
+        // Shell energy, Penetration 0 / 30 / 60 deg.
+        // A shell gets through a plate when its energy beats ArmorResistance x thickness / cos(angle) x its
+        // cross-section in cm2 (EnergyModel.ArmorAbsorption), so the thickest plate it beats is
+        // energy / (resistance x area) x cos(angle). At the muzzle (the shell slows down with distance);
+        // ricochets and the plate's hardness are not counted.
+        private static string[] PenetrationTexts(PartScript cannonPart)
+        {
+            AmmoRound round;
+            if (!AmmoRound.TryFromPart(cannonPart, out round)) return new[] { "-", "-" };
+
+            float energy = round.Energy;   // J
+            float radiusCm = round.CaliberMm * 0.05f;
+            float areaCm2 = Mathf.PI * radiusCm * radiusCm;
+            float resistance = Mathf.Max(ArmorFragmentsPlugin.ArmorResistance.Value, 0.001f);
+            float headOn = energy / (resistance * Mathf.Max(areaCm2, 0.0001f));   // mm
+
+            string Mm(float angle) => (headOn * Mathf.Cos(angle * Mathf.Deg2Rad)).ToString("F0", CultureInfo.InvariantCulture);
+            return new[]
+            {
+                (energy / 1000f).ToString("F0", CultureInfo.InvariantCulture) + " kJ (" +
+                    round.ShellMass.ToString("F2", CultureInfo.InvariantCulture) + " kg at " +
+                    round.Velocity.ToString("F0", CultureInfo.InvariantCulture) + " m/s)",
+                Mm(0f) + " / " + Mm(30f) + " / " + Mm(60f) + " mm",
+            };
+        }
+
+        private static string PenetrationSignature(PartScript cannonPart)
+        {
+            AmmoRound round;
+            return (AmmoRound.TryFromPart(cannonPart, out round) ? round.Describe() + round.ShellMass : "") +
+                   "|" + ArmorFragmentsPlugin.ArmorResistance.Value;
+        }
+
+        private static string[] CannonTexts(PartScript cannonPart, string group)
+        {
+            AmmoRound own;
+            bool hasOwn = AmmoRound.TryFromPart(cannonPart, out own);
+
+            AmmoRound round;
+            int cannons;
+            bool mixed;
+            int racks = 0;
+            int total = 0;
+            if (AmmoRacks.DesignRound(cannonPart, group, out round, out cannons, out mixed))
+                total = AmmoRacks.DesignCapacity(cannonPart, group, round, out racks);
+
+            return new[]
+            {
+                racks == 0 ? "Ammo Count slider" : racks + (racks == 1 ? " rack" : " racks"),
+                racks == 0 ? "-" : total + (cannons > 1 ? " (shared by " + cannons + ")" : ""),
+                hasOwn ? own.ShortSize() : "-",
+                hasOwn ? own.ShortShell() : "-",
+            };
+        }
+
+        private static string Cm(float meters)
+        {
+            return (meters * 100f).ToString("F1", CultureInfo.InvariantCulture);
+        }
+
+        // Changes whenever the cannon's round or any rack of its group changes.
+        private static string GroupSignature(PartScript anyPart, string group)
+        {
+            System.Text.StringBuilder signature = new System.Text.StringBuilder();
+            AmmoRound own;
+            if (AmmoRound.TryFromPart(anyPart, out own)) signature.Append(own.Describe());
+
+            AmmoRound round;
+            int cannons;
+            bool mixed;
+            if (AmmoRacks.DesignRound(anyPart, group, out round, out cannons, out mixed))
+                signature.Append(round.Describe()).Append(cannons).Append(mixed);
+            if (anyPart.Aircraft != null && anyPart.Aircraft.Aircraft != null && anyPart.Aircraft.Aircraft.Assembly != null)
+            {
+                foreach (PartData data in anyPart.Aircraft.Aircraft.Assembly.Parts)
+                {
+                    if (data == null || data.PartScript == null) continue;
+                    PartTags tags = TagCodec.Parse(data.Name);
+                    if (tags.AmmoRack == null || AmmoRacks.GroupName(tags.AmmoRack.Group) != group) continue;
+                    signature.Append('|').Append(data.Id).Append(tags.Armor != null)
+                             .Append(AmmoRacks.ShapeSignature(data.PartScript));
+                }
+            }
+            signature.Append(ArmorFragmentsPlugin.CaseDiameterRatio.Value).Append(ArmorFragmentsPlugin.CaseLitresPerMJ.Value)
+                     .Append(ArmorFragmentsPlugin.RoundSpacingPercent.Value);
+            return signature.ToString();
         }
 
         // ---- Controls ------------------------------------------------------------

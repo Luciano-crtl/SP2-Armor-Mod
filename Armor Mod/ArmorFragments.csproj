@@ -40,6 +40,10 @@
 			<HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
+		<Reference Include="UnityEngine.ParticleSystemModule">
+			<HintPath>$(ManagedDir)\UnityEngine.ParticleSystemModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
 
 		<!-- UI panel: the game's UI library (Juicy) and what it is built on -->
 		<Reference Include="Jundroo.Packages">

@@ -44,7 +44,8 @@ namespace ArmorFragments
         }
 
         // Letters, digits and underscores only, and not starting with a digit.
-        private static string Sanitize(string text)
+        // (Also used for the ammo rack variables, AmmoRacks.cs.)
+        internal static string Sanitize(string text)
         {
             if (string.IsNullOrEmpty(text)) return "";
 
@@ -99,7 +100,7 @@ namespace ArmorFragments
             else Systems.Remove(system);
         }
 
-        private static AircraftVariable CreateVariable(VariableSystemScript system, string name)
+        internal static AircraftVariable CreateVariable(VariableSystemScript system, string name)
         {
             try
             {

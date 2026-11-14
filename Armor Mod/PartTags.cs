@@ -24,11 +24,19 @@ namespace ArmorFragments
     internal sealed class CannonTag
     {
         public float ShellHardness = 100f; // k: percent, 100 = reference (ricochet)
+        public string Group;               // g: ammo rack group it draws from (null = the default group)
 
         // Explosive ammunition only (the game's Projectile Type: Explosive):
         public float? Fuse;                // z: meters after the impact at which the shell bursts (none = no fuse: HE)
         public float? FillerPercent;       // e: explosive filler, percent of the shell's mass (none = the kind's default)
         public float? Brittleness;         // q: how easily the casing breaks into small fragments, percent (none = the setting's default)
+    }
+
+    // Fuselage used as an ammo rack: it holds the rounds of the cannons in its group (see AmmoRacks.cs).
+    internal sealed class AmmoRackTag
+    {
+        public string Group;               // g: group name, shared with the cannons' [CAN g=] (null = the default group)
+        public int? Order;                 // o: racks empty from the lowest number up (null = after the numbered ones)
     }
 
     // Part that reacts to fragment damage (engine, tank, propeller, some fuselages).
@@ -43,13 +51,20 @@ namespace ArmorFragments
         public ArmorTag Armor;         // null = the part is not armor
         public CannonTag Cannon;
         public ModuleTag Module;
+        public AmmoRackTag AmmoRack;
+        public VentTag Vent;
+    }
+
+    // Any part: ammo rack cook-offs vent through the nearest one of these (a turret ring, a hatch).
+    internal sealed class VentTag
+    {
     }
 
     internal static class TagCodec
     {
         // [ARM t=20 h=100]   -> kind + a list of key=value pairs
         private static readonly Regex Block =
-            new Regex(@"\[(ARM|CAN|MOD)((?:\s+[a-z]+=[^\s\]]+)*)\s*\]");
+            new Regex(@"\[(ARM|CAN|MOD|AMM|VNT)((?:\s+[a-z]+=[^\s\]]+)*)\s*\]");
         private static readonly Regex Pair = new Regex(@"([a-z]+)=([^\s\]]+)");
         private static readonly Regex ExtraSpaces = new Regex(@"\s{2,}");
 
@@ -98,11 +113,25 @@ namespace ArmorFragments
                         Fuse = Optional(values, "z"),
                         FillerPercent = Optional(values, "e"),
                         Brittleness = Optional(values, "q"),
+                        Group = ReadText(block.Groups[2].Value, "g"),
                     };
                 }
                 else if (kind == "MOD")
                 {
                     tags.Module = new ModuleTag { Variable = ReadText(block.Groups[2].Value, "v") };
+                }
+                else if (kind == "VNT")
+                {
+                    tags.Vent = new VentTag();
+                }
+                else if (kind == "AMM")
+                {
+                    float order;
+                    tags.AmmoRack = new AmmoRackTag
+                    {
+                        Group = ReadText(block.Groups[2].Value, "g"),
+                        Order = values.TryGetValue("o", out order) ? Mathf.RoundToInt(order) : (int?)null,
+                    };
                 }
             }
 
@@ -123,10 +152,17 @@ namespace ArmorFragments
                 Append(name, "[CAN k=" + Number(tags.Cannon.ShellHardness) +
                        (tags.Cannon.Fuse.HasValue ? " z=" + Number(tags.Cannon.Fuse.Value) : "") +
                        (tags.Cannon.FillerPercent.HasValue ? " e=" + Number(tags.Cannon.FillerPercent.Value) : "") +
-                       (tags.Cannon.Brittleness.HasValue ? " q=" + Number(tags.Cannon.Brittleness.Value) : "") + "]");
+                       (tags.Cannon.Brittleness.HasValue ? " q=" + Number(tags.Cannon.Brittleness.Value) : "") +
+                       (string.IsNullOrEmpty(tags.Cannon.Group) ? "" : " g=" + tags.Cannon.Group) + "]");
             if (tags.Module != null)
                 Append(name, string.IsNullOrEmpty(tags.Module.Variable)
                     ? "[MOD]" : "[MOD v=" + tags.Module.Variable + "]");
+            if (tags.AmmoRack != null)
+                Append(name, "[AMM" +
+                       (string.IsNullOrEmpty(tags.AmmoRack.Group) ? "" : " g=" + tags.AmmoRack.Group) +
+                       (tags.AmmoRack.Order.HasValue ? " o=" + tags.AmmoRack.Order.Value : "") + "]");
+            if (tags.Vent != null)
+                Append(name, "[VNT]");
 
             return name.Length == 0 ? fallback : name.ToString();
         }

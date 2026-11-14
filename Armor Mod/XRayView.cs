@@ -178,6 +178,9 @@ namespace ArmorFragments
                     LiveList.Add(new LiveEntry { Part = part, Ghosts = partGhosts, IsArmor = isArmor, Level = entry.Taken > 0f ? level : 0 });
             }
 
+            // Your own ammo racks also show the rounds still in them (AmmoRackXRay).
+            AmmoRackXRay.OnShown(parts);
+
             rimRoundRobin = 0;
             // The view stays on for its duration counted from the last part being hit.
             liveMode = live;
@@ -285,6 +288,7 @@ namespace ArmorFragments
         // Switches everything back. Safe to call at any time.
         public static void Hide()
         {
+            AmmoRackXRay.Clear();
             foreach (Renderer renderer in HiddenRenderers)
                 if (renderer != null) renderer.forceRenderingOff = false;
             HiddenRenderers.Clear();
@@ -478,7 +482,7 @@ namespace ArmorFragments
             // Any other mesh that is currently visible (propeller blades, for example).
             foreach (MeshRenderer renderer in part.GetComponentsInChildren<MeshRenderer>())
             {
-                if (renderer.name == "ArmorXRayGhost") continue;
+                if (renderer.name == "ArmorXRayGhost" || renderer.name == "AmmoRackRounds" || renderer.name == "AmmoRackGhost") continue;
                 if (renderer.shadowCastingMode == ShadowCastingMode.ShadowsOnly) continue;
                 if (renderer.enabled && seen.Add(renderer)) yield return renderer;
             }
