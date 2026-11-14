@@ -627,6 +627,14 @@ namespace ArmorFragments
             }
         }
 
+        // A fire that burns at half size and never goes out: the rack's fire before it explodes, and every vent's
+        // burn-out. Also used by RackFireSync on the fires other players' games make for our cook-off.
+        internal static void DressBurnOut(PartDamageEffect effect)
+        {
+            ScaleEffect(effect.transform, FireScale);
+            KeepBurning(effect);
+        }
+
         private static void ScaleEffect(Transform effect, float scale)
         {
             effect.localScale *= scale;
@@ -656,14 +664,15 @@ namespace ArmorFragments
                 // The game's own burning-part effect (a fuel tank that is about to blow uses the same), at half
                 // size (Jakniphe). The effect is a fresh copy for this part (PartDamageEffects.CreateEffect
                 // instantiates it), so shrinking it changes no other fire. Its particle systems are set to follow
-                // their parents' scale. (Other players see the game's full-size fire, which it syncs itself.)
+                // their parents' scale. (The game sends the plain fire to the other players itself; RackFireSync
+                // tells their mods to give it the same look.)
                 if (rack.Part != null && rack.Part.Aircraft != null && rack.Part.Aircraft.DamageEffects != null)
                 {
                     rack.Fire = rack.Part.Aircraft.DamageEffects.CreateFire(rack.Part, null);
                     if (rack.Fire != null)
                     {
-                        ScaleEffect(rack.Fire.transform, FireScale);
-                        KeepBurning(rack.Fire);
+                        DressBurnOut(rack.Fire);
+                        RackFireSync.Send(rack.Part, RackFireSync.RackFire);
                     }
                 }
             }
@@ -687,6 +696,7 @@ namespace ArmorFragments
             try
             {
                 if (rack.Fire != null && !rack.Fire.Destroyed) rack.Fire.DestroyEffect();
+                if (rack.Fire != null) RackFireSync.Send(rack.Part, RackFireSync.RackFireOut);
             }
             catch (Exception e)
             {
@@ -798,6 +808,8 @@ namespace ArmorFragments
             if (size > 0.0001f && FlightSceneScript.Instance != null)
             {
                 Recent.Add(new RecentBlast { Position = at, Time = Time.time, Owner = rack.Aircraft });
+                // Sent before the explosion, so other players' mods keep it off their copy of this vehicle too.
+                RackFireSync.SendBlast(firePart, at);
                 FlightSceneScript.Instance.CreateExplosion(ArmorFragmentsPlugin.BlastType.Value, at, size, null,
                                                            rack.Attacker, null, ExplosiveWeaponImpactType.Structure);
             }
@@ -863,8 +875,8 @@ namespace ArmorFragments
                 if (part == null || part.Aircraft == null || part.Aircraft.DamageEffects == null) continue;
                 PartDamageEffect effect = part.Aircraft.DamageEffects.CreateFire(part, null);
                 if (effect == null) continue;
-                ScaleEffect(effect.transform, FireScale);
-                KeepBurning(effect);
+                DressBurnOut(effect);
+                RackFireSync.Send(part, RackFireSync.VentFire);
             }
             BurningVents.RemoveWhere(p => p == null);
         }
@@ -874,6 +886,14 @@ namespace ArmorFragments
             if (part == null || part.Aircraft == null || part.Aircraft.DamageEffects == null) return;
             PartDamageEffect effect = part.Aircraft.DamageEffects.CreateFire(part, null);
             if (effect == null) return;
+            DressJet(effect, label, duration, jetScale, emissionBoost);
+            RackFireSync.Send(part, RackFireSync.Jet(duration, jetScale, emissionBoost));
+        }
+
+        // Turns a fire into the cook-off's jet, which then settles into the burn-out (UpdateBlasts). Also used by
+        // RackFireSync on the fire other players' games make at our vent.
+        internal static void DressJet(PartDamageEffect effect, string label, float duration, Vector3 jetScale, float emissionBoost)
+        {
             KeepBurning(effect);
 
             FireJet jet = new FireJet
@@ -955,6 +975,13 @@ namespace ArmorFragments
             }
             Recent.RemoveAll(r => Time.time - r.Time > RecentWindow);
             if (PendingFires.Count > 0) LightPendingFires();
+        }
+
+        // Another player's cook-off, announced by RackFireSync just before its explosion arrives: kept off their
+        // vehicle (our copy of it) and off armor here too, as their own game does.
+        internal static void NoteRemoteBlast(Vector3 at, AircraftScript owner)
+        {
+            Recent.Add(new RecentBlast { Position = at, Time = Time.time, Owner = owner });
         }
 
         // HandleExplosiveBlast: is this blast one of ours? Then its own vehicle (and every armor plate) is

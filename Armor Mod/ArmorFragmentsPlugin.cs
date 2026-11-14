@@ -121,6 +121,7 @@ namespace ArmorFragments
             HostResolver.Tick();
             ModuleOutputs.Tick();
             AmmoRacks.Tick();
+            RackFireSync.Tick();
             RackVisualizer.Tick();
             AmmoRackXRay.Tick();
             ImpactCamera.Tick();

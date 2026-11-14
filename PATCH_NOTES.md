@@ -32,6 +32,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
     - armor and structure aren't touched: the blast doesn't damage, push or knock off any part of your vehicle, and doesn't knock off armor plates on any vehicle;
     - other racks it reaches roll their own chance.
   - **The wreck keeps burning:** the jet then shrinks smoothly into a half-size fire that never goes out, even when the vehicle runs out of fuel; only water puts it out. Every other cook-off vent on the vehicle catches the same small fire a moment later, as the fire spreads through the hull. Only the nearest vent gets the bang and the jet.
+  - **Other players see the same cook-off:** the game already sends them its fires and the bang. Their mod gives those fires the same look (the half-size rack fire, the jet flaring up and settling, vent fires that never go out) and keeps the bang off the burning vehicle and armor on their screen too. Players without the mod see the game's plain fires.
   - **Knocked out, not blown apart:** once a rack catches fire, the vehicle is knocked out. The game's own vehicle and part explosions are off for it, so the cooked modules, or a fuel tank going up later, can't tear the shell apart. The game no longer counts it as destroyed: use Funky Trees on `<group>_boom` or the modules' damage to cut its controls.
 - **Funky Trees:**
   - `<group>_rounds`: rounds the group can still fire.

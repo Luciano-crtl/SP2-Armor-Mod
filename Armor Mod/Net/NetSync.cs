@@ -14,7 +14,7 @@ using UnityEngine;
 namespace ArmorFragments
 {
     // Multiplayer plumbing of the mod, built on the game's own "part network message" channel (the one
-    // magnets and targeting pods use). Two messages travel on it:
+    // magnets and targeting pods use). Two messages travel on it (plus RackFireSync's, type 202):
     //   CONFIG  host -> everyone: the host's balance and physics settings. A client of someone else's
     //           server uses them instead of its own while it is connected.
     //   HELLO   client -> everyone: "I run the mod". The host then knows that player's shots are already
@@ -310,23 +310,25 @@ namespace ArmorFragments
             // Message layout: type (1 byte), part id (2 bytes), then what the sender wrote.
             if (data.Array == null || data.Count < 3) return true;
             byte type = data.Array[data.Offset];
-            if (type != NetSync.ConfigMessage && type != NetSync.HelloMessage) return true;
+            if (type != NetSync.ConfigMessage && type != NetSync.HelloMessage && type != RackFireSync.FireMessage) return true;
 
             try
             {
                 PooledReader reader = ReaderPool.Retrieve(data, FishNet.InstanceFinder.NetworkManager);
                 string text;
+                int partId;
                 try
                 {
                     reader.ReadUInt8Unpacked();
-                    reader.ReadUInt16();
+                    partId = reader.ReadUInt16();
                     text = reader.ReadStringAllocated();
                 }
                 finally
                 {
                     reader.Store();
                 }
-                NetSync.OnMessage(type, text, __instance);
+                if (type == RackFireSync.FireMessage) RackFireSync.OnMessage(__instance, partId, text);
+                else NetSync.OnMessage(type, text, __instance);
             }
             catch (Exception e)
             {
