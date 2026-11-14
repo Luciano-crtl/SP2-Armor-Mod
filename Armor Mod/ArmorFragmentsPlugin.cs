@@ -96,7 +96,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> FragmentRicochetMultiplier;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.6.3";
+        public const string Version = "0.7.0";
 
         private void Update()
         {
