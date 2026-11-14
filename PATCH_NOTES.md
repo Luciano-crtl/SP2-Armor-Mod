@@ -19,10 +19,11 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
 - **Cook-offs.**
   - **What counts:** a hit only matters if it passes through the part of a rack that still holds rounds. A half-empty rack is safe at the top.
   - **Every piece counts:** a shot can reach a rack as the shell itself, as spall from a plate, or as the fragments of an HE or APHE burst, including HE spall through thin armor. Each piece's path is checked against the rounds, and only the damage of the pieces that went through rounds counts toward a cook-off.
-  - **Chance, from the energy that hits the rounds:** 1 - e^(-kJ into the rounds / 100 kJ), so 100 kJ gives 63% and 300 kJ gives 95%.
+  - **Chance, from what hits the rounds:** 1 - (1 - 50%)^(shells through the rounds) x e^(-kJ into the rounds / 100 kJ).
+    - **Direct hits:** a shell punching through the cases has a 50% chance to set them off whatever its size, plus its energy. That's about 60% for a 20 mm APHE (usually within 2 shots), 85-90% for a 37 mm, and near certain for 75 mm and up.
+    - **Fragments:** they count by energy only. 100 kJ into the rounds gives 63%, 300 kJ 95%, so a few small fragments rarely do it alone.
     - **Only rounds count:** the energy is what pieces whose path crosses a round still in the rack leave there. The hitbox is the space the remaining rounds take up, and it shrinks as you fire.
-    - **Shells vs fragments:** a shell through the rounds nearly always sets them off; a few small fragments rarely do.
-    - **Hits add up:** several hits count like one hit of their total energy.
+    - **Hits add up:** several hits count like one hit of their total.
     - **Independent of the rack:** it doesn't depend on the rack's health or the Damage per kJ setting.
   - **Destroyed racks:** the hit that destroys a rack always cooks it off, if it goes through its rounds. A hit that wrecks the rack but misses the rounds (say, through the empty top of a half-empty rack) leaves them lying there, and later hits through them roll the normal chance.
   - **The game never destroys or explodes a rack.** It stops at 99.9% health, which counts as destroyed, and the game's random "part explodes" roll is off for it. Every fuselage rolls that at each new damage stage, and for a rack welded to the cockpit's structure it blew the whole vehicle apart at once, skipping the burn. From the moment a rack catches fire, the vehicle is knocked out (below).
@@ -75,6 +76,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
 - `CaseLitresPerMJ`
 - `RoundSpacingPercent`
 - `CookOffEnergyKJ` (100): kJ into the rounds for a 63% cook-off chance; lower = more sensitive
+- `CookOffDirectHit` (50%): chance per shell punching through the rounds, on top of its energy
 - `CookOffDelayMin` / `CookOffDelayMax`
 - `BlastStrength`: multiplies each round's pounds
 - `MaxBlastLb`: cap on one rack's cook-off (default 120 lb)

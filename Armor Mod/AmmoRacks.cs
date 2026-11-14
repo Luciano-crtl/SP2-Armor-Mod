@@ -20,8 +20,9 @@ namespace ArmorFragments
     //  - A rack's capacity is the whole rounds that fit its shape (RackGrid, AmmoRound).
     //  - Damage reaching a rack (PartScript.OnDamaged: the game's shell impact, fragments, explosions,
     //    crashes) may set it on fire if its line crosses a cell that still holds a round. Chance =
-    //    1 - e^(-kJ that went into the rounds / CookOffEnergyKJ); the mod's damage is turned back into kJ with
-    //    DamagePerKiloJoule. A hit that destroys the rack through its rounds always sets it on fire.
+    //    1 - (1 - CookOffDirectHit)^(shells through the rounds) x e^(-kJ into the rounds / CookOffEnergyKJ); the
+    //    mod's damage is turned back into kJ with DamagePerKiloJoule. A hit that destroys the rack through its
+    //    rounds always sets it on fire.
     //  - A burning rack can't feed the gun and explodes CookOffDelayMin..Max seconds later, with the
     //    propellant of the rounds still in it (only propellant: explosive shells aren't modeled yet).
     //  - Funky Trees: <group>_rounds (rounds the group can still fire) and <group>_fire (1 while one of its
@@ -486,10 +487,17 @@ namespace ArmorFragments
         // (Jakniphe: "each piece counts"), and OnDamaged then counts only the damage of the pieces whose path
         // crossed rounds. Only racks this game owns: a remote rack's owner gets the summed hit over the network
         // and judges it by the biggest piece. Everything of one shot happens in the same frame.
-        private static readonly Dictionary<PartScript, float> ThroughRounds = new Dictionary<PartScript, float>();
+        private sealed class Pieces
+        {
+            public float Through;     // damage of the pieces whose path crossed rounds
+            public int Shells;        // how many of them were the shell itself (a direct hit), not fragments
+        }
+
+        private static readonly Dictionary<PartScript, Pieces> ThroughRounds = new Dictionary<PartScript, Pieces>();
         private static int throughFrame = -1;
 
-        public static void NotePiece(PartScript part, float damage, Vector3 point, Vector3 direction)
+        // shell: the piece is the shell itself (FragmentSpawner.DepositCrossings), not a fragment.
+        public static void NotePiece(PartScript part, float damage, Vector3 point, Vector3 direction, bool shell)
         {
             Rack rack;
             if (damage <= 0f || part == null || !RackOf.TryGetValue(part, out rack) || rack.Grid == null) return;
@@ -500,16 +508,17 @@ namespace ArmorFragments
                 throughFrame = Time.frameCount;
             }
 
-            float through;
-            ThroughRounds.TryGetValue(part, out through);
-            if (rack.Grid.Remaining > 0 && rack.Grid.HitsRounds(part.transform, point, direction)) through += damage;
-            ThroughRounds[part] = through;   // kept at 0 too: pieces hit it, none through its rounds
+            Pieces pieces;
+            if (!ThroughRounds.TryGetValue(part, out pieces)) ThroughRounds[part] = pieces = new Pieces();   // kept empty too: pieces hit it, none through its rounds
+            if (rack.Grid.Remaining <= 0 || !rack.Grid.HitsRounds(part.transform, point, direction)) return;
+            pieces.Through += damage;
+            if (shell) pieces.Shells++;
         }
 
-        private static bool TakeNoted(PartScript part, out float through)
+        private static bool TakeNoted(PartScript part, out Pieces pieces)
         {
-            through = 0f;
-            if (throughFrame != Time.frameCount || !ThroughRounds.TryGetValue(part, out through)) return false;
+            pieces = null;
+            if (throughFrame != Time.frameCount || !ThroughRounds.TryGetValue(part, out pieces)) return false;
             ThroughRounds.Remove(part);
             return true;
         }
@@ -521,8 +530,8 @@ namespace ArmorFragments
         {
             Rack rack;
             if (!RackOf.TryGetValue(part, out rack)) return;
-            float through;
-            bool perPiece = TakeNoted(part, out through);
+            Pieces pieces;
+            bool perPiece = TakeNoted(part, out pieces);
             if (rack.Burning || rack.Exploded || rack.Grid == null || rack.Grid.Remaining <= 0) return;
 
             AircraftScript aircraft = part.Aircraft;
@@ -539,23 +548,28 @@ namespace ArmorFragments
             // that missed its rounds keeps them; later hits through them roll like any other hit.
             string levels = "damage level " + Fmt(levelBefore, "F3") + " -> " + Fmt(level, "F3") +
                             (destroyedNow ? " (destroyed by this hit)" : wreckedBefore ? " (already wrecked)" : "");
-            // The chance comes from the ENERGY that went into the rounds, not from the rack's health (Jakniphe:
-            // a 100 mm APHE through a full rack put "0.0% of its health" through its rounds and never cooked
-            // it; since 0.7.0 damage is the mod's kJ x DamagePerKiloJoule, small against a fuselage's health).
-            // Damage is turned back into kJ with the same setting.
+            // The chance comes from what hit the rounds, not from the rack's health (Jakniphe: a 100 mm APHE
+            // through a full rack put "0.0% of its health" through its rounds and never cooked it; since 0.7.0
+            // damage is the mod's kJ x DamagePerKiloJoule, small against a fuselage's health):
+            //   1 - (1 - CookOffDirectHit)^(shells through the rounds) x e^(-kJ into the rounds / CookOffEnergyKJ)
+            // A shell punching through the cases is likely to set them off whatever its size ("even a 37 ... or a
+            // 20 mm APHE after like 2 shots"); fragments add up by their energy. Damage is turned back into kJ
+            // with DamagePerKiloJoule.
             float perKiloJoule = Mathf.Max(ArmorFragmentsPlugin.DamagePerKiloJoule.Value, 1e-6f);
             float rise;
             float kiloJoules;
+            int shells = 0;
             if (perPiece)
             {
                 // A shot of the mod's own (shell, fragments, bursts): only what went through rounds counts.
-                if (through <= 0f)
+                if (pieces.Through <= 0f)
                 {
                     ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' hit, but no piece went through its rounds (" + levels + ")");
                     return;
                 }
-                rise = through / Mathf.Max(part.MaxHealth, 1f);
-                kiloJoules = through / perKiloJoule;
+                rise = pieces.Through / Mathf.Max(part.MaxHealth, 1f);
+                kiloJoules = pieces.Through / perKiloJoule;
+                shells = pieces.Shells;
             }
             else
             {
@@ -569,7 +583,7 @@ namespace ArmorFragments
                 }
                 kiloJoules = rise * Mathf.Max(part.MaxHealth, 1f) / perKiloJoule;
             }
-            levels += ", " + Fmt(kiloJoules, "F0") + " kJ into its rounds";
+            levels += ", " + Fmt(kiloJoules, "F0") + " kJ into its rounds" + (shells > 0 ? ", shell through them (direct hit)" : "");
 
             if (destroyedNow)
             {
@@ -577,7 +591,9 @@ namespace ArmorFragments
                 return;
             }
 
-            float chance = 1f - Mathf.Exp(-kiloJoules / Mathf.Max(ArmorFragmentsPlugin.CookOffEnergyKJ.Value, 0.001f));
+            float direct = Mathf.Clamp01(ArmorFragmentsPlugin.CookOffDirectHit.Value / 100f);
+            float chance = 1f - Mathf.Pow(1f - direct, shells) *
+                                Mathf.Exp(-kiloJoules / Mathf.Max(ArmorFragmentsPlugin.CookOffEnergyKJ.Value, 0.001f));
             float roll = UnityEngine.Random.value;
             bool fire = roll < chance;
             ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' hit its rounds: " + levels +
