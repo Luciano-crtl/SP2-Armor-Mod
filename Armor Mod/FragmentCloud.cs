@@ -36,40 +36,32 @@ namespace ArmorFragments
     // The fragments are not drawn at random but by stratified sampling (one per equal slice of the
     // distribution, spiralling around), so a few fragments still cover the cloud evenly.
     //
-    // Energy: a fraction of the energy left over after the armor (the shell's own break-up plus the
-    // plate's brittleness) is shared among the fragments, the central ones taking more. Mass: the plate's own spalled material
-    // (brittleness x the plug the shell punched out) plus a share of the shell itself.
+    // Energy: a fraction of the energy left over after the armor (the plate's brittleness) is shared among
+    // the fragments, the central ones taking more, but never more than the plate's own spalled material
+    // could carry at the shell's speed. Mass: that spalled material (brittleness x the plug the shell
+    // punched out). The shell itself does not break up here: it goes on (see FragmentSpawner), and an
+    // explosive one bursts later (see DetonationCloud).
     internal static class FragmentCloud
     {
         private const float SteelDensityKgPerCm3 = 0.00785f;
-        private const float ShellShareOfMass = 0.2f;     // part of the shell's own mass that breaks up
         private const float GoldenAngle = 2.39996323f;   // radians: spreads the fragments around the axis
         private const int MinFragments = 3;              // fewest rays that still show a cloud
 
-        // shellBreaksUp: explosive ammunition (the shell itself breaks up on the plate, as before). For an
-        // armor-piercing shell the fragments are the plate's own material only (spall): in proportion to
-        // its brittleness, and never more than that material could carry at the shell's speed.
+        // The fragments are the plate's own material (spall): in proportion to its brittleness, and never more
+        // than that material could carry at the shell's speed.
         public static FragmentSpec[] Generate(ArmorTag armor, ShellInfo shell, Vector3 direction,
                                               Vector3 normal, float angleDegrees, float residualEnergy,
                                               float absorbedEnergy, float effectiveThicknessMm,
-                                              bool simple, bool shellBreaksUp, out CloudSummary summary)
+                                              bool simple, out CloudSummary summary)
         {
             summary = new CloudSummary();
 
-            // Sources of fragments: the plate sheds its own material in proportion to its brittleness,
-            // and (explosive ammunition only) the shell breaks up by itself, a fixed share of the leftover.
+            // The plate sheds its own material in proportion to its brittleness. The spalled material cannot
+            // carry more energy than its own mass moving at the shell's speed.
             float brittle = Mathf.Clamp01(armor.Brittleness / 100f);
-            float shellShare = shellBreaksUp ? Mathf.Clamp01(ArmorFragmentsPlugin.ShellFragmentShare.Value) : 0f;
-            float fragmentEnergy = (shellShare + (1f - shellShare) * brittle) * residualEnergy;
             float plugMass = SteelDensityKgPerCm3 * shell.AreaCm2 * (effectiveThicknessMm * 0.1f);
-
-            if (!shellBreaksUp)
-            {
-                // The spalled material cannot carry more energy than its own mass moving at the shell's speed.
-                float spallMass = brittle * plugMass;
-                float most = 0.5f * spallMass * shell.Speed * shell.Speed;
-                fragmentEnergy = Mathf.Min(fragmentEnergy, most);
-            }
+            float spallMass = brittle * plugMass;
+            float fragmentEnergy = Mathf.Min(brittle * residualEnergy, 0.5f * spallMass * shell.Speed * shell.Speed);
             if (fragmentEnergy < 1f) return new FragmentSpec[0];
 
             // ---- Axis and plane of incidence --------------------------------------------------
@@ -97,25 +89,8 @@ namespace ArmorFragments
             float sigmaY = sigma;
 
             // ---- Mass of the cloud ------------------------------------------------------------
-            float totalMass;
-            if (shellBreaksUp)
-            {
-                totalMass = brittle * plugMass + ShellShareOfMass * shell.Mass;
-
-                // Fragments cannot fly faster than the shell that made them. If that much energy had to go
-                // into a few light fragments they would, so more of the shell is taken to break up (the
-                // more energy left over, the more of it), up to the shell's whole mass plus the plug.
-                float speedLimit = Mathf.Max(shell.Speed, 1f);
-                float massForSpeedLimit = 2f * fragmentEnergy / (speedLimit * speedLimit);
-                float mostMass = Mathf.Max(shell.Mass + brittle * plugMass, 0.0001f);
-                totalMass = Mathf.Min(Mathf.Max(totalMass, massForSpeedLimit), mostMass);
-            }
-            else
-            {
-                // Spall: only the plate's own material (the energy was already limited above to what it can carry).
-                totalMass = brittle * plugMass;
-            }
-            totalMass = Mathf.Max(totalMass, 0.0001f);
+            // Spall: only the plate's own material (the energy was already limited above to what it can carry).
+            float totalMass = Mathf.Max(spallMass, 0.0001f);
 
             // ---- How many fragments -------------------------------------------------------------
             // The cloud's mass over the typical mass of one piece (a brittle plate breaks into smaller

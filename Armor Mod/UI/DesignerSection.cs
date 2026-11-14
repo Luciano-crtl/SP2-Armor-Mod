@@ -32,6 +32,9 @@ namespace ArmorFragments.UI
         private static string builtForName;               // the name our rows were built from
         private static bool applying;                     // true while WE are changing the name
         private static bool rebuildPending;
+        private static bool builtExplosive;               // was the cannon's Projectile Type 'Explosive' when the rows were made?
+        private static bool builtCannonRows;              // ... and did the rows include the cannon's ammunition ones?
+        private static float nextPoll;                    // (unscaled time) of the next look at the cannon's Projectile Type
 
         // Called once when the designer's properties panel is created.
         public static void Attach(PartPropertiesPanelScript properties)
@@ -62,7 +65,11 @@ namespace ArmorFragments.UI
         // click handler, because rebuilding destroys the very control being clicked.
         public static void Tick()
         {
-            if (!rebuildPending) return;
+            if (!rebuildPending)
+            {
+                PollProjectileType();
+                return;
+            }
             rebuildPending = false;
             try
             {
@@ -74,8 +81,58 @@ namespace ArmorFragments.UI
             }
         }
 
+        // The cannon's Projectile Type (Basic / Explosive) is the game's own control, which we do not hear from.
+        // So we look at it a few times a second: if it changed, the ammunition rows change (an explosive shell
+        // has a fuse and a filler, a solid one has neither), and the filler goes back to the new kind's default.
+        private static void PollProjectileType()
+        {
+            if (!builtCannonRows || part == null || container == null || !container.Visible) return;
+            if (Time.unscaledTime < nextPoll) return;
+            nextPoll = Time.unscaledTime + 0.25f;
+
+            try
+            {
+                if (IsExplosive() == builtExplosive) return;
+
+                PartTags tags = TagCodec.ParseCopy(part.Part.Name);
+                if (tags.Cannon != null)
+                {
+                    tags.Cannon.FillerPercent = null;   // the default of the new kind
+                    Commit(tags, false);
+                }
+                rebuildPending = true;
+            }
+            catch (Exception e)
+            {
+                builtCannonRows = false;   // do not try again until the rows are rebuilt
+                ArmorFragmentsPlugin.Log.LogWarning("Couldn't read the cannon's Projectile Type: " + e.Message);
+            }
+        }
+
+        // The game's 'Projectile Type' setting of the selected cannon.
+        private static bool IsExplosive()
+        {
+            foreach (PartModifierData modifier in part.Part.Modifiers)
+            {
+                CannonData data = modifier as CannonData;
+                if (data != null) return data.AmmoType == CannonData.ProjectileType.Explosive;
+            }
+            return false;
+        }
+
+        private static string Describe(AmmoKind kind)
+        {
+            switch (kind)
+            {
+                case AmmoKind.APHE: return "APHE (explosive, fuse)";
+                case AmmoKind.HE: return "HE (explosive, no fuse)";
+                default: return "AP (solid shell)";
+            }
+        }
+
         private static void Rebuild()
         {
+            builtCannonRows = false;
             if (container == null) return;   // the designer was closed
 
             foreach (Widget child in container.Widgets.ToList())
@@ -131,6 +188,32 @@ namespace ArmorFragments.UI
                 {
                     Slider(builder, tags, "Shell hardness", "Hardness of the shell: a harder shell is deflected less by the armor. 100% = reference.",
                         10f, 300f, 5f, tags.Cannon.ShellHardness, " %", v => tags.Cannon.ShellHardness = v);
+
+                    // What kind of shell it is. The game's own Projectile Type says if it is explosive; the fuse
+                    // tells the two explosive kinds apart.
+                    bool explosive = IsExplosive();
+                    builtExplosive = explosive;
+                    builtCannonRows = true;
+                    AmmoKind kind = Ammunition.KindOf(explosive, tags.Cannon);
+                    builder.Text("Ammunition", Describe(kind));
+
+                    if (explosive)
+                    {
+                        builder.Toggle("Fuse",
+                            "Gives the shell a fuse (APHE): it goes through armor and bursts inside, after the distance below. Without one (HE) it bursts on the first thing it touches. Switching it resets the filler to the new kind's default.",
+                            tags.Cannon.Fuse.HasValue,
+                            on => Switch(tags, () =>
+                            {
+                                tags.Cannon.Fuse = on ? ArmorFragmentsPlugin.DefaultFuse.Value : (float?)null;
+                                tags.Cannon.FillerPercent = null;
+                            }));
+                        if (tags.Cannon.Fuse.HasValue)
+                            Slider(builder, tags, "Fuse distance", "Meters the shell flies after its first impact before it bursts.",
+                                0.1f, 10f, 0.1f, tags.Cannon.Fuse.Value, " m", v => tags.Cannon.Fuse = v);
+                        Slider(builder, tags, "Filler", "Explosive filler, as a percent of the shell's mass. The rest is the casing, which breaks into the fragments. It starts at the default of the kind of shell (HE and APHE have their own).",
+                            0f, 50f, 0.5f, tags.Cannon.FillerPercent ?? Ammunition.DefaultFillerPercent(kind), " %",
+                            v => tags.Cannon.FillerPercent = v);
+                    }
                 }
             }
 

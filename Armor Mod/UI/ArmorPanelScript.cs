@@ -89,10 +89,10 @@ namespace ArmorFragments.UI
         {
             builder.Header("Last impact");
             Live("Result", () => LastImpact.Kind);
-            Live("Impact angle", () => LastImpact.HasData
-                ? LastImpact.Angle.ToString("F0") + " deg (armor ricochets from " +
-                  LastImpact.Tolerated.ToString("F0") + " deg)"
-                : "-");
+            Live("Impact angle", () => !LastImpact.HasData
+                ? "-"
+                : LastImpact.Angle.ToString("F0") + " deg" + (LastImpact.Tolerated > 0f
+                    ? " (armor ricochets from " + LastImpact.Tolerated.ToString("F0") + " deg)" : ""));
             Live("Shell energy", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.ShellEnergy) : "-");
             Live("Absorbed by armor", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Absorbed) : "-");
             Live("Energy left", () => LastImpact.HasData ? EnergyModel.Kilojoules(LastImpact.Residual) : "-");
@@ -106,8 +106,10 @@ namespace ArmorFragments.UI
                   " g, ~" + LastImpact.FragmentSpeed.ToString("F0") + " m/s");
             Live("Fragment cloud", () => LastImpact.FragmentEnergy <= 0f
                 ? "-"
-                : "spread " + LastImpact.SigmaX.ToString("F1") + " x " + LastImpact.SigmaY.ToString("F1") +
-                  " deg, axis leaning " + LastImpact.AxisTilt.ToString("F1") + " deg");
+                : LastImpact.SigmaX <= 0f
+                    ? "all around (a burst)"
+                    : "spread " + LastImpact.SigmaX.ToString("F1") + " x " + LastImpact.SigmaY.ToString("F1") +
+                      " deg, axis leaning " + LastImpact.AxisTilt.ToString("F1") + " deg");
             Live("Rays that hit a part", () => LastImpact.HasData ? LastImpact.RaysHit.ToString() : "-");
             Live("Ricochets", () => LastImpact.HasData ? LastImpact.Ricochets.ToString() : "-");
             Live("Total damage", () => LastImpact.HasData ? LastImpact.Damage.ToString("F1") : "-");
@@ -159,7 +161,11 @@ namespace ArmorFragments.UI
             FloatSetting(ArmorFragmentsPlugin.SimShellVelocity, "Simulated shell velocity",
                 "Speed of the imaginary shell.", 10f, " m/s");
             ToggleSetting(ArmorFragmentsPlugin.SimShellExplosive, "Simulated shell explosive",
-                "Off = armor-piercing: it goes through plates and flies on. On = explosive: it breaks up on the plate. A real cannon uses its own Projectile Type (Basic = armor-piercing).");
+                "Off = armor-piercing (AP): it goes through plates and flies on. On = explosive: HE, or APHE if it has a fuse. A real cannon uses its own Projectile Type (Basic = armor-piercing).");
+            ToggleSetting(ArmorFragmentsPlugin.SimShellFuse, "Simulated shell fuse",
+                "For an explosive shell: on = APHE (it goes through armor and bursts inside, after the fuse distance). Off = HE (it bursts on the first thing it touches). A real cannon's fuse is in the designer.");
+            FloatSetting(ArmorFragmentsPlugin.SimShellFuseDistance, "Simulated fuse distance",
+                "Meters of flight after the first impact at which the simulated APHE shell bursts.", 0.1f, " m");
             FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Simulated shell caliber",
                 "Caliber of the imaginary shell. It sets the area the armor has to open and, with it, the shell's mass.", 1f, " mm");
             Live("Calculated shell mass", () =>
@@ -227,8 +233,16 @@ namespace ArmorFragments.UI
                 "Off = proportional drag (exponential). On = constant force (linear).");
             ToggleSetting(ArmorFragmentsPlugin.SimpleFragments, "Simple fragments",
                 "Off = each fragment has its own mass, energy and speed. On = equal and fixed.");
-            FloatSetting(ArmorFragmentsPlugin.ShellFragmentShare, "Shell fragment share",
-                "Explosive ammunition only: share of the leftover energy that becomes fragments even with an unbrittle plate (the shell breaking up).", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.FillerHE, "Filler of HE shells",
+                "Explosive filler (percent of the shell's mass) of an explosive shell without a fuse. The designer's filler slider starts here.", 0.5f, " %");
+            FloatSetting(ArmorFragmentsPlugin.FillerAPHE, "Filler of APHE shells",
+                "Explosive filler (percent of the shell's mass) of an explosive shell with a fuse. The designer's filler slider starts here.", 0.5f, " %");
+            FloatSetting(ArmorFragmentsPlugin.GurneySpeed, "Explosive speed",
+                "Gurney velocity of the explosive (m/s): with the filler it sets how fast the casing fragments fly outward.", 10f, " m/s");
+            FloatSetting(ArmorFragmentsPlugin.DetonationSidewaysBias, "Burst sideways bias",
+                "0 = a burst throws casing the same in every direction; 1 = mostly sideways, as a real casing does.", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.DefaultFuse, "Default fuse",
+                "Fuse distance a cannon gets when its Fuse switch is turned on in the designer.", 0.1f, " m");
             FloatSetting(ArmorFragmentsPlugin.MaxDeflection, "Max deflection",
                 "Most a plate turns an armor-piercing shell that goes through it (degrees). The real turn grows with the hit angle, the plate's hardness and thickness.", 0.5f, " deg");
             IntSetting(ArmorFragmentsPlugin.MaxPlates, "Max plates",

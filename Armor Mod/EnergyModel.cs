@@ -15,6 +15,17 @@ namespace ArmorFragments
         // always has. Anything else is armor-piercing: it goes through the plate and flies on.
         public bool Explosive;
 
+        // Explosive ammunition: a fuse (APHE) counts down a distance of flight from the first impact; without
+        // one (HE) the shell bursts at the first touch. The filler is its share of the shell's mass.
+        public bool HasFuse;
+        public float FuseLeft;        // meters of flight left before it bursts (only if HasFuse)
+        public float FillerFraction;  // 0..1
+
+        public AmmoKind Kind
+        {
+            get { return !Explosive ? AmmoKind.AP : (HasFuse ? AmmoKind.APHE : AmmoKind.HE); }
+        }
+
         // Kinetic energy: 1/2 m v^2.
         public float Energy
         {

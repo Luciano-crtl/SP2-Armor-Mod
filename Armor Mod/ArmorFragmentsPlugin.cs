@@ -67,7 +67,13 @@ namespace ArmorFragments
         internal static ConfigEntry<float> DensityModifier;
         internal static ConfigEntry<bool> ConstantForceLoss;
         internal static ConfigEntry<bool> SimpleFragments;
-        internal static ConfigEntry<float> ShellFragmentShare;
+        internal static ConfigEntry<float> FillerHE;
+        internal static ConfigEntry<float> FillerAPHE;
+        internal static ConfigEntry<float> GurneySpeed;
+        internal static ConfigEntry<float> DetonationSidewaysBias;
+        internal static ConfigEntry<float> DefaultFuse;
+        internal static ConfigEntry<bool> SimShellFuse;
+        internal static ConfigEntry<float> SimShellFuseDistance;
         internal static ConfigEntry<float> MaxDeflection;
         internal static ConfigEntry<int> MaxPlates;
         internal static ConfigEntry<bool> SimShellExplosive;
@@ -254,12 +260,30 @@ namespace ArmorFragments
                 "Energy a fragment loses inside a part: off = drag proportional to its speed (exponential), on = constant force (linear).");
             SimpleFragments = Config.Bind("Energy", "SimpleFragments", false,
                 "Off = fragments with their own mass, energy and speed (central ones carry more). On = equal energy and mass, fixed size (simpler).");
-            ShellFragmentShare = Config.Bind("Energy", "ShellFragmentShare", 0.2f,
+            FillerHE = Config.Bind("Energy", "FillerHE", 10f,
                 new ConfigDescription(
-                    "Explosive ammunition only: share of the energy left after the armor that becomes fragments even if the plate does not " +
-                    "shatter at all (the shell breaking up by itself). The plate's brittleness adds to it. " +
-                    "0 = only the plate makes fragments, 1 = all the leftover energy becomes fragments.",
+                    "Explosive filler (percent of the shell's mass) of an HE shell (explosive, no fuse). " +
+                    "The designer's filler slider starts here for that kind of ammunition.",
+                    new AcceptableValueRange<float>(0f, 50f)));
+            FillerAPHE = Config.Bind("Energy", "FillerAPHE", 3f,
+                new ConfigDescription(
+                    "Explosive filler (percent of the shell's mass) of an APHE shell (explosive, with a fuse). " +
+                    "The designer's filler slider starts here for that kind of ammunition.",
+                    new AcceptableValueRange<float>(0f, 50f)));
+            GurneySpeed = Config.Bind("Energy", "GurneySpeed", 2440f,
+                new ConfigDescription(
+                    "Gurney velocity (m/s) of the explosive: with the filler and the casing's mass it gives the speed the " +
+                    "casing fragments fly outward at, v = G x sqrt(c/m / (1 + c/(2m))). About 2440 for TNT.",
+                    new AcceptableValueRange<float>(500f, 4000f)));
+            DetonationSidewaysBias = Config.Bind("Energy", "DetonationSidewaysBias", 0.5f,
+                new ConfigDescription(
+                    "How much more of the casing flies sideways than along the shell's axis when it bursts. " +
+                    "0 = the same in every direction, 1 = mostly sideways (as the casing of a real shell does).",
                     new AcceptableValueRange<float>(0f, 1f)));
+            DefaultFuse = Config.Bind("Energy", "DefaultFuse", 0.5f,
+                new ConfigDescription(
+                    "Fuse distance (m after the impact) a cannon gets when its Fuse switch is turned on in the designer.",
+                    new AcceptableValueRange<float>(0.1f, 10f)));
             MaxDeflection = Config.Bind("Energy", "MaxDeflection", 6f,
                 new ConfigDescription(
                     "Most (degrees) a plate turns an armor-piercing shell that goes through it, toward the plate's normal. " +
@@ -271,6 +295,11 @@ namespace ArmorFragments
                     "Most plates one armor-piercing shell may be resolved against (it flies on after each plate it " +
                     "goes through, so spaced armor counts plate by plate).",
                     new AcceptableValueRange<int>(1, 10)));
+            SimShellFuse = Config.Bind("Simulation", "SimulatedShellFuse", false,
+                "Simulated explosive shell: on = it has a fuse (APHE: goes through armor and bursts inside), off = no fuse (HE: bursts on the first thing it touches).");
+            SimShellFuseDistance = Config.Bind("Simulation", "SimulatedShellFuseDistance", 0.5f,
+                new ConfigDescription("Fuse of the simulated explosive shell: meters after the first impact at which it bursts.",
+                    new AcceptableValueRange<float>(0.1f, 10f)));
             SimShellExplosive = Config.Bind("Simulation", "SimulatedShellExplosive", false,
                 "Simulated shell: off = armor-piercing (goes through plates and flies on), on = explosive (breaks up on the plate). " +
                 "A real cannon uses its own 'Projectile Type' (Basic = armor-piercing, Explosive).");
@@ -341,7 +370,8 @@ namespace ArmorFragments
             NetSync.RegisterGlobal(
                 ApplyDamage, FragmentMass, MaxFragments, BallisticRayRange, IgnoreGameDamageOnArmor,
                 DefaultShellHardness, ArmorResistance, RicochetFriction, RicochetRandomness,
-                DamagePerKiloJoule, DensityModifier, ConstantForceLoss, SimpleFragments, ShellFragmentShare,
+                DamagePerKiloJoule, DensityModifier, ConstantForceLoss, SimpleFragments,
+                FillerHE, FillerAPHE, GurneySpeed, DetonationSidewaysBias, DefaultFuse,
                 SimpleFragmentArea, MaxPartsPerFragment, SpreadBaseAngle, AxisTilt, SpreadAnisotropy,
                 MaxDeflection, MaxPlates, MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
                 FragmentRicochetAngle, FragmentRicochetMultiplier);

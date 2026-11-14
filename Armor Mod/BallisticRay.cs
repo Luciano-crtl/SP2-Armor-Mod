@@ -36,6 +36,9 @@ namespace ArmorFragments
             public float Energy;             // what the shell still carries when it gets there
             public bool RanOutOfEnergy;      // it stopped inside a part
             public Vector3 StopPoint;        // ... here
+            public bool HitObstacle;         // it ran into something that is not a part (the ground...)
+            public Vector3 ObstaclePoint;    // ... here
+            public float ObstacleDistance;   // ... this far along the ray
             public readonly List<Crossed> Crossings;
 
             public Result(bool unused)
@@ -50,6 +53,9 @@ namespace ArmorFragments
                 Energy = 0f;
                 RanOutOfEnergy = false;
                 StopPoint = Vector3.zero;
+                HitObstacle = false;
+                ObstaclePoint = Vector3.zero;
+                ObstacleDistance = 0f;
                 Crossings = new List<Crossed>();
             }
         }
@@ -104,6 +110,9 @@ namespace ArmorFragments
                 {
                     result.StoppedBy = "'" + collider.name + "' at " +
                                        candidate.distance.ToString("F0") + " m (not a part)";
+                    result.HitObstacle = true;
+                    result.ObstaclePoint = candidate.point;
+                    result.ObstacleDistance = candidate.distance;
                     break;
                 }
 
@@ -124,6 +133,131 @@ namespace ArmorFragments
             }
 
             return Finish(result, energy);
+        }
+
+        // Where an explosive shell bursts along its ray.
+        public struct Burst
+        {
+            public bool Happens;
+            public float Distance;       // along the ray from its origin
+            public Vector3 Point;
+            public float Energy;         // what the shell still carries there (0 if it was stopped)
+            public PartScript Inside;    // the part the burst point is inside of (null: in the open)
+            public string Why;
+            public float FuseLeft;       // when it does not burst before the armor it meets: the fuse left on arrival
+        }
+
+        // Where an explosive shell bursts along the ray 'ray' (traced from 'origin' along 'direction'):
+        //  - HE (no fuse): at the first thing it touches;
+        //  - APHE: where its fuse runs out, counted from the first touch (or from the start of the ray, if the
+        //    fuse is already running: a shell that has just gone through a plate); or earlier, where it is
+        //    stopped (it ran out of energy inside a part, or it hit something that is not a part).
+        // The armor the ray meets is not a stop: the armor decides what happens to the shell there (if the fuse
+        // has not run out first, the fuse that is left goes with the shell: Burst.FuseLeft).
+        // If it bursts, the ray is cut at that point: the crossings after it go, the one it is inside ends there,
+        // and the armor the ray was going to meet is forgotten.
+        public static Burst FindBurst(ref Result ray, ShellInfo shell, Vector3 origin, Vector3 direction, bool fuseRunning)
+        {
+            Burst burst = new Burst { FuseLeft = shell.FuseLeft };
+            if (!shell.Explosive) return burst;
+
+            float infinity = float.PositiveInfinity;
+            float armorDistance = ray.Armor != null ? ray.Hit.distance : infinity;
+            float stopDistance = infinity;
+            if (ray.RanOutOfEnergy) stopDistance = Vector3.Dot(ray.StopPoint - origin, direction);
+            else if (ray.HitObstacle) stopDistance = ray.ObstacleDistance;
+
+            // The first thing it touches.
+            float firstTouch = Mathf.Min(armorDistance, stopDistance);
+            if (ray.Crossings.Count > 0) firstTouch = Mathf.Min(firstTouch, ray.Crossings[0].Distance);
+            if (float.IsInfinity(firstTouch) && !fuseRunning) return burst;   // it touches nothing: no fuse, no burst
+
+            float at;
+            string why;
+            if (!shell.HasFuse)
+            {
+                at = firstTouch;
+                why = "it burst on touching something (no fuse)";
+                if (float.IsInfinity(at)) return burst;
+            }
+            else
+            {
+                float fuseStart = fuseRunning ? 0f : firstTouch;
+                float byFuse = fuseStart + Mathf.Max(shell.FuseLeft, 0f);
+                float end = Mathf.Min(armorDistance, stopDistance);
+
+                if (byFuse < end)
+                {
+                    at = byFuse;
+                    why = "its fuse ran out";
+                }
+                else if (stopDistance <= armorDistance && !float.IsInfinity(stopDistance))
+                {
+                    at = stopDistance;
+                    why = ray.RanOutOfEnergy ? "it stopped inside a part" : "it hit something that is not a part";
+                }
+                else
+                {
+                    // It meets armor before the fuse runs out (or flies off): the fuse is shorter by the way gone.
+                    if (!float.IsInfinity(armorDistance)) burst.FuseLeft = Mathf.Max(byFuse - armorDistance, 0f);
+                    return burst;
+                }
+            }
+
+            // It bursts at distance 'at'. Where is that, and what has the shell got left?
+            burst.Happens = true;
+            burst.Distance = at;
+            burst.Why = why;
+            burst.Point = origin + direction * at;
+            burst.Energy = EnergyAt(ray, shell.Energy, at);
+
+            // HE bursts on the surface it touches, just outside it.
+            if (!shell.HasFuse) burst.Point -= direction * 0.02f;
+
+            // Cut the ray there. A part the shell entered before the burst stays (cut at the burst, and the burst is
+            // inside it); one it only touches at the burst (HE: the burst is just outside it) goes.
+            float cutAfter = shell.HasFuse ? at + 0.0001f : at - 0.0001f;
+            for (int i = ray.Crossings.Count - 1; i >= 0; i--)
+            {
+                Crossed crossing = ray.Crossings[i];
+                if (crossing.Distance > cutAfter)
+                {
+                    ray.Crossings.RemoveAt(i);
+                    continue;
+                }
+                if (crossing.Exit >= at - 0.0001f) burst.Inside = crossing.Part;
+                if (crossing.Exit > at)
+                {
+                    crossing.Exit = at;
+                    crossing.Dissipated = Mathf.Max(crossing.EnergyIn - burst.Energy, 0f);
+                    crossing.EnergyOut = burst.Energy;
+                    ray.Crossings[i] = crossing;
+                }
+            }
+            ray.PassedThrough = ray.Crossings.Count;
+            ray.Part = null;
+            ray.Armor = null;
+            ray.RanOutOfEnergy = false;
+            ray.HitObstacle = false;
+            ray.StoppedBy = why;
+            return burst;
+        }
+
+        // The shell's energy 'distance' meters along the ray: what it had, less what the parts it has crossed took.
+        private static float EnergyAt(Result ray, float start, float distance)
+        {
+            float energy = start;
+            foreach (Crossed crossing in ray.Crossings)
+            {
+                if (crossing.Distance >= distance) break;
+                float after = Mathf.Max(crossing.EnergyOut, 0f);
+                if (crossing.Exit <= distance + 0.0001f) { energy = after; continue; }
+
+                // In the middle of this part.
+                float f = (distance - crossing.Distance) / Mathf.Max(crossing.Exit - crossing.Distance, 0.0001f);
+                return Mathf.Lerp(crossing.EnergyIn, after, Mathf.Clamp01(f));
+            }
+            return energy;
         }
 
         // Crosses a part. Returns true if the ray ended inside it.

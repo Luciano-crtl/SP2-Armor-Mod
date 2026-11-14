@@ -11,11 +11,15 @@ namespace ArmorFragments
     //  - an armor-piercing shell that has gone through a plate (it leaves the plate bent a little).
     // If the ray meets armor, that armor is resolved like any impact (ricochet, block or penetration),
     // which may send the shell on again, up to MaxPlates plates.
+    //
+    // An explosive shell with a fuse may burst on the way (BallisticRay.FindBurst): where its fuse runs out,
+    // or where it is stopped. The ray then ends there and the casing flies off as fragments.
     internal static class ShellFlight
     {
         // from:         where the ray starts
-        // enteredPart:  a part the ray starts inside (a real shell's first contact): it pays energy there but
-        //               takes no damage from the ray (the game's own impact damage was applied)
+        // enteredPart:  a part the ray starts inside (a real shell's first contact): it pays energy there. If the
+        //               cannon has no [CAN] tag the game's own impact damage was applied to it, so the ray adds
+        //               none; a tagged cannon has the game's damage switched off, so the ray's is all it gets
         // ignorePart:   a part to leave out altogether (the plate just gone through)
         // startDelay:   seconds after the impact at which this ray starts moving
         // leadIn:       meters of flight drawn before 'from' (the shell arriving); 0 for none
@@ -31,11 +35,17 @@ namespace ArmorFragments
 
             BallisticRay.Result ray = BallisticRay.Trace(from, direction, range, enteredPart, shell, ignorePart);
 
-            // Where the ray ends: at the armor, or where it stopped.
+            // An explosive shell may burst on the way (the fuse counts from the first touch, or is already
+            // running if the shell has just come out of a plate).
+            BallisticRay.Burst burst = BallisticRay.FindBurst(ref ray, shell, from, direction, continuation);
+
+            // Where the ray ends: where it bursts, at the armor, or where it stopped.
             Vector3 end;
             RayKind endMarker;
-            if (ray.Armor != null) { end = ray.Hit.point; endMarker = RayKind.ArmorImpact; }
+            if (burst.Happens) { end = burst.Point; endMarker = RayKind.None; }
+            else if (ray.Armor != null) { end = ray.Hit.point; endMarker = RayKind.ArmorImpact; }
             else if (ray.RanOutOfEnergy) { end = ray.StopPoint; endMarker = simulated ? RayKind.Landed : RayKind.Hit; }
+            else if (ray.HitObstacle) { end = ray.ObstaclePoint; endMarker = simulated ? RayKind.Landed : RayKind.Miss; }
             else if (ray.HasFirstPoint) { end = ray.FirstPoint; endMarker = simulated ? RayKind.Landed : RayKind.Miss; }
             else if (continuation) { end = from + direction * Mathf.Min(range, 10f); endMarker = RayKind.None; }   // out into the air
             else { end = from; endMarker = RayKind.None; }
@@ -44,10 +54,28 @@ namespace ArmorFragments
             float duration = BallisticRay.DrawShellRay(
                 from, direction, ref ray, shell, end, leadIn, startMarker, endMarker, startDelay, continuation);
 
-            // What the shell leaves in the ordinary parts it crosses is their damage.
-            float damage = FragmentSpawner.DepositCrossings(ray, from, direction, enteredPart, applyDamage, startDelay);
+            // What the shell leaves in the ordinary parts it crosses is their damage. (The part a real shell
+            // stopped in took the game's own damage already, unless the cannon's tag switched that off.)
+            float damage = FragmentSpawner.DepositCrossings(ray, from, direction, cannon == null ? enteredPart : null,
+                                                            applyDamage, startDelay);
 
             string origin = continuation ? "Shell through plate " + (nextPlate - 1) : "Shell stopped in a non-armor part";
+
+            if (burst.Happens)
+            {
+                ShellInfo burstShell = shell;
+                burstShell.Speed = Mathf.Sqrt(2f * burst.Energy / Mathf.Max(shell.Mass, 0.000001f));
+                burstShell.FuseLeft = 0f;
+
+                ArmorFragmentsPlugin.Log.LogInfo(
+                    tag + origin + "; its ballistic ray went through " + ray.PassedThrough + " parts (damage " +
+                    damage.ToString("F1") + ") and the shell burst " + burst.Distance.ToString("F2") + " m on: " + burst.Why +
+                    (burst.Inside != null ? " (inside '" + burst.Inside.Part.Name + "')" : ""));
+                FragmentSpawner.Detonate(burstShell, burst.Point, direction, burst.Inside, applyDamage, simulated,
+                                         startDelay + duration, burst.Why);
+                return;
+            }
+
             if (ray.Armor == null)
             {
                 ArmorFragmentsPlugin.Log.LogInfo(
@@ -70,6 +98,7 @@ namespace ArmorFragments
             // It reaches the armor slower than it started.
             ShellInfo atArmor = shell;
             atArmor.Speed = Mathf.Min(shell.Speed, Mathf.Sqrt(2f * ray.Energy / Mathf.Max(shell.Mass, 0.000001f)));
+            atArmor.FuseLeft = burst.FuseLeft;   // the way flown to the armor has used some of the fuse
 
             // The fragments of that armor leave when this ray reaches it.
             FragmentSpawner.Spawn(ray.Part, ray.Armor, cannon, atArmor, ray.Hit.point, direction,

@@ -53,7 +53,9 @@ namespace ArmorFragments
                 "Shell hit part '" + part.Part.Name + "' at " +
                 speed.ToString("F0") + " m/s, angle " + angle.ToString("F0") + " deg, energy " +
                 EnergyModel.Kilojoules(shell.Energy) + " (mass " + shell.Mass.ToString("F2") +
-                ", caliber " + shell.CaliberMm.ToString("F0") + " mm)");
+                ", caliber " + shell.CaliberMm.ToString("F0") + " mm, " + Ammunition.NameOf(shell.Kind) +
+                (shell.HasFuse ? ", fuse " + shell.FuseLeft.ToString("F2") + " m" : "") +
+                (shell.Explosive ? ", filler " + (shell.FillerFraction * 100f).ToString("F1") + " %" : "") + ")");
 
             if (!Handled.Add(__instance.GetInstanceID()))
             {
@@ -88,10 +90,18 @@ namespace ArmorFragments
 
                 if (armor == null)
                 {
-                    // Not armor: the game stops the shell here (damage, explosion...).
-                    // A ballistic ray carries on in its place, until it meets armor.
-                    ContinueAsBallisticRay(part, cannon, shell, contact.point, direction);
-                    __state = true;   // the ray replaces the shell
+                    if (shell.Kind == AmmoKind.HE)
+                    {
+                        // An explosive shell without a fuse bursts on the first thing it touches.
+                        BurstOnPart(shell, contact.point, direction, contact.normal, angle);
+                    }
+                    else
+                    {
+                        // Not armor: the game stops the shell here (damage, explosion...).
+                        // A ballistic ray carries on in its place, until it meets armor (or, with a fuse, bursts).
+                        ContinueAsBallisticRay(part, cannon, shell, contact.point, direction);
+                    }
+                    __state = true;   // the ray (or the burst) replaces the shell
                     return;
                 }
 
@@ -161,14 +171,16 @@ namespace ArmorFragments
                 }
             }
 
-            return new ShellInfo
+            ShellInfo shell = new ShellInfo
             {
                 Mass = body != null ? body.mass / GameMassScale : 1f,   // kilograms
                 Speed = speed,
                 CaliberMm = caliber,
                 Hardness = cannonTag != null ? cannonTag.ShellHardness : ArmorFragmentsPlugin.DefaultShellHardness.Value,
-                Explosive = explosive,
             };
+            // Explosive or not, its fuse and its filler (from the cannon's [CAN] tag and the settings).
+            Ammunition.Configure(ref shell, explosive, cannonTag);
+            return shell;
         }
 
         private static readonly System.Reflection.FieldInfo ExplosiveField =
@@ -185,6 +197,24 @@ namespace ArmorFragments
             {
                 return true;   // unknown: as before this was a choice
             }
+        }
+
+        // An HE shell (explosive, no fuse) has touched a part that is not armor: it bursts there, on the surface.
+        private static void BurstOnPart(ShellInfo shell, Vector3 point, Vector3 direction, Vector3 normal, float angle)
+        {
+            LastImpact.ShellEnergy = shell.Energy;
+            LastImpact.Absorbed = 0f;
+            LastImpact.Residual = 0f;
+            LastImpact.ShellAfter = 0f;
+            LastImpact.Deflection = 0f;
+            LastImpact.Plate = 0;
+            LastImpact.ClearCloud();
+
+            // The shell's last meters, drawn as the impact ray; the burst happens when it arrives.
+            float lead = BallisticRay.DrawSimpleTrack(point - direction * FragmentSpawner.ShellLeadIn, point,
+                                                      shell.Energy, shell.Mass, shell.CaliberMm * 0.001f);
+            FragmentSpawner.BurstOnSurface(shell, point, direction, normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value,
+                                           false, lead, "it burst on touching a part (no fuse)");
         }
 
         // The shell has stopped in 'stoppedIn', which is not armor. The ray goes on in the shell's

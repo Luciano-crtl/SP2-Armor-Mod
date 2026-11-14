@@ -273,8 +273,8 @@ namespace ArmorFragments
                 Speed = velocity.magnitude,
                 CaliberMm = data.CaliberInMilimeters,
                 Hardness = cannon.ShellHardness,
-                Explosive = data.AmmoType == CannonData.ProjectileType.Explosive,
             };
+            Ammunition.Configure(ref shell, data.AmmoType == CannonData.ProjectileType.Explosive, cannon);
             Vector3 direction = velocity.normalized;
             float angle = Vector3.Angle(direction, hit.Normal);
             angle = Mathf.Min(angle, 180f - angle);

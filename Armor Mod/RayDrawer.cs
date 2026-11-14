@@ -13,6 +13,7 @@ namespace ArmorFragments
         Ricochet,    // the ray bounced here (cyan)
         ArmorImpact, // the shell hit the armor (orange)
         Landed,      // a fragment of a simulated shot stopped here (magenta); stays until the next test
+        Detonation,  // an explosive shell burst here (bright, and bigger than the other bubbles)
     }
 
     // The full route of one ray: a list of points, plus a marker at each point
@@ -87,7 +88,7 @@ namespace ArmorFragments
         public static Transform FallbackAnchor;
 
         private static Material lineMaterial;                 // white: the color comes from the line itself
-        private static readonly Material[] BubbleMaterials = new Material[6];   // one per RayKind
+        private static readonly Material[] BubbleMaterials = new Material[System.Enum.GetValues(typeof(RayKind)).Length];   // one per RayKind
         private static Shader shaderUsed;
         private static bool initialized;
         private static bool available;
@@ -100,6 +101,7 @@ namespace ArmorFragments
                 case RayKind.Ricochet: return new Color(0.1f, 0.9f, 1f, 1f);
                 case RayKind.ArmorImpact: return new Color(1f, 0.55f, 0.1f, 1f);
                 case RayKind.Landed: return new Color(1f, 0.2f, 1f, 1f);
+                case RayKind.Detonation: return new Color(1f, 0.95f, 0.55f, 1f);
                 default: return new Color(1f, 0.9f, 0.1f, 1f);
             }
         }
@@ -213,9 +215,11 @@ namespace ArmorFragments
                 return;
             }
 
+            // A burst is a bigger event than a hit: its bubble is bigger and stays a little longer.
+            float scale = kind == RayKind.Detonation ? 3f : 1f;
             go.AddComponent<BubbleAnimation>().Init(
-                ArmorFragmentsPlugin.BubbleSize.Value,
-                ArmorFragmentsPlugin.BubbleLifetime.Value, anchor);
+                ArmorFragmentsPlugin.BubbleSize.Value * scale,
+                ArmorFragmentsPlugin.BubbleLifetime.Value * (kind == RayKind.Detonation ? 1.5f : 1f), anchor);
         }
     }
 }

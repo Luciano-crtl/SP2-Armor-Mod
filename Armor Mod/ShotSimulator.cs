@@ -107,20 +107,28 @@ namespace ArmorFragments
                 direction = camera.transform.forward;
             }
 
-            CannonTag cannon = null;   // the imaginary cannon has no properties of its own (the shell does)
+            // The imaginary cannon has no properties of its own (the shell does), except the fuse, which is
+            // what the [CAN] tag's z= is for a real one.
+            bool explosive = ArmorFragmentsPlugin.SimShellExplosive.Value;
+            CannonTag cannon = explosive && ArmorFragmentsPlugin.SimShellFuse.Value
+                ? new CannonTag { Fuse = ArmorFragmentsPlugin.SimShellFuseDistance.Value }
+                : null;
             ShellInfo shell = new ShellInfo
             {
                 Mass = EnergyModel.ShellMassForCaliber(ArmorFragmentsPlugin.SimCaliber.Value),
                 Speed = ArmorFragmentsPlugin.SimShellVelocity.Value,
                 CaliberMm = ArmorFragmentsPlugin.SimCaliber.Value,
                 Hardness = ArmorFragmentsPlugin.SimShellHardness.Value,
-                Explosive = ArmorFragmentsPlugin.SimShellExplosive.Value,
             };
+            Ammunition.Configure(ref shell, explosive, cannon);
 
             // The shell flies through every part that is not armor (leaving energy in each) and stops
             // at the first armor part, at anything that is not a part (like the ground), or when it
             // runs out of energy.
             BallisticRay.Result ray = BallisticRay.Trace(origin, direction, MaxDistance, null, shell);
+
+            // An explosive shell may burst on the way (HE on the first thing it touches; APHE after its fuse).
+            BallisticRay.Burst burst = BallisticRay.FindBurst(ref ray, shell, origin, direction, false);
 
             string passed = ray.PassedThrough == 0
                 ? ""
@@ -129,8 +137,10 @@ namespace ArmorFragments
             // Where the shell ray ends: at the armor, or where it stopped.
             Vector3 end;
             RayKind endMarker;
-            if (ray.Armor != null) { end = ray.Hit.point; endMarker = RayKind.ArmorImpact; }
+            if (burst.Happens) { end = burst.Point; endMarker = RayKind.None; }
+            else if (ray.Armor != null) { end = ray.Hit.point; endMarker = RayKind.ArmorImpact; }
             else if (ray.RanOutOfEnergy) { end = ray.StopPoint; endMarker = RayKind.Landed; }
+            else if (ray.HitObstacle) { end = ray.ObstaclePoint; endMarker = RayKind.Landed; }
             else if (ray.HasFirstPoint) { end = ray.FirstPoint; endMarker = RayKind.Landed; }
             else { end = origin + direction * 5f; endMarker = RayKind.None; }
 
@@ -148,6 +158,31 @@ namespace ArmorFragments
                 if (rayDamage <= 0f) continue;
 
                 sink[crossing.Part] = new DamageRecord { Total = rayDamage, FirstTime = crossing.ArrivalTime };
+            }
+
+            if (burst.Happens)
+            {
+                // The shell burst: its casing flies off in all directions from that point.
+                ShellInfo burstShell = shell;
+                burstShell.Speed = Mathf.Sqrt(2f * burst.Energy / Mathf.Max(shell.Mass, 0.000001f));
+                burstShell.FuseLeft = 0f;
+
+                FragmentSpawner.DamageSink = sink;
+                try
+                {
+                    FragmentSpawner.Detonate(burstShell, burst.Point, direction, burst.Inside, false, true, leadTime, burst.Why);
+                }
+                finally
+                {
+                    FragmentSpawner.DamageSink = null;
+                }
+
+                FillTop(sink);
+                Message = passed + Ammunition.NameOf(shell.Kind) + " burst " + burst.Distance.ToString("F1") +
+                          " m ahead (" + burst.Why + "): " + sink.Count + " parts would be damaged";
+
+                if (ArmorFragmentsPlugin.XRayAfterSimulation.Value) XRayView.Show(burst.Point, sink);
+                return;
             }
 
             if (ray.Armor == null)
@@ -183,6 +218,7 @@ namespace ArmorFragments
             // It reaches the armor with what is left of its energy (slower than it left the cannon).
             ShellInfo atArmor = shell;
             atArmor.Speed = Mathf.Min(shell.Speed, Mathf.Sqrt(2f * ray.Energy / Mathf.Max(shell.Mass, 0.000001f)));
+            atArmor.FuseLeft = burst.FuseLeft;   // the way flown to the armor has used some of the fuse
 
             // The same code a real shell goes through, with damage switched off. Every
             // fragment's would-be damage is added to the same per-part list.
