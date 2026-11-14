@@ -5,7 +5,14 @@
 		<AssemblyName>ArmorFragments</AssemblyName>
 		<RootNamespace>ArmorFragments</RootNamespace>
 		<LangVersion>latest</LangVersion>
-		<GameDir>C:\Program Files (x86)\Steam\steamapps\common\SimplePlanes 2</GameDir>
+		<GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\SimplePlanes 2</GameDir>
+	</PropertyGroup>
+
+	<!-- The game's data folder is named after its exe, which differs between installs
+	     ("SimplePlanes 2_Data" or "SimplePlanes 2 (1.1)_Data"). Override with -p:ManagedDir=... if neither fits. -->
+	<PropertyGroup>
+		<ManagedDir Condition="'$(ManagedDir)' == '' And Exists('$(GameDir)\SimplePlanes 2_Data\Managed')">$(GameDir)\SimplePlanes 2_Data\Managed</ManagedDir>
+		<ManagedDir Condition="'$(ManagedDir)' == '' And Exists('$(GameDir)\SimplePlanes 2 (1.1)_Data\Managed')">$(GameDir)\SimplePlanes 2 (1.1)_Data\Managed</ManagedDir>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -18,49 +25,49 @@
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="Game">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Game.dll</HintPath>
+			<HintPath>$(ManagedDir)\Game.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="UnityEngine">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\UnityEngine.dll</HintPath>
+			<HintPath>$(ManagedDir)\UnityEngine.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="UnityEngine.CoreModule">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+			<HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="UnityEngine.PhysicsModule">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+			<HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 
 		<!-- UI panel: the game's UI library (Juicy) and what it is built on -->
 		<Reference Include="Jundroo.Packages">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Jundroo.Packages.dll</HintPath>
+			<HintPath>$(ManagedDir)\Jundroo.Packages.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="Jundroo.Common">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Jundroo.Common.dll</HintPath>
+			<HintPath>$(ManagedDir)\Jundroo.Common.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="UnityEngine.UIModule">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+			<HintPath>$(ManagedDir)\UnityEngine.UIModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="UnityEngine.UI">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\UnityEngine.UI.dll</HintPath>
+			<HintPath>$(ManagedDir)\UnityEngine.UI.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="Unity.TextMeshPro">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+			<HintPath>$(ManagedDir)\Unity.TextMeshPro.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="Unity.InputSystem">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\Unity.InputSystem.dll</HintPath>
+			<HintPath>$(ManagedDir)\Unity.InputSystem.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<Reference Include="FishNet.Runtime">
-			<HintPath>$(GameDir)\SimplePlanes 2_Data\Managed\FishNet.Runtime.dll</HintPath>
+			<HintPath>$(ManagedDir)\FishNet.Runtime.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 	</ItemGroup>
