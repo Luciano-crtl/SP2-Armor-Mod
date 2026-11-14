@@ -60,7 +60,7 @@ namespace ArmorFragments
             // What the shell leaves in the ordinary parts it crosses is their damage. (The part a real shell
             // stopped in took the game's own damage already, unless the cannon's tag switched that off.)
             float damage = FragmentSpawner.DepositCrossings(ray, from, direction, cannon == null ? enteredPart : null,
-                                                            applyDamage, startDelay);
+                                                            applyDamage, startDelay, shell.CaliberMm);
 
             string origin = startMarker == RayKind.Ricochet ? "Shell ricocheted off plate " + nextPlate
                           : continuation ? "Shell through plate " + (nextPlate - 1)

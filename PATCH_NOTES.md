@@ -23,7 +23,7 @@ Tanks now carry their ammunition in racks. Racks set off by hits burn, then expl
 ### Cook-offs
 - **Only the rounds are the target.** A hit counts only if it passes through a round still in the rack, so the hitbox shrinks as you fire and a half-empty rack is safe at the top. Each piece of a shot is checked on its own: the shell, plate spall, and HE or APHE burst fragments, including HE spall through thin armor.
 - **The chance to set it off:**
-  - **Direct hits:** a shell punching through the cases is likely to set them off. That's about 64% for a 20 mm APHE, about 95% for a 37 mm, and certain for 75 mm and up.
+  - **Direct hits:** a shell punching through the cases is likely to set them off. That's about 64% for a 20 mm APHE, about 95% for a 37 mm, and certain for 75 mm and up. The shell counts with its full width, so it can't slip between packed rounds, even fired straight along them.
   - **Fragments:** count by the energy they leave in the rounds. They add up, but a few small ones rarely do it alone.
   - **Hits add up:** several hits count like one hit of their total.
   - **Destroyed racks:** the hit that destroys a rack always sets it off, if it goes through its rounds.

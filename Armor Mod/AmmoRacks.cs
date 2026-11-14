@@ -501,7 +501,10 @@ namespace ArmorFragments
         // what it carries into the rack. A shell through the cartridges counts with that energy, not with what it
         // happens to lose there (Jakniphe's test: a 100 mm went through 855 kg of rounds losing almost nothing,
         // "0 kJ into its rounds", and took 3 shots).
-        public static void NotePiece(PartScript part, float damage, Vector3 point, Vector3 direction, bool shell, float shellEnergyJ)
+        // shellRadius (m): the shell is a tube of its caliber, not a thin line (Jakniphe's 20 mm test: fired end-on
+        // into a full rack, the shell's line threaded between the rounds every shot, and only its burst counted).
+        public static void NotePiece(PartScript part, float damage, Vector3 point, Vector3 direction, bool shell,
+                                     float shellEnergyJ, float shellRadius)
         {
             Rack rack;
             if (damage <= 0f || part == null || !RackOf.TryGetValue(part, out rack) || rack.Grid == null) return;
@@ -514,7 +517,13 @@ namespace ArmorFragments
 
             Pieces pieces;
             if (!ThroughRounds.TryGetValue(part, out pieces)) ThroughRounds[part] = pieces = new Pieces();   // kept empty too: pieces hit it, none through its rounds
-            if (rack.Grid.Remaining <= 0 || !rack.Grid.HitsRounds(part.transform, point, direction)) return;
+            if (rack.Grid.Remaining <= 0) return;
+            if (!rack.Grid.HitsRounds(part.transform, point, direction, shell ? shellRadius : 0f))
+            {
+                if (shell) ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "': the shell's own path (" +
+                    Fmt(shellRadius * 2000f, "F0") + " mm wide) missed its rounds");
+                return;
+            }
             pieces.Through += damage;
             if (!shell) return;
             pieces.Shells++;

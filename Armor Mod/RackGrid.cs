@@ -629,18 +629,20 @@ namespace ArmorFragments
 
         // Does the line through this point (both ways along the direction) cross a cell that still holds a
         // round? Fragments give their direction of travel; the game's own shell impact gives the surface
-        // normal, so the line is taken both ways and clipped to the rack.
-        public bool HitsRounds(Transform part, Vector3 worldPoint, Vector3 worldDirection)
+        // normal, so the line is taken both ways and clipped to the rack. thickness (m): the piece's own radius,
+        // so a shell is a tube of its caliber and can't thread between packed rounds (0 = a thin line).
+        public bool HitsRounds(Transform part, Vector3 worldPoint, Vector3 worldDirection, float thickness = 0f)
         {
             if (Remaining <= 0) return false;
+            thickness = Mathf.Max(thickness, 0f);
 
             Vector3 p = ToFrame(part, worldPoint);
             Vector3 d = DirectionToFrame(part, worldDirection);
-            if (d.sqrMagnitude < 1e-8f) return RoundAt(p);
+            if (d.sqrMagnitude < 1e-8f) return RoundAt(p, thickness);
             d.Normalize();
 
-            // Clip the line to the rack's box (grown by a radius).
-            Vector3 min = boundsMin - Vector3.one * radius, max = boundsMax + Vector3.one * radius;
+            // Clip the line to the rack's box (grown by a radius and the piece's own).
+            Vector3 min = boundsMin - Vector3.one * (radius + thickness), max = boundsMax + Vector3.one * (radius + thickness);
             float t0 = float.MinValue, t1 = float.MaxValue;
             for (int axis = 0; axis < 3; axis++)
             {
@@ -658,26 +660,35 @@ namespace ArmorFragments
             float step = Mathf.Max(radius * 0.5f, 0.005f);
             int steps = Mathf.Min(4000, Mathf.CeilToInt((t1 - t0) / step) + 1);
             for (int i = 0; i <= steps; i++)
-                if (RoundAt(p + d * Mathf.Lerp(t0, t1, (float)i / steps))) return true;
+                if (RoundAt(p + d * Mathf.Lerp(t0, t1, (float)i / steps), thickness)) return true;
             return false;
         }
 
-        // Is there a round still in the rack at this point (frame coordinates)?
-        private bool RoundAt(Vector3 q)
+        // Is there a round still in the rack within 'thickness' of this point (frame coordinates)? With a
+        // thickness the neighboring columns and layers are looked at too.
+        private bool RoundAt(Vector3 q, float thickness = 0f)
         {
-            int column = Mathf.RoundToInt((q.x - firstX) / pitch);
-            int layer = Mathf.RoundToInt((q.y - firstY) / pitch);
-            if (column < 0 || column >= Columns || layer < 0 || layer >= Layers) return false;
+            float reach = radius * 1.0488f + thickness;   // 1.0488^2 = 1.1: the old margin of a thin line
+            int c0 = Mathf.Max(0, Mathf.FloorToInt((q.x - reach - firstX) / pitch + 0.5f));
+            int c1 = Mathf.Min(Columns - 1, Mathf.FloorToInt((q.x + reach - firstX) / pitch + 0.5f));
+            int l0 = Mathf.Max(0, Mathf.FloorToInt((q.y - reach - firstY) / pitch + 0.5f));
+            int l1 = Mathf.Min(Layers - 1, Mathf.FloorToInt((q.y + reach - firstY) / pitch + 0.5f));
 
-            List<int> row;
-            if (!rows.TryGetValue(RowKey(column, layer), out row)) return false;
-            foreach (int index in row)
+            for (int column = c0; column <= c1; column++)
             {
-                if (!present[index]) continue;
-                Round round = rounds[index];
-                if (Mathf.Abs(q.z - round.Center.z) > length * 0.5f) continue;
-                float dx = q.x - round.Center.x, dy = q.y - round.Center.y;
-                if (dx * dx + dy * dy <= radius * radius * 1.1f) return true;
+                for (int layer = l0; layer <= l1; layer++)
+                {
+                    List<int> row;
+                    if (!rows.TryGetValue(RowKey(column, layer), out row)) continue;
+                    foreach (int index in row)
+                    {
+                        if (!present[index]) continue;
+                        Round round = rounds[index];
+                        if (Mathf.Abs(q.z - round.Center.z) > length * 0.5f + thickness) continue;
+                        float dx = q.x - round.Center.x, dy = q.y - round.Center.y;
+                        if (dx * dx + dy * dy <= reach * reach) return true;
+                    }
+                }
             }
             return false;
         }

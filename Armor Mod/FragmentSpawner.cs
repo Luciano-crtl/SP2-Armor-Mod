@@ -418,12 +418,14 @@ namespace ArmorFragments
         // The shell itself leaves energy in every ordinary part it flew through: that is their damage.
         // 'skip' is a part that already took the game's own impact damage (a real shell's first contact).
         // Returns the damage (applied or not). startDelay: seconds after the impact at which the ray started.
+        // shellCaliberMm: the shell's width, so an ammo rack sees it as a tube, not a thin line.
         public static float DepositCrossings(BallisticRay.Result ray, Vector3 from, Vector3 direction,
-                                             PartScript skip, bool applyDamage, float startDelay)
+                                             PartScript skip, bool applyDamage, float startDelay, float shellCaliberMm = 0f)
         {
             TraceResult total = default;
             BeginBatch();
             depositingShell = true;   // an ammo rack treats the shell itself as a direct hit
+            shellRadius = Mathf.Max(shellCaliberMm, 0f) * 0.0005f;   // mm of caliber -> m of radius
             try
             {
                 foreach (BallisticRay.Crossed crossing in ray.Crossings)
@@ -438,6 +440,7 @@ namespace ArmorFragments
             {
                 depositingShell = false;
                 shellEnergyIn = 0f;
+                shellRadius = 0f;
                 EndBatch();
             }
             return total.Damage;
@@ -728,11 +731,13 @@ namespace ArmorFragments
 
         private static bool depositingShell;   // true while DepositCrossings lays down the shell's own path
         private static float shellEnergyIn;    // J the shell carries into the part being deposited
+        private static float shellRadius;      // m: half the shell's caliber
 
         private static void Accumulate(PartScript part, float damage, Vector3 point, Vector3 dir)
         {
             // An ammo rack judges each piece's path against its rounds before the pieces are summed up.
-            AmmoRacks.NotePiece(part, damage, point, dir, depositingShell, depositingShell ? shellEnergyIn : 0f);
+            AmmoRacks.NotePiece(part, damage, point, dir, depositingShell,
+                                depositingShell ? shellEnergyIn : 0f, depositingShell ? shellRadius : 0f);
 
             if (batchDepth <= 0)
             {
