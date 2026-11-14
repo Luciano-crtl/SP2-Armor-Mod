@@ -26,7 +26,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
   - **A believable blast:** the explosion has a bomb's look but not a bomb's power.
     - Each round counts as its propellant's explosive equivalent: about 0.58 lb for a 50 mm round at 835 m/s, so a Pz III's 90 rounds make about 55 lb.
     - The total is capped at 120 lb and sized like the game's own bombs: "Boom 25" (250 lb) is 0.8, so 55 lb is 0.18.
-  - **One bang, then a jet of fire:** the cook-off vents through the nearest part marked **Cook-off vent** (`[VNT]`, any part: a turret ring or a hatch), or just above the rack with no vent. There is a single bomb-style bang sized by its pounds, then the fire flares up and rises in a jet for 3 to 10 s depending on the pounds. At the 120 lb cap, the flare-up is about 3x wider and 8x taller than the fire it settles into.
+  - **One bang, then a jet of fire:** the cook-off vents through the nearest part marked **Cook-off vent** (`[VNT]`: a fuselage at the turret ring, or a hatch; not armor), or just above the rack with no vent. There is a single bomb-style bang sized by its pounds, then the fire flares up and rises in a jet for 3 to 10 s depending on the pounds. At the 120 lb cap, the flare-up is about 3x wider and 8x taller than the fire it settles into.
   - **The tank holds its shape:**
     - the cook-off only cooks your damage modules (`[MOD]`) and other ammo racks near the rack (destroyed close in, damaged farther out; radius 1 m plus 1 m per 25 lb, so 3 m for 50 lb);
     - armor and structure aren't touched: the blast doesn't damage, push or knock off any part of your vehicle, and doesn't knock off armor plates on any vehicle;
@@ -41,6 +41,15 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
 
   The default group's variables are `Ammo_rounds`, `Ammo_fire` and `Ammo_boom`.
 
+### Vehicles keep their shape
+- **No more damage explosions, on any vehicle:** spall reaching a hull's inner fuselages used to set off the game's "part explodes" roll, and a part welded to the cockpit blew the whole vehicle up and stripped its parts. The game no longer blows parts or vehicles up because of damage. That covers the damage-stage roll, the damage limit, damaged fuel tanks and propellers, and explosion chains.
+  - Vehicles are knocked out through their modules and ammo racks instead.
+  - Destroyed parts stay attached, so wings no longer fall off planes.
+  - The game doesn't count such vehicles as destroyed.
+  - Weapons' own explosions (bombs, missiles, cook-offs) are unchanged.
+  - Setting: `GameDamageExplosions` (default off).
+- **Armored vehicles take damage only in their modules and racks:** on a vehicle with any `[ARM]` part, the mod's shells and fragments damage only damage modules (`[MOD]`) and ammo racks (`[AMM]`). The rest of the structure only slows them down. Vehicles without armor, like planes, still take it on every part. Setting: `ArmoredStructureDamage` (default off).
+
 ### X-ray view
 - **Your own racks show their rounds in the X-ray view:** your vehicle with F8, or the parts around a simulated shot. It follows the rack live: rounds vanish from the top as you fire, a burning rack's rounds glow orange, and an exploded rack shows empty. Other players' racks aren't shown, because their contents only exist in their game.
 
@@ -53,7 +62,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
 - **Rack read-out:** Status, Rounds held, Layout, Lost to shape, Space (L x W x H), Round size, Shell, Rounds weight and its Funky Trees variables. It updates as you reshape the fuselage or change the cannon.
 - **Cannon read-out:** Ammo group, Ammo from, Rounds, Round size and Shell.
 - **Estimated penetration, on every cannon:** shell energy, mass and muzzle velocity, plus the thickest plate it gets through at 0, 30 and 60 degrees, one row each. It's worked out from the mod's armor rule at the muzzle, with the current armor resistance; ricochets and plate hardness aren't counted. Example: a 100 mm Slug at 1000 m/s gets through 142 / 123 / 71 mm. APHE gets through like AP; HE shows "none: bursts on contact", since only its fragments go on.
-- **Cook-off vent:** a toggle on every part.
+- **Cook-off vent:** a toggle on fuselages (a part of another kind already marked as a vent keeps its toggle, to switch it off).
 - **Armor is exclusive:** armor takes no damage, so a part can't be armor and also a damage module, ammo rack or cook-off vent. Turning Armor on switches those off, and turning one of them on switches Armor off. Put a vent on a non-armor part, such as a hatch or a ring under the armor.
 
 ### Settings (config file only, section `[AmmoRacks]`; the host's values apply in multiplayer)

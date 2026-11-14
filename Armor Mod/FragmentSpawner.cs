@@ -680,7 +680,8 @@ namespace ArmorFragments
             if (joules <= 0f) return;
 
             PartTags tags = TagCodec.Parse(part.Part.Name);
-            if (tags.Armor != null) return;
+            // Armor takes none; on an armored vehicle, neither does the structure (only modules and racks).
+            if (!VehicleRules.TakesModDamage(part, tags)) return;
 
             float damage = joules / 1000f * ArmorFragmentsPlugin.DamagePerKiloJoule.Value;
 

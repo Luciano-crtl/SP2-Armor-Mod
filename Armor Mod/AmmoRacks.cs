@@ -1249,13 +1249,15 @@ namespace ArmorFragments
         }
     }
 
-    // A knocked-out vehicle (its rack has exploded) is never blown apart by the game: see AmmoRacks.KnockOut.
+    // The game blows a vehicle up only because of damage (a part of the cockpit's group exploding, or the damage
+    // limit). Off for a knocked-out vehicle (AmmoRacks.KnockOut), and for every vehicle while the game's damage
+    // explosions are off (VehicleRules).
     [HarmonyPatch(typeof(AircraftScript), "QueueExplosion")]
     internal static class KnockedOutVehicleExplosionPatch
     {
         private static bool Prefix(AircraftScript __instance)
         {
-            return !AmmoRacks.IsKnockedOut(__instance);
+            return VehicleRules.GameMayExplode(__instance);
         }
     }
 
@@ -1263,12 +1265,14 @@ namespace ArmorFragments
     // each new damage stage rolls a chance to ExplodePart it (BodyScript.OnPartDamageLevelIncreased), without
     // reaching 0 health; for a rack in the cockpit's group that blew the whole vehicle up at once (Jakniphe's
     // second cook-off test, with the rack held at 99.9%: the top stage has the highest chance).
+    // ExplodePart is only ever called because of damage (the damage-stage roll, fuel tanks, propellers, explosion
+    // chains): see VehicleRules for all of them. Same rule as above.
     [HarmonyPatch(typeof(BodyScript), "ExplodePart", new Type[] { typeof(PartScript) })]
     internal static class KnockedOutPartExplosionPatch
     {
         private static bool Prefix(PartScript part)
         {
-            return part == null || (!AmmoRacks.IsRack(part) && !AmmoRacks.IsKnockedOut(part.Aircraft));
+            return part == null || (!AmmoRacks.IsRack(part) && VehicleRules.GameMayExplode(part.Aircraft));
         }
     }
 
@@ -1277,7 +1281,7 @@ namespace ArmorFragments
     {
         private static bool Prefix(PartScript part)
         {
-            return part == null || (!AmmoRacks.IsRack(part) && !AmmoRacks.IsKnockedOut(part.Aircraft));
+            return part == null || (!AmmoRacks.IsRack(part) && VehicleRules.GameMayExplode(part.Aircraft));
         }
     }
 

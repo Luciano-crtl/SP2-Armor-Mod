@@ -188,10 +188,20 @@ namespace ArmorFragments.UI
             bool canModule = Has<JEngineData>() || Has<TurboshaftData>() || Has<JetEngineData>() ||
                              Has<FuelTankData>() || Has<PropellerAssemblyData>() || Has<JFuselageData>();
 
-            // Every part can be an ammo rack cook-off vent, so the section always shows (other parts: only that).
+            PartTags tags = TagCodec.ParseCopy(part.Part.Name);
+
+            // Cook-off vents are fuselages (Jakniphe: the toggle on every part was too much), the same parts that
+            // can be armor or racks. A part of another kind already marked as a vent keeps its toggle, so the mark
+            // can be taken off.
+            bool canVent = canArmor || tags.Vent != null;
+
+            if (!canArmor && !canCannon && !canModule && !canVent)
+            {
+                container.Visible = false;
+                return;
+            }
             container.Visible = true;
 
-            PartTags tags = TagCodec.ParseCopy(part.Part.Name);
             builtForName = part.Part.Name;
             PanelBuilder builder = new PanelBuilder(container);
             builder.Header("Armor Fragments");
@@ -336,16 +346,19 @@ namespace ArmorFragments.UI
                 }
             }
 
-            builder.Toggle("Cook-off vent",
-                "Ammo rack cook-offs vent through this part: the bang and the fire jet come out of the vent nearest the " +
-                "rack, and every vent keeps burning afterwards. Mark a turret ring or a hatch (not armor). With no vent, " +
-                "it vents just above the rack.",
-                tags.Vent != null,
-                on => Switch(tags, () =>
-                {
-                    tags.Vent = on ? new VentTag() : null;
-                    if (on) tags.Armor = null;
-                }));
+            if (canVent)
+            {
+                builder.Toggle("Cook-off vent",
+                    "Ammo rack cook-offs vent through this part: the bang and the fire jet come out of the vent nearest the " +
+                    "rack, and every vent keeps burning afterwards. Mark a fuselage at the turret ring or a hatch (not " +
+                    "armor). With no vent, it vents just above the rack.",
+                    tags.Vent != null,
+                    on => Switch(tags, () =>
+                    {
+                        tags.Vent = on ? new VentTag() : null;
+                        if (on) tags.Armor = null;
+                    }));
+            }
         }
 
         // ---- Ammo rack read-outs ---------------------------------------------------------

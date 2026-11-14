@@ -21,6 +21,8 @@ namespace ArmorFragments
         internal static ConfigEntry<float> RayWidthScale;
         internal static ConfigEntry<float> MinRayWidth;
         internal static ConfigEntry<bool> IgnoreGameDamageOnArmor;
+        internal static ConfigEntry<bool> GameDamageExplosions;
+        internal static ConfigEntry<bool> ArmoredStructureDamage;
         internal static ConfigEntry<float> RayTrailLength;
         internal static ConfigEntry<float> BubbleSize;
         internal static ConfigEntry<float> BubbleLifetime;
@@ -168,6 +170,16 @@ namespace ArmorFragments
             IgnoreGameDamageOnArmor = Config.Bind("Fragments", "IgnoreGameDamageOnArmor", true,
                 "If true, the game's own damage to parts with an [ARM] tag (shell impact, explosions, crashes) is ignored: " +
                 "armor is judged only by the energy model and cannot be destroyed.");
+            GameDamageExplosions = Config.Bind("Fragments", "GameDamageExplosions", false,
+                "If false (Jakniphe's choice), the game never blows parts or vehicles up because of damage, on any vehicle: " +
+                "no 'part explodes' roll on damaged parts, no vehicle explosion at the damage limit, no delayed fuel tank or " +
+                "propeller explosions, no explosion chains. Vehicles are knocked out through their modules and ammo racks, " +
+                "and keep their shape; destroyed parts stay attached (wings no longer fall off). Weapons' own explosions are " +
+                "not affected. True = the game's usual behavior.");
+            ArmoredStructureDamage = Config.Bind("Fragments", "ArmoredStructureDamage", false,
+                "If false (Jakniphe's choice), on a vehicle with armor ([ARM] parts) only damage modules ([MOD]) and ammo " +
+                "racks ([AMM]) take the mod's damage (shells and fragments); the rest of the structure only slows them down. " +
+                "Vehicles without armor (planes) take it on every part either way.");
             RayTrailLength = Config.Bind("Debug", "RayTrailLength", 6f,
                 new ConfigDescription("Length of the fading trail behind the moving ray, in meters.",
                     new AcceptableValueRange<float>(0.1f, 50f)));
@@ -451,6 +463,7 @@ namespace ArmorFragments
 
             NetSync.RegisterGlobal(
                 ApplyDamage, FragmentMass, MaxVisualFragments, BallisticRayRange, IgnoreGameDamageOnArmor,
+                GameDamageExplosions, ArmoredStructureDamage,
                 DefaultShellHardness, ArmorResistance, RicochetFriction, RicochetRandomness,
                 DamagePerKiloJoule, DensityModifier, ConstantForceLoss, SimpleFragments,
                 FillerHE, FillerAPHE, GurneySpeed, DetonationSidewaysBias, DefaultFuse,
