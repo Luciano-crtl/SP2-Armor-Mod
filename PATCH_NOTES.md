@@ -27,7 +27,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
     - **Independent of the rack:** it doesn't depend on the rack's health or the Damage per kJ setting.
   - **Destroyed racks:** the hit that destroys a rack always cooks it off, if it goes through its rounds. A hit that wrecks the rack but misses the rounds (say, through the empty top of a half-empty rack) leaves them lying there, and later hits through them roll the normal chance.
   - **The game never destroys or explodes a rack.** It stops at 99.9% health, which counts as destroyed, and the game's random "part explodes" roll is off for it. Every fuselage rolls that at each new damage stage, and for a rack welded to the cockpit's structure it blew the whole vehicle apart at once, skipping the burn. From the moment a rack catches fire, the vehicle is knocked out (below).
-  - **Fire, then explosion:** a cooking rack burns for 5 to 20 s, with the game's fire effect at half size, and can't feed the gun meanwhile. Then it explodes with the propellant of the rounds still inside.
+  - **Fire, then explosion:** a cooking rack always burns for 10 s, with the game's fire effect at half size, and can't feed the gun meanwhile. Then it explodes with the propellant of the rounds still inside.
   - **A believable blast:** the explosion has a bomb's look but not a bomb's power.
     - Each round counts as its propellant's explosive equivalent: about 0.58 lb for a 50 mm round at 835 m/s, so a Pz III's 90 rounds make about 55 lb.
     - The total is capped at 120 lb and sized like the game's own bombs: "Boom 25" (250 lb) is 0.8, so 55 lb is 0.18.
@@ -77,7 +77,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
 - `RoundSpacingPercent`
 - `CookOffEnergyKJ` (100): kJ into the rounds for a 63% cook-off chance; lower = more sensitive
 - `CookOffDirectHit` (50%): chance per shell punching through the rounds, on top of its energy
-- `CookOffDelayMin` / `CookOffDelayMax`
+- `CookOffBurnSeconds` (10): how long a burning rack burns before it explodes
 - `BlastStrength`: multiplies each round's pounds
 - `MaxBlastLb`: cap on one rack's cook-off (default 120 lb)
 - `BlastType`: `BombExplosion` (default; the sizes are worked out in its scale), `GeneralExplosion`, `MissileExplosion` or `RocketExplosion`

@@ -23,7 +23,7 @@ namespace ArmorFragments
     //    1 - (1 - CookOffDirectHit)^(shells through the rounds) x e^(-kJ into the rounds / CookOffEnergyKJ); the
     //    mod's damage is turned back into kJ with DamagePerKiloJoule. A hit that destroys the rack through its
     //    rounds always sets it on fire.
-    //  - A burning rack can't feed the gun and explodes CookOffDelayMin..Max seconds later, with the
+    //  - A burning rack can't feed the gun and explodes CookOffBurnSeconds (10) later, with the
     //    propellant of the rounds still in it (only propellant: explosive shells aren't modeled yet).
     //  - Funky Trees: <group>_rounds (rounds the group can still fire) and <group>_fire (1 while one of its
     //    racks burns).
@@ -678,9 +678,7 @@ namespace ArmorFragments
             // A burning rack dooms the vehicle: from now on no game explosion may blow it apart (not even the
             // craft's total-damage limit or another fuselage's disconnect roll during the burn).
             KnockOut(rack.Aircraft);
-            float min = ArmorFragmentsPlugin.CookOffDelayMin.Value;
-            float max = Mathf.Max(min, ArmorFragmentsPlugin.CookOffDelayMax.Value);
-            float delay = UnityEngine.Random.Range(min, max);
+            float delay = Mathf.Max(ArmorFragmentsPlugin.CookOffBurnSeconds.Value, 0f);   // always the same burn
             rack.ExplodeAt = Time.time + delay;
 
             try

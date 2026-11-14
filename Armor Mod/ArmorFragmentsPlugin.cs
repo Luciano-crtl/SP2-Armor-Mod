@@ -104,8 +104,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> RoundSpacingPercent;
         internal static ConfigEntry<float> CookOffEnergyKJ;
         internal static ConfigEntry<float> CookOffDirectHit;
-        internal static ConfigEntry<float> CookOffDelayMin;
-        internal static ConfigEntry<float> CookOffDelayMax;
+        internal static ConfigEntry<float> CookOffBurnSeconds;
         internal static ConfigEntry<float> BlastStrength;
         internal static ConfigEntry<string> BlastType;
         internal static ConfigEntry<float> MaxBlastLb;
@@ -442,11 +441,9 @@ namespace ArmorFragments
                     "of the energy part. Chance = 1 - (1 - this)^(shells through the rounds) x e^(-kJ / CookOffEnergyKJ): " +
                     "about 60% for a 20 mm APHE, 85-90% for a 37 mm, near certain for 75 mm and up.",
                     new AcceptableValueRange<float>(0f, 100f)));
-            CookOffDelayMin = Config.Bind("AmmoRacks", "CookOffDelayMin", 5f,
-                new ConfigDescription("Shortest time (s) a burning rack takes to explode.",
-                    new AcceptableValueRange<float>(0f, 60f)));
-            CookOffDelayMax = Config.Bind("AmmoRacks", "CookOffDelayMax", 20f,
-                new ConfigDescription("Longest time (s) a burning rack takes to explode (like the game's fuel tanks: 5 to 20).",
+            CookOffBurnSeconds = Config.Bind("AmmoRacks", "CookOffBurnSeconds", 10f,
+                new ConfigDescription("How long (s) a burning rack burns before it explodes, every time (Jakniphe: a " +
+                    "consistent 10 s; replaces the random CookOffDelayMin/Max).",
                     new AcceptableValueRange<float>(0f, 120f)));
             BlastStrength = Config.Bind("AmmoRacks", "BlastStrength", 1f,
                 new ConfigDescription(
@@ -480,7 +477,7 @@ namespace ArmorFragments
                 MaxDeflection, MaxPlates, MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
                 FragmentRicochetAngle, FragmentRicochetMultiplier,
                 AmmoRacksEnabled, CaseDiameterRatio, CaseLitresPerMJ, RoundSpacingPercent,
-                CookOffEnergyKJ, CookOffDirectHit, CookOffDelayMin, CookOffDelayMax, BlastStrength, BlastType, MaxBlastLb);
+                CookOffEnergyKJ, CookOffDirectHit, CookOffBurnSeconds, BlastStrength, BlastType, MaxBlastLb);
 
             // One patch failing (for example after a game update) must not stop the others.
             SafePatcher.PatchAll(new Harmony("com.yourname.armorfragments"), typeof(ArmorFragmentsPlugin).Assembly);
