@@ -52,8 +52,9 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
   - Up to 20,000 rounds per rack are drawn; past that, all of them still count, and the log says so.
 - **Rack read-out:** Status, Rounds held, Layout, Lost to shape, Space (L x W x H), Round size, Shell, Rounds weight and its Funky Trees variables. It updates as you reshape the fuselage or change the cannon.
 - **Cannon read-out:** Ammo group, Ammo from, Rounds, Round size and Shell.
-- **Estimated penetration, on every cannon:** shell energy, plus the thickest plate it gets through at 0, 30 and 60 degrees. It's worked out from the mod's armor rule at the muzzle, with the current armor resistance; ricochets and plate hardness aren't counted. Example: a 100 mm Slug at 1000 m/s gets through 142 / 123 / 71 mm. APHE gets through like AP; HE shows "none: bursts on contact", since only its fragments go on.
+- **Estimated penetration, on every cannon:** shell energy, mass and muzzle velocity, plus the thickest plate it gets through at 0, 30 and 60 degrees, one row each. It's worked out from the mod's armor rule at the muzzle, with the current armor resistance; ricochets and plate hardness aren't counted. Example: a 100 mm Slug at 1000 m/s gets through 142 / 123 / 71 mm. APHE gets through like AP; HE shows "none: bursts on contact", since only its fragments go on.
 - **Cook-off vent:** a toggle on every part.
+- **Armor is exclusive:** armor takes no damage, so a part can't be armor and also a damage module, ammo rack or cook-off vent. Turning Armor on switches those off, and turning one of them on switches Armor off. Put a vent on a non-armor part, such as a hatch or a ring under the armor.
 
 ### Settings (config file only, section `[AmmoRacks]`; the host's values apply in multiplayer)
 - `Enabled`

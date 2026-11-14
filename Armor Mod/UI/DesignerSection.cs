@@ -198,10 +198,21 @@ namespace ArmorFragments.UI
 
             if (canArmor)
             {
+                // Armor takes no damage, so it can't also be a damage module, an ammo rack or a cook-off vent
+                // (Jakniphe: those stayed on when armor was switched on). Switching armor on switches them off,
+                // and switching one of them on switches armor off.
                 builder.Toggle("Armor",
-                    "Makes this part armor: shells that hit it can be blocked or can send fragments behind it.",
+                    "Makes this part armor: shells that hit it can be blocked or can send fragments behind it. " +
+                    "Armor takes no damage, so it can't also be a damage module, ammo rack or cook-off vent: those switch off.",
                     tags.Armor != null,
-                    on => Switch(tags, () => tags.Armor = on ? new ArmorTag() : null));
+                    on => Switch(tags, () =>
+                    {
+                        tags.Armor = on ? new ArmorTag() : null;
+                        if (!on) return;
+                        tags.Module = null;
+                        tags.AmmoRack = null;
+                        tags.Vent = null;
+                    }));
                 if (tags.Armor != null)
                 {
                     Slider(builder, tags, "Thickness", "Armor thickness.",
@@ -223,7 +234,9 @@ namespace ArmorFragments.UI
                 // Estimated penetration (Jakniphe: "so we can see its stats"), for every cannon: the energy
                 // model's own rule for a real hit, at the muzzle, against armor of the current resistance.
                 PartScript gunPart = part;
-                Live(builder, new[] { "Shell energy", "Penetration 0 / 30 / 60 deg" },
+                // One short value per row (Jakniphe: the single "0 / 30 / 60" row was cramped).
+                Live(builder, new[] { "Shell energy", "Shell mass", "Muzzle velocity",
+                                      "Penetration, 0 deg", "Penetration, 30 deg", "Penetration, 60 deg" },
                      () => PenetrationSignature(gunPart), () => PenetrationTexts(gunPart));
 
                 if (tags.Cannon != null)
@@ -276,7 +289,11 @@ namespace ArmorFragments.UI
                 builder.Toggle("Damage module",
                     "Marks this part as one that reacts to fragment damage.",
                     tags.Module != null,
-                    on => Switch(tags, () => tags.Module = on ? new ModuleTag() : null));
+                    on => Switch(tags, () =>
+                    {
+                        tags.Module = on ? new ModuleTag() : null;
+                        if (on) tags.Armor = null;
+                    }));
                 if (tags.Module != null)
                 {
                     // The module reports how damaged it is (0 = intact, 1 = destroyed) as a Funky Trees variable.
@@ -291,7 +308,11 @@ namespace ArmorFragments.UI
                     "Makes this fuselage an ammo rack: it holds the rounds of the cannons in its group ([CAN g=]), " +
                     "and can catch fire and explode when its rounds are hit.",
                     tags.AmmoRack != null,
-                    on => Switch(tags, () => tags.AmmoRack = on ? new AmmoRackTag() : null));
+                    on => Switch(tags, () =>
+                    {
+                        tags.AmmoRack = on ? new AmmoRackTag() : null;
+                        if (on) tags.Armor = null;
+                    }));
                 if (tags.AmmoRack != null)
                 {
                     PartScript rackPart = part;
@@ -316,10 +337,15 @@ namespace ArmorFragments.UI
             }
 
             builder.Toggle("Cook-off vent",
-                "Ammo rack cook-offs vent through this part: the pillar of fire runs from the rack to the nearest vent, " +
-                "then straight up. Mark a turret ring or a hatch. With no vent, it rises straight up from the rack.",
+                "Ammo rack cook-offs vent through this part: the bang and the fire jet come out of the vent nearest the " +
+                "rack, and every vent keeps burning afterwards. Mark a turret ring or a hatch (not armor). With no vent, " +
+                "it vents just above the rack.",
                 tags.Vent != null,
-                on => Switch(tags, () => tags.Vent = on ? new VentTag() : null));
+                on => Switch(tags, () =>
+                {
+                    tags.Vent = on ? new VentTag() : null;
+                    if (on) tags.Armor = null;
+                }));
         }
 
         // ---- Ammo rack read-outs ---------------------------------------------------------
@@ -410,7 +436,7 @@ namespace ArmorFragments.UI
         }
 
         // Ammo from, Rounds, Round (W x L), Shell
-        // Shell energy, Penetration 0 / 30 / 60 deg.
+        // Shell energy, Shell mass, Muzzle velocity, Penetration at 0, 30 and 60 deg.
         // A shell gets through a plate when its energy beats ArmorResistance x thickness / cos(angle) x its
         // cross-section in cm2 (EnergyModel.ArmorAbsorption), so the thickest plate it beats is
         // energy / (resistance x area) x cos(angle). At the muzzle (the shell slows down with distance);
@@ -418,7 +444,7 @@ namespace ArmorFragments.UI
         private static string[] PenetrationTexts(PartScript cannonPart)
         {
             AmmoRound round;
-            if (!AmmoRound.TryFromPart(cannonPart, out round)) return new[] { "-", "-" };
+            if (!AmmoRound.TryFromPart(cannonPart, out round)) return new[] { "-", "-", "-", "-", "-", "-" };
 
             float energy = round.Energy;   // J
             float radiusCm = round.CaliberMm * 0.05f;
@@ -426,17 +452,20 @@ namespace ArmorFragments.UI
             float resistance = Mathf.Max(ArmorFragmentsPlugin.ArmorResistance.Value, 0.001f);
             float headOn = energy / (resistance * Mathf.Max(areaCm2, 0.0001f));   // mm
 
-            string Mm(float angle) => (headOn * Mathf.Cos(angle * Mathf.Deg2Rad)).ToString("F0", CultureInfo.InvariantCulture);
+            // HE bursts on the first thing it touches (FragmentSpawner.BurstOnSurface): the shell itself goes
+            // through nothing, only its fragments do. APHE goes through like AP.
+            bool bursts = KindOfCannon(cannonPart) == AmmoKind.HE;
+            string Mm(float angle) => bursts
+                ? "none (HE bursts)"
+                : (headOn * Mathf.Cos(angle * Mathf.Deg2Rad)).ToString("F0", CultureInfo.InvariantCulture) + " mm";
             return new[]
             {
-                (energy / 1000f).ToString("F0", CultureInfo.InvariantCulture) + " kJ (" +
-                    round.ShellMass.ToString("F2", CultureInfo.InvariantCulture) + " kg at " +
-                    round.Velocity.ToString("F0", CultureInfo.InvariantCulture) + " m/s)",
-                // HE bursts on the first thing it touches (FragmentSpawner.BurstOnSurface): the shell itself
-                // goes through nothing, only its fragments do. APHE goes through like AP.
-                KindOfCannon(cannonPart) == AmmoKind.HE
-                    ? "none: HE bursts on contact (fragments only)"
-                    : Mm(0f) + " / " + Mm(30f) + " / " + Mm(60f) + " mm",
+                (energy / 1000f).ToString("F0", CultureInfo.InvariantCulture) + " kJ",
+                round.ShellMass.ToString("F2", CultureInfo.InvariantCulture) + " kg",
+                round.Velocity.ToString("F0", CultureInfo.InvariantCulture) + " m/s",
+                Mm(0f),
+                Mm(30f),
+                Mm(60f),
             };
         }
 
