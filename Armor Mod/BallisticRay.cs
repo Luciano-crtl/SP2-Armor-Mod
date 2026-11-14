@@ -306,10 +306,13 @@ namespace ArmorFragments
 
         // Drawn speed of something carrying 'energy' with 'mass': its real speed times the multiplier
         // that makes it slow enough to follow.
+        // Only the simulated shot and the impact camera slow the rays down (they are there to be watched). The
+        // rays of an ordinary shot in the world move at their real speed.
         public static float VisualSpeed(float energy, float mass)
         {
             float real = Mathf.Sqrt(2f * Mathf.Max(energy, 0f) / Mathf.Max(mass, 0.000001f));
-            return Mathf.Max(real * ArmorFragmentsPlugin.VisualSpeedMultiplier.Value, 1f);
+            bool slowed = ShotSimulator.Active || ImpactCamera.IsActive;
+            return Mathf.Max(slowed ? real * ArmorFragmentsPlugin.VisualSpeedMultiplier.Value : real, 1f);
         }
 
         // The shell's last meters before an impact (a single stretch at the shell's own speed).

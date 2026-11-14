@@ -324,3 +324,6 @@ Motivo: no teste da fase B os fragmentos penetravam muito mais que a AP. Causas:
 - **Veículo do atirador:** nada o exclui: fragmentos até 30 m por raio (`MaxRange`) podem atingi-lo, e os de outros jogadores seguem pelo `DamagePart`.
 - **Painel:** "Max number of visual fragments", "Fragment armor factor", "Default shell brittleness", "Simulated casing brittleness", linha "Fragments" no último impacto.
 - **Não mexi:** `GurneySpeed` (2440). Reavaliar depois do teste, já com a armadura cobrando dos fragmentos.
+
+## Velocidade real dos raios fora da câmera de impacto e do tiro simulado (sem mudar a versão)
+`BallisticRay.VisualSpeed` só aplica `VisualSpeedMultiplier` quando `ShotSimulator.Active` (tiro simulado em andamento) ou `ImpactCamera.IsActive`; nos demais tiros reais os raios andam na velocidade real (`√(2E/m)`), então fragmentos rápidos quase não são vistos. A velocidade fica gravada no caminho na hora do desenho, então vale o estado da câmera nesse instante.

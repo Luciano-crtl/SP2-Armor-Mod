@@ -71,7 +71,23 @@ namespace ArmorFragments
             return true;
         }
 
+        // True while a simulated shot is being worked out and drawn (its rays are slowed down to be watched).
+        public static bool Active { get; private set; }
+
         public static void Fire()
+        {
+            Active = true;
+            try
+            {
+                FireCore();
+            }
+            finally
+            {
+                Active = false;
+            }
+        }
+
+        private static void FireCore()
         {
             Top.Clear();
             RayDrawer.ClearPersistent();   // the previous test's stop points go away
