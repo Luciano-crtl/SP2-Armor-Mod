@@ -30,7 +30,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
   - **Fire, then explosion:** a cooking rack always burns for 10 s, with the game's fire effect at half size, and can't feed the gun meanwhile. Then it explodes with the propellant of the rounds still inside.
   - **A believable blast:** the explosion has a bomb's look but not a bomb's power.
     - Each round counts as its propellant's explosive equivalent: about 0.58 lb for a 50 mm round at 835 m/s, so a Pz III's 90 rounds make about 55 lb.
-    - The total is capped at 120 lb and sized like the game's own bombs: "Boom 25" (250 lb) is 0.8, so 55 lb is 0.18.
+    - The total is capped at 120 lb. The bang is drawn at 75% of a game bomb of the same weight ("Boom 25", 250 lb, is 0.8), so 55 lb is 0.13 and 96 lb is 0.23.
   - **One bang, then a jet of fire:** the cook-off vents through the nearest part marked **Cook-off vent** (`[VNT]`: a fuselage at the turret ring, or a hatch; not armor), or just above the rack with no vent. There is a single bomb-style bang sized by its pounds, then the fire flares up and rises in a jet for 3 to 10 s depending on the pounds. At the 120 lb cap, the flare-up is about 3x wider and 8x taller than the fire it settles into.
   - **The tank holds its shape:**
     - the cook-off only cooks your damage modules (`[MOD]`) and other ammo racks near the rack, by real blast physics:
@@ -87,6 +87,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
 - `CookOffWreckKPa` (1000) / `CookOffDamageKPa` (200): blast overpressure that wrecks a module or rack / below which it does nothing
 - `BlastStrength`: multiplies each round's pounds
 - `MaxBlastLb`: cap on one rack's cook-off (default 120 lb)
+- `BlastVisualPercent` (75%): size of the bang compared with a game bomb of the same weight
 - `BlastType`: `BombExplosion` (default; the sizes are worked out in its scale), `GeneralExplosion`, `MissileExplosion` or `RocketExplosion`
 - `ShowInDesigner` (only changes what you see)
 - `DebugDumpShape` (off by default): writes the last measured rack's shape and round positions to `BepInEx/ammo-rack-shape.obj`, for reporting measuring problems

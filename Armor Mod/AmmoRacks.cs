@@ -746,7 +746,7 @@ namespace ArmorFragments
             // 0.0032 per lb. (The first version gave 67 rounds of 100 mm a size of 57.6: 8 puffs of 16.5.)
             float pounds = Mathf.Min(rounds * rack.Group.Round.ExplosiveLb * ArmorFragmentsPlugin.BlastStrength.Value,
                                      ArmorFragmentsPlugin.MaxBlastLb.Value);
-            float size = pounds * BombSizePerLb;
+            float size = BangSize(pounds);
             Vector3 center = rack.Part != null ? rack.Grid.WorldCenter(rack.Part.transform) : rack.LastPosition;
 
             ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' exploded: " + rounds + " rounds of " +
@@ -824,6 +824,13 @@ namespace ArmorFragments
         // The game's bombs: explosion size per pound ("Boom 25", 250 lb = 0.8).
         private const float BombSizePerLb = 0.8f / 250f;
 
+        // The bang: sized like the game's bombs by the pounds, times BlastVisualPercent (Jakniphe: a bit big at
+        // 100%; 75%). It is also the game's blast on other vehicles nearby (this one and armor are left out).
+        private static float BangSize(float pounds)
+        {
+            return pounds * BombSizePerLb * Mathf.Max(ArmorFragmentsPlugin.BlastVisualPercent.Value, 0f) / 100f;
+        }
+
         // The fire jet's flare-up (size and extra flames), as a share of the first version's.
         private const float JetSize = 1f / 3f;
 
@@ -834,7 +841,7 @@ namespace ArmorFragments
             Vector3 at = vent != null ? vent.transform.position : center + Vector3.up * 0.5f;
 
             // 1. The bang.
-            float size = pounds * BombSizePerLb;
+            float size = BangSize(pounds);
             if (size > 0.0001f && FlightSceneScript.Instance != null)
             {
                 Recent.Add(new RecentBlast { Position = at, Time = Time.time, Owner = rack.Aircraft });

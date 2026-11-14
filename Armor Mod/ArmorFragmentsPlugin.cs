@@ -111,6 +111,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> BlastStrength;
         internal static ConfigEntry<string> BlastType;
         internal static ConfigEntry<float> MaxBlastLb;
+        internal static ConfigEntry<float> BlastVisualPercent;
         internal static ConfigEntry<bool> ShowRacksInDesigner;   // local: only changes what you see
         internal static ConfigEntry<bool> DebugDumpShape;        // local: diagnostic file
 
@@ -473,6 +474,12 @@ namespace ArmorFragments
             MaxBlastLb = Config.Bind("AmmoRacks", "MaxBlastLb", 120f,
                 new ConfigDescription("Most pounds of explosive one rack's cook-off can be, however many rounds it holds.",
                     new AcceptableValueRange<float>(1f, 1000f)));
+            BlastVisualPercent = Config.Bind("AmmoRacks", "BlastVisualPercent", 75f,
+                new ConfigDescription(
+                    "Size of the cook-off's bang, in % of a game bomb of the same pounds (Boom 25 = 250 lb = 0.8): at 75%, " +
+                    "96 lb gives 0.23. It is also the game's blast on other vehicles nearby (the burning vehicle and " +
+                    "armor are left out). The damage inside the vehicle is set by CookOffTNTEfficiency, not this.",
+                    new AcceptableValueRange<float>(0f, 200f)));
             BlastType = Config.Bind("AmmoRacks", "BlastType", "BombExplosion",
                 new ConfigDescription(
                     "The game explosion of a cook-off's bang, at the nearest [VNT] part (or just above the rack), before " +
@@ -498,7 +505,7 @@ namespace ArmorFragments
                 FragmentRicochetAngle, FragmentRicochetMultiplier,
                 AmmoRacksEnabled, CaseDiameterRatio, CaseLitresPerMJ, RoundSpacingPercent,
                 CookOffEnergyKJ, CookOffDirectHit, CookOffBurnSeconds, CookOffTNTEfficiency, CookOffWreckKPa, CookOffDamageKPa,
-                BlastStrength, BlastType, MaxBlastLb);
+                BlastStrength, BlastType, MaxBlastLb, BlastVisualPercent);
 
             // One patch failing (for example after a game update) must not stop the others.
             SafePatcher.PatchAll(new Harmony("com.yourname.armorfragments"), typeof(ArmorFragmentsPlugin).Assembly);
