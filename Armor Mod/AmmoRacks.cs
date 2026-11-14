@@ -20,8 +20,8 @@ namespace ArmorFragments
     //  - A rack's capacity is the whole rounds that fit its shape (RackGrid, AmmoRound).
     //  - Damage reaching a rack (PartScript.OnDamaged: the game's shell impact, fragments, explosions,
     //    crashes) may set it on fire if its line crosses a cell that still holds a round. Chance =
-    //    1 - e^(-CookOffSensitivity x rise of the damage level), the level being the damage modules' 0..1.
-    //    A rack destroyed with rounds in it always catches fire.
+    //    1 - e^(-kJ that went into the rounds / CookOffEnergyKJ); the mod's damage is turned back into kJ with
+    //    DamagePerKiloJoule. A hit that destroys the rack through its rounds always sets it on fire.
     //  - A burning rack can't feed the gun and explodes CookOffDelayMin..Max seconds later, with the
     //    propellant of the rounds still in it (only propellant: explosive shells aren't modeled yet).
     //  - Funky Trees: <group>_rounds (rounds the group can still fire) and <group>_fire (1 while one of its
@@ -539,7 +539,13 @@ namespace ArmorFragments
             // that missed its rounds keeps them; later hits through them roll like any other hit.
             string levels = "damage level " + Fmt(levelBefore, "F3") + " -> " + Fmt(level, "F3") +
                             (destroyedNow ? " (destroyed by this hit)" : wreckedBefore ? " (already wrecked)" : "");
+            // The chance comes from the ENERGY that went into the rounds, not from the rack's health (Jakniphe:
+            // a 100 mm APHE through a full rack put "0.0% of its health" through its rounds and never cooked
+            // it; since 0.7.0 damage is the mod's kJ x DamagePerKiloJoule, small against a fuselage's health).
+            // Damage is turned back into kJ with the same setting.
+            float perKiloJoule = Mathf.Max(ArmorFragmentsPlugin.DamagePerKiloJoule.Value, 1e-6f);
             float rise;
+            float kiloJoules;
             if (perPiece)
             {
                 // A shot of the mod's own (shell, fragments, bursts): only what went through rounds counts.
@@ -549,7 +555,7 @@ namespace ArmorFragments
                     return;
                 }
                 rise = through / Mathf.Max(part.MaxHealth, 1f);
-                levels += ", " + Fmt(rise * 100f, "F1") + "% of its health through its rounds";
+                kiloJoules = through / perKiloJoule;
             }
             else
             {
@@ -561,7 +567,9 @@ namespace ArmorFragments
                     ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' hit where it holds no rounds (" + levels + ")");
                     return;
                 }
+                kiloJoules = rise * Mathf.Max(part.MaxHealth, 1f) / perKiloJoule;
             }
+            levels += ", " + Fmt(kiloJoules, "F0") + " kJ into its rounds";
 
             if (destroyedNow)
             {
@@ -569,7 +577,7 @@ namespace ArmorFragments
                 return;
             }
 
-            float chance = 1f - Mathf.Exp(-ArmorFragmentsPlugin.CookOffSensitivity.Value * rise);
+            float chance = 1f - Mathf.Exp(-kiloJoules / Mathf.Max(ArmorFragmentsPlugin.CookOffEnergyKJ.Value, 0.001f));
             float roll = UnityEngine.Random.value;
             bool fire = roll < chance;
             ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' hit its rounds: " + levels +
