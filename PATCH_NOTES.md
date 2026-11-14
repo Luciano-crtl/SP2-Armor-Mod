@@ -33,7 +33,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
     - The total is capped at 120 lb and sized like the game's own bombs: "Boom 25" (250 lb) is 0.8, so 55 lb is 0.18.
   - **One bang, then a jet of fire:** the cook-off vents through the nearest part marked **Cook-off vent** (`[VNT]`: a fuselage at the turret ring, or a hatch; not armor), or just above the rack with no vent. There is a single bomb-style bang sized by its pounds, then the fire flares up and rises in a jet for 3 to 10 s depending on the pounds. At the 120 lb cap, the flare-up is about 3x wider and 8x taller than the fire it settles into.
   - **The tank holds its shape:**
-    - the cook-off only cooks your damage modules (`[MOD]`) and other ammo racks near the rack (destroyed close in, damaged farther out; radius 1 m plus 1 m per 25 lb, so 3 m for 50 lb);
+    - the cook-off only cooks your damage modules (`[MOD]`) and other ammo racks near the rack (destroyed close in, damaged farther out; radius 0.5 m plus 1 m per 50 lb, up to 4 m, from the rounds still in the rack: 1.5 m for 50 lb, about 2.4 m for 96 lb);
     - armor and structure aren't touched: the blast doesn't damage, push or knock off any part of your vehicle, and doesn't knock off armor plates on any vehicle;
     - other racks it reaches roll their own chance.
   - **The wreck keeps burning:** the jet then shrinks smoothly into a half-size fire that never goes out, even when the vehicle runs out of fuel; only water puts it out. Every other cook-off vent on the vehicle catches the same small fire a moment later, as the fire spreads through the hull. Only the nearest vent gets the bang and the jet.

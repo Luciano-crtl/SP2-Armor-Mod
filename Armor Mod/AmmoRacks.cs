@@ -1029,15 +1029,16 @@ namespace ArmorFragments
         }
 
         // The cook-off cooks what is inside: the vehicle's damage modules ([MOD]) and other ammo racks ([AMM])
-        // within a radius that grows with the cook-off (1 m + 1 m per 25 lb, up to 8 m: 50 lb -> 3 m) take up
-        // to twice their health (destroyed in the inner half, less farther out). Nothing else of the vehicle is
-        // touched: the game's own blast is kept off it (AmmoRackBlastPatch, which also skips the game's blast
-        // damage), so armor and structure keep the shape. Racks hit this way roll their own chance (chain).
+        // within a radius that grows with the cook-off (0.5 m + 1 m per 50 lb, up to 4 m: 50 lb -> 1.5 m; halved
+        // from the first version after Jakniphe's test, where 96 lb reached 4.9 m) take up to twice their health
+        // (destroyed in the inner half, less farther out). Nothing else of the vehicle is touched: the game's own
+        // blast is kept off it (AmmoRackBlastPatch, which also skips the game's blast damage), so armor and
+        // structure keep the shape. Racks hit this way roll their own chance (chain).
         private static void WreckInsides(Rack rack, Vector3 center, float pounds)
         {
             AircraftScript aircraft = rack.Aircraft;
             if (aircraft == null || aircraft.Aircraft == null || aircraft.Aircraft.Assembly == null) return;
-            float radius = Mathf.Clamp(1f + pounds / 25f, 1f, 8f);
+            float radius = Mathf.Clamp(0.5f + pounds / 50f, 0.5f, 4f);
 
             List<PartScript> targets = new List<PartScript>();
             foreach (PartData data in aircraft.Aircraft.Assembly.Parts)
