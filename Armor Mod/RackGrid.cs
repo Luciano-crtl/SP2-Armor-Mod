@@ -108,8 +108,8 @@ namespace ArmorFragments
             axisY = Vector3.Cross(axisZ, axisX).normalized;
 
             // The shape: the fuselage's own drawn mesh (exact for any shape). The colliders are only a
-            // fallback: in the designer a fuselage's colliders can be a plain box around it, which made
-            // every cell of the box look "inside" (seen on a wedge-shaped rack).
+            // fallback: in the designer a fuselage's colliders can be a plain box around it, which would make
+            // every cell of the box look "inside".
             List<Collider> colliders = null;
             bool useMesh = GatherMesh(part);
             if (useMesh)
@@ -213,9 +213,8 @@ namespace ArmorFragments
         //
         // Inside = nonzero winding: each cut segment is oriented by its triangle's facing (outward normal on
         // its right), and a point is inside when the segments around it don't cancel out. All of the part's
-        // meshes count together. The first version used the even-odd rule per mesh, which a mesh split in
-        // pieces, or with doubled faces, breaks: on Jakniphe's wedge it emptied everything left of a straight
-        // line. Nonzero winding doesn't care about splits, doubled faces (same facing) or mirrored parts.
+        // meshes count together. Unlike the even-odd rule per mesh, nonzero winding isn't broken by meshes split
+        // in pieces, doubled faces (same facing) or mirrored parts.
 
         private struct Triangle
         {
@@ -282,7 +281,7 @@ namespace ArmorFragments
         // every ~1 cm along the length, which gives, for every row, the stretches of length where a round's
         // circle fits; each stretch holds as many whole rounds as its length allows (centered in it). Rows
         // don't share lengthwise slots, so a slanted, stepped or pointed end still gets filled as far as
-        // whole rounds go (first version used shared slots, which left blocks of a stepped rack empty).
+        // whole rounds go.
         private const int MaxDepthCuts = 1500;
 
         private void FillFromMesh()
@@ -668,7 +667,7 @@ namespace ArmorFragments
         // thickness the neighboring columns and layers are looked at too.
         private bool RoundAt(Vector3 q, float thickness = 0f)
         {
-            float reach = radius * 1.0488f + thickness;   // 1.0488^2 = 1.1: the old margin of a thin line
+            float reach = radius * 1.0488f + thickness;   // ~5% margin on the round's radius (1.0488^2 = 1.1)
             int c0 = Mathf.Max(0, Mathf.FloorToInt((q.x - reach - firstX) / pitch + 0.5f));
             int c1 = Mathf.Min(Columns - 1, Mathf.FloorToInt((q.x + reach - firstX) / pitch + 0.5f));
             int l0 = Mathf.Max(0, Mathf.FloorToInt((q.y - reach - firstY) / pitch + 0.5f));

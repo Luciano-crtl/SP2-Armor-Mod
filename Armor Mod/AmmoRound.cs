@@ -60,8 +60,7 @@ namespace ArmorFragments
 
         // One round's share of a cook-off, in pounds of explosive (TNT equivalent of its propellant burning off).
         // Propellant grows with muzzle energy, so this does too. Calibrated so a 5 cm KwK 39 round (718 kJ) is
-        // about 0.58 lb and a Pz III's ~90 rounds about 55 lb: Jakniphe's "believable" ~50 lb cook-off out of a
-        // turret, then +10% after seeing it in game.
+        // about 0.58 lb and a Pz III's ~90 rounds about 55 lb.
         public const float ExplosiveLbPerKiloJoule = 0.53f * 1.1f / 718f;
 
         public float ExplosiveLb

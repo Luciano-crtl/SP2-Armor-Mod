@@ -24,8 +24,8 @@ namespace ArmorFragments
         private const string GhostName = "AmmoRackGhost";
         private const string RoundsName = "AmmoRackRounds";
         private const float RefreshInterval = 0.25f;
-        // Rounds drawn per rack. (Was 4000: a 4 m wedge holding 4536 rounds of 50 mm then looked as if a
-        // side of it were empty, though the rack counted every round.) Big racks use fewer cylinder sides.
+        // Rounds drawn per rack (past this, every round still counts; only the drawing stops). Big racks use
+        // fewer cylinder sides.
         private const int MaxDrawnRounds = 20000;
 
         private sealed class Visual

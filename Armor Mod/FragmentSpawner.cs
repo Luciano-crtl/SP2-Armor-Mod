@@ -303,8 +303,7 @@ namespace ArmorFragments
 
             // The ray restarts on the plate's FRONT surface, where the shell went in, with the plate ignored, not
             // past its back face. A part touching the back face (an ammo rack behind the armor) has its surface
-            // right there, and a ray that starts inside a collider never sees it (Jakniphe's test: a 100 mm through
-            // a 64 mm plate "went through 0 parts" with the rack right behind it). Starting on the front surface
+            // right there, and a ray that starts inside a collider never sees it. Starting on the front surface
             // works whatever the plate's thickness, in the 3D model or in its tag.
             ShellFlight.Continue(point, newDirection, next, cannonTag,
                                  null, armor, timeAtPlate, 0f, RayKind.None,

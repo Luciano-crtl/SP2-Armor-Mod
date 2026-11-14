@@ -190,8 +190,7 @@ namespace ArmorFragments.UI
 
             PartTags tags = TagCodec.ParseCopy(part.Part.Name);
 
-            // Cook-off vents are fuselages (Jakniphe: the toggle on every part was too much), the same parts that
-            // can be armor or racks. A part of another kind already marked as a vent keeps its toggle, so the mark
+            // Cook-off vents are fuselages, the same parts that can be armor or racks. A part of another kind already marked as a vent keeps its toggle, so the mark
             // can be taken off.
             bool canVent = canArmor || tags.Vent != null;
 
@@ -208,9 +207,8 @@ namespace ArmorFragments.UI
 
             if (canArmor)
             {
-                // Armor takes no damage, so it can't also be a damage module, an ammo rack or a cook-off vent
-                // (Jakniphe: those stayed on when armor was switched on). Switching armor on switches them off,
-                // and switching one of them on switches armor off.
+                // Armor takes no damage, so it can't also be a damage module, an ammo rack or a cook-off vent.
+                // Switching armor on switches them off, and switching one of them on switches armor off.
                 builder.Toggle("Armor",
                     "Makes this part armor: shells that hit it can be blocked or can send fragments behind it. " +
                     "Armor takes no damage, so it can't also be a damage module, ammo rack or cook-off vent: those switch off.",
@@ -241,10 +239,9 @@ namespace ArmorFragments.UI
                     tags.Cannon != null,
                     on => Switch(tags, () => tags.Cannon = on ? new CannonTag() : null));
 
-                // Estimated penetration (Jakniphe: "so we can see its stats"), for every cannon: the energy
-                // model's own rule for a real hit, at the muzzle, against armor of the current resistance.
+                // Estimated penetration, for every cannon: the energy model's own rule for a real hit, at the
+                // muzzle, against armor of the current resistance. One short value per row.
                 PartScript gunPart = part;
-                // One short value per row (Jakniphe: the single "0 / 30 / 60" row was cramped).
                 Live(builder, new[] { "Shell energy", "Shell mass", "Muzzle velocity",
                                       "Penetration, 0 deg", "Penetration, 30 deg", "Penetration, 60 deg" },
                      () => PenetrationSignature(gunPart), () => PenetrationTexts(gunPart));

@@ -176,13 +176,13 @@ namespace ArmorFragments
                 "If true, the game's own damage to parts with an [ARM] tag (shell impact, explosions, crashes) is ignored: " +
                 "armor is judged only by the energy model and cannot be destroyed.");
             GameDamageExplosions = Config.Bind("Fragments", "GameDamageExplosions", false,
-                "If false (Jakniphe's choice), the game never blows parts or vehicles up because of damage, on any vehicle: " +
-                "no 'part explodes' roll on damaged parts, no vehicle explosion at the damage limit, no delayed fuel tank or " +
-                "propeller explosions, no explosion chains. Vehicles are knocked out through their modules and ammo racks, " +
-                "and keep their shape; destroyed parts stay attached (wings no longer fall off). Weapons' own explosions are " +
-                "not affected. True = the game's usual behavior.");
+                "If false, the game never blows parts or vehicles up because of damage, on any vehicle: no 'part explodes' " +
+                "roll on damaged parts, no vehicle explosion at the damage limit, no delayed fuel tank or propeller " +
+                "explosions, no explosion chains. Vehicles are knocked out through their modules and ammo racks, and keep " +
+                "their shape; destroyed parts stay attached (wings don't fall off). Weapons' own explosions are not " +
+                "affected. True = the game's usual behavior.");
             ArmoredStructureDamage = Config.Bind("Fragments", "ArmoredStructureDamage", false,
-                "If false (Jakniphe's choice), on a vehicle with armor ([ARM] parts) only damage modules ([MOD]) and ammo " +
+                "If false, on a vehicle with armor ([ARM] parts) only damage modules ([MOD]) and ammo " +
                 "racks ([AMM]) take the mod's damage (shells and fragments); the rest of the structure only slows them down. " +
                 "Vehicles without armor (planes) take it on every part either way.");
             RayTrailLength = Config.Bind("Debug", "RayTrailLength", 6f,
@@ -444,11 +444,10 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "Chance (%) that a shell punching through a rack's rounds sets them off, whatever its size, on top " +
                     "of the energy part. Chance = 1 - (1 - this)^(shells through the rounds) x e^(-kJ / CookOffEnergyKJ): " +
-                    "about 60% for a 20 mm APHE, 85-90% for a 37 mm, near certain for 75 mm and up.",
+                    "with the shell's own energy counted, about 64% for a 20 mm APHE, 95% for a 37 mm, certain for 75 mm and up.",
                     new AcceptableValueRange<float>(0f, 100f)));
             CookOffBurnSeconds = Config.Bind("AmmoRacks", "CookOffBurnSeconds", 10f,
-                new ConfigDescription("How long (s) a burning rack burns before it explodes, every time (Jakniphe: a " +
-                    "consistent 10 s; replaces the random CookOffDelayMin/Max).",
+                new ConfigDescription("How long (s) a burning rack burns before it explodes.",
                     new AcceptableValueRange<float>(0f, 120f)));
             CookOffTNTEfficiency = Config.Bind("AmmoRacks", "CookOffTNTEfficiency", 25f,
                 new ConfigDescription(

@@ -24,9 +24,9 @@ namespace ArmorFragments
     //    mod's damage is turned back into kJ with DamagePerKiloJoule. A hit that destroys the rack through its
     //    rounds always sets it on fire.
     //  - A burning rack can't feed the gun and explodes CookOffBurnSeconds (10) later, with the
-    //    propellant of the rounds still in it (only propellant: explosive shells aren't modeled yet).
-    //  - Funky Trees: <group>_rounds (rounds the group can still fire) and <group>_fire (1 while one of its
-    //    racks burns).
+    //    propellant of the rounds still in it (only propellant; explosive filler isn't counted).
+    //  - Funky Trees: <group>_rounds (rounds the group can still fire), <group>_fire (1 while one of its
+    //    racks burns) and <group>_boom (1 once one has exploded).
     //
     // All of it runs only in the game of the aircraft's owner, in flight (a remote copy takes no damage here).
     internal static class AmmoRacks
@@ -481,12 +481,12 @@ namespace ArmorFragments
             return part != null && RackOf.ContainsKey(part);
         }
 
-        // Since 0.7.0 the mod adds up a shot's damage per part and hands the game ONE hit, at the biggest piece's
-        // point and direction (FragmentSpawner.Accumulate). For a rack that is not enough: a big fragment through
-        // its empty top would hide small ones through its rounds. So FragmentSpawner shows us every piece first
-        // (Jakniphe: "each piece counts"), and OnDamaged then counts only the damage of the pieces whose path
-        // crossed rounds. Only racks this game owns: a remote rack's owner gets the summed hit over the network
-        // and judges it by the biggest piece. Everything of one shot happens in the same frame.
+        // The mod adds up a shot's damage per part and hands the game ONE hit, at the biggest piece's point and
+        // direction (FragmentSpawner.Accumulate). A rack needs every piece: a big fragment through its empty top
+        // would hide small ones through its rounds. So FragmentSpawner shows each piece here first, and
+        // OnDamaged then counts only the pieces whose path crossed rounds. Only racks this game owns: a remote
+        // rack's owner gets the summed hit over the network and judges it by the biggest piece. Everything of
+        // one shot happens in the same frame.
         private sealed class Pieces
         {
             public float Through;     // damage of the pieces whose path crossed rounds
@@ -497,12 +497,10 @@ namespace ArmorFragments
         private static readonly Dictionary<PartScript, Pieces> ThroughRounds = new Dictionary<PartScript, Pieces>();
         private static int throughFrame = -1;
 
-        // shell: the piece is the shell itself (FragmentSpawner.DepositCrossings), not a fragment; shellEnergyJ is
-        // what it carries into the rack. A shell through the cartridges counts with that energy, not with what it
-        // happens to lose there (Jakniphe's test: a 100 mm went through 855 kg of rounds losing almost nothing,
-        // "0 kJ into its rounds", and took 3 shots).
-        // shellRadius (m): the shell is a tube of its caliber, not a thin line (Jakniphe's 20 mm test: fired end-on
-        // into a full rack, the shell's line threaded between the rounds every shot, and only its burst counted).
+        // shell: the piece is the shell itself (FragmentSpawner.DepositCrossings), not a fragment. shellEnergyJ: what
+        // it carries into the rack; a shell through the cartridges counts with that energy, not with what it loses
+        // there. shellRadius (m): the shell is checked as a tube of its caliber, so it can't thread between packed
+        // rounds the way a thin line can.
         public static void NotePiece(PartScript part, float damage, Vector3 point, Vector3 direction, bool shell,
                                      float shellEnergyJ, float shellRadius)
         {
@@ -558,18 +556,15 @@ namespace ArmorFragments
             bool destroyedNow = level >= 0.998f && levelBefore < 0.998f;
             bool wreckedBefore = levelBefore >= 0.998f;
 
-            // Every hit must pass through rounds, the destroying one too (Jakniphe: with only a bottom layer
-            // left, a shot over it destroyed the rack and still cooked the rounds off). A rack wrecked by a hit
-            // that missed its rounds keeps them; later hits through them roll like any other hit.
+            // Every hit must pass through rounds, the destroying one too. A rack wrecked by a hit that missed its
+            // rounds keeps them; later hits through them roll like any other hit.
             string levels = "damage level " + Fmt(levelBefore, "F3") + " -> " + Fmt(level, "F3") +
                             (destroyedNow ? " (destroyed by this hit)" : wreckedBefore ? " (already wrecked)" : "");
-            // The chance comes from what hit the rounds, not from the rack's health (Jakniphe: a 100 mm APHE
-            // through a full rack put "0.0% of its health" through its rounds and never cooked it; since 0.7.0
-            // damage is the mod's kJ x DamagePerKiloJoule, small against a fuselage's health):
+            // The chance comes from what hit the rounds, not from the rack's health (the mod's damage is
+            // kJ x DamagePerKiloJoule, small against a fuselage's health):
             //   1 - (1 - CookOffDirectHit)^(shells through the rounds) x e^(-kJ into the rounds / CookOffEnergyKJ)
-            // A shell punching through the cases is likely to set them off whatever its size ("even a 37 ... or a
-            // 20 mm APHE after like 2 shots"); fragments add up by their energy. Damage is turned back into kJ
-            // with DamagePerKiloJoule.
+            // A shell punching through the cases is likely to set them off whatever its size; fragments add up by
+            // their energy. Damage is turned back into kJ with DamagePerKiloJoule.
             float perKiloJoule = Mathf.Max(ArmorFragmentsPlugin.DamagePerKiloJoule.Value, 1e-6f);
             float rise;
             float kiloJoules;
@@ -619,9 +614,8 @@ namespace ArmorFragments
             if (fire) Ignite(rack, attacker, "hit");
         }
 
-        // A rack destroyed (damage level 1, or the part gone) with rounds still in it always catches fire
-        // (Jakniphe, after two test hits in a row rolled the 5% "no fire" of the earlier roll): it burns, then
-        // explodes. A part already gone has nothing to burn, so it explodes at once.
+        // A rack destroyed (damage level 1, or the part gone) with rounds still in it always catches fire: it
+        // burns, then explodes. A part already gone has nothing to burn, so it explodes at once.
         private static void Destroyed(Rack rack, int? attacker, float rise, bool partGone)
         {
             if (attacker.HasValue) rack.Attacker = attacker;
@@ -701,7 +695,7 @@ namespace ArmorFragments
             try
             {
                 // The game's own burning-part effect (a fuel tank that is about to blow uses the same), at half
-                // size (Jakniphe). The effect is a fresh copy for this part (PartDamageEffects.CreateEffect
+                // size. The effect is a fresh copy for this part (PartDamageEffects.CreateEffect
                 // instantiates it), so shrinking it changes no other fire. Its particle systems are set to follow
                 // their parents' scale. (The game sends the plain fire to the other players itself; RackFireSync
                 // tells their mods to give it the same look.)
@@ -748,11 +742,9 @@ namespace ArmorFragments
                 return;
             }
 
-            // Sized in pounds of explosive, like the game's own bombs (Jakniphe: "bomb effect, not bomb vibes"):
-            // each round adds its propellant's explosive equivalent (AmmoRound.ExplosiveLb: ~0.53 lb for a 50 mm
-            // round at 835 m/s, so a Pz III's ~90 rounds make ~50 lb), capped at MaxBlastLb. The game's bombs
-            // scale their explosion with weight: "Boom 25" (250 lb) = 0.8, "Boom 50" (500 lb) = 1.6, so
-            // 0.0032 per lb. (The first version gave 67 rounds of 100 mm a size of 57.6: 8 puffs of 16.5.)
+            // Sized in pounds of explosive: each round adds its propellant's explosive equivalent
+            // (AmmoRound.ExplosiveLb: ~0.58 lb for a 50 mm round at 835 m/s, so a Pz III's ~90 rounds make ~55 lb),
+            // capped at MaxBlastLb.
             float pounds = Mathf.Min(rounds * rack.Group.Round.ExplosiveLb * ArmorFragmentsPlugin.BlastStrength.Value,
                                      ArmorFragmentsPlugin.MaxBlastLb.Value);
             float size = BangSize(pounds);
@@ -771,12 +763,11 @@ namespace ArmorFragments
 
         // ---- Knocked out -----------------------------------------------------------------
         //
-        // A vehicle whose rack has exploded is a knocked-out shell (Jakniphe's choice): from then on the game's
-        // own explosions for it are off (AircraftScript.QueueExplosion, the "vehicle destroyed" blast, and
-        // BodyScript.ExplodePart, which blows single parts off and, for a part of the cockpit's group, queues
-        // that blast). So neither the cook-off nor a fuel tank going up later tears it apart; parts can still
-        // reach full damage. The game no longer counts the vehicle as destroyed: Funky Trees on <group>_boom
-        // or the modules' damage can cut its controls.
+        // A vehicle with a burning or exploded rack is a knocked-out shell: the game's own explosions for it are
+        // off (AircraftScript.QueueExplosion, the "vehicle destroyed" blast, and BodyScript.ExplodePart, which blows
+        // single parts off and, for a part of the cockpit's group, queues that blast), even when
+        // GameDamageExplosions is on. Parts can still reach full damage. The game doesn't count the vehicle as
+        // destroyed: Funky Trees on <group>_boom or the modules' damage can cut its controls.
 
         private static readonly HashSet<AircraftScript> KnockedOut = new HashSet<AircraftScript>();
 
@@ -794,16 +785,14 @@ namespace ArmorFragments
 
         // ---- The blast: one bang, then a jet of fire -------------------------------------------
         //
-        // (Third version, after Jakniphe's tests: a pillar of chained bomb explosions, even slowed down, flashed
-        // unnaturally and was over too quickly.) A cook-off is now:
+        // A cook-off is:
         //  1. One bang: a single explosion (AmmoRacks.BlastType, BombExplosion by default) at the vehicle's
         //     cook-off vent ([VNT] part, the nearest one: a turret ring or hatch), or just above the rack with
-        //     no vent, sized by the pounds of explosive like the game's own bombs.
+        //     no vent, sized by the pounds of explosive like the game's own bombs. Only for show.
         //  2. A jet of fire out of the vent for 3 to 10 s (more pounds, longer): the game's own fire effect,
         //     scaled up and stretched upward, with denser flames.
         //  3. It then settles smoothly into the half-size burn-out fire, which never goes out (KeepBurning).
-        // The game's blast is kept off the rack's own vehicle (no push, no parts knocked off) and off every
-        // armor plate, so the hull keeps its shape; what is inside is wrecked by WreckInsides instead.
+        // The game's blast does nothing (AmmoRackBlastPatch): WreckInsides does all the cook-off's damage.
 
         private sealed class RecentBlast
         {
@@ -833,14 +822,14 @@ namespace ArmorFragments
         // The game's bombs: explosion size per pound ("Boom 25", 250 lb = 0.8).
         private const float BombSizePerLb = 0.8f / 250f;
 
-        // The bang: sized like the game's bombs by the pounds, times BlastVisualPercent (Jakniphe: a bit big at
-        // 100%; 75%). Only for show: AmmoRackBlastPatch gives the game's blast nothing to act on.
+        // The bang: sized like the game's bombs by the pounds ("Boom 25", 250 lb = 0.8), times BlastVisualPercent.
+        // Only for show: AmmoRackBlastPatch gives the game's blast nothing to act on.
         private static float BangSize(float pounds)
         {
             return pounds * BombSizePerLb * Mathf.Max(ArmorFragmentsPlugin.BlastVisualPercent.Value, 0f) / 100f;
         }
 
-        // The fire jet's flare-up (size and extra flames), as a share of the first version's.
+        // Scales the fire jet's flare-up (size and extra flames).
         private const float JetSize = 1f / 3f;
 
         // Returns where the blast comes out of the vehicle (the vent, or just above the rack).
@@ -861,16 +850,15 @@ namespace ArmorFragments
                                                            rack.Attacker, null, ExplosiveWeaponImpactType.Structure);
             }
 
-            // 2-3. The jet: it flares up at once and settles into the burn-out. At first it was 1.5 to 5 times
-            // the fire's size (x 2.5 upward) with up to 7x the flames: a 120 lb cook-off bloomed to 10x the
-            // burn-out's width. Jakniphe liked the flare-up but at 1/3 of that: JetSize.
+            // 2-3. The jet: it flares up at once (wider with more pounds, x 2.5 upward, more flames, all scaled by
+            // JetSize) and settles into the burn-out.
             float duration = Mathf.Clamp(2f + pounds / 15f, 3f, 10f);
             float width = Mathf.Max(FireScale * 1.5f, Mathf.Clamp(1f + pounds / 25f, 1.5f, 5f) * JetSize);
             StartJet(firePart, rack.Label, duration, new Vector3(width, width * 2.5f, width), 1f + pounds / 20f * JetSize);
             if (firePart != null) BurningVents.Add(firePart);
 
-            // 4. Every other vent of the vehicle catches the small burn-out fire too (Jakniphe), a little later
-            //    each (0.5 to 2 s: the fire spreading through the hull). A vent already burning gets no second fire.
+            // 4. Every other vent of the vehicle catches the small burn-out fire too, a little later each (0.5 to
+            //    2 s: the fire spreading through the hull). A vent already burning gets no second fire.
             int others = 0;
             foreach (PartScript other in Vents(rack.Aircraft))
             {
@@ -1046,9 +1034,7 @@ namespace ArmorFragments
             return false;
         }
 
-        // The cook-off cooks what is inside: the vehicle's damage modules ([MOD]) and other ammo racks ([AMM]),
-        // by real blast physics (Jakniphe: "more in reality with blast radius formulas", and a cook-off is an
-        // inefficient detonation):
+        // The cook-off's blast, by real blast physics (a cook-off is an inefficient detonation):
         //  - Charge: W = the propellant's TNT equivalent (the rack's pounds, in kg) x CookOffTNTEfficiency (25%).
         //  - Hopkinson-Cranz scaling: what a blast does depends on the scaled distance Z = R / W^(1/3) (m/kg^1/3),
         //    so the reach grows with the cube root of the rounds left, not in proportion.
@@ -1057,8 +1043,7 @@ namespace ArmorFragments
         //    wrecked), up to twice it closer in; in between it grows with ln(P), as damage does with pressure.
         //  - R is the distance to the part's nearest surface (its colliders), not its center.
         // Example at 25%: 96 lb (42 rounds of 100 mm) is 10.9 kg of TNT: wrecks within 2.7 m, damages out to 4.8 m.
-        // It is the cook-off's only damage (the bang is just for show: AmmoRackBlastPatch), inside and outside
-        // (Jakniphe: "the whole point of the blast physics was to damage things outside"):
+        // It is the cook-off's only damage (the bang is just for show: AmmoRackBlastPatch), inside and outside:
         //  - Its own vehicle, from the rack: only its damage modules and racks on an armored vehicle (VehicleRules).
         //  - Every other vehicle around, from where the blast leaves the hull (the vent, or just above the rack):
         //    by the same rules (armor never; armored vehicles in modules and racks; others in every part). A
@@ -1093,7 +1078,7 @@ namespace ArmorFragments
                 float distance = Vector3.Distance(pair.Value, origin);
                 if (distance >= reach) continue;
 
-                // Armor in the way shields in proportion to how much of it there is (Jakniphe): every
+                // Armor in the way shields in proportion to how much of it there is: every
                 // CookOffArmorHalvingMm of effective thickness halves the pressure. Outside, the burning vehicle's
                 // own armor doesn't count (the blast is already out, at the vent).
                 float pressure = Overpressure(Mathf.Max(distance, 0.05f) / cubeRoot);
@@ -1362,8 +1347,8 @@ namespace ArmorFragments
     //
     // A rack is never destroyed by the game: a part destroyed in the cockpit's part group makes the game blow
     // the whole vehicle apart at once (BodyScript.OnPartDamageLevelIncreased -> ExplodePart ->
-    // AircraftScript.QueueExplosion), which skipped the burn in Jakniphe's first cook-off test. The damage is
-    // cut so the rack stops at 99.9% of its health, which counts as "destroyed" for the cook-off roll.
+    // AircraftScript.QueueExplosion), skipping the burn. The damage is cut so the rack stops at 99.9% of its
+    // health, which counts as "destroyed" for the cook-off.
     [HarmonyPatch(typeof(PartScript), "OnDamaged")]
     internal static class AmmoRackDamagePatch
     {
@@ -1396,11 +1381,10 @@ namespace ArmorFragments
         }
     }
 
-    // A rack's bang is only for show (Jakniphe: "the whole point of the blast physics was to damage things
-    // outside"): the game's blast would push the parts it reaches, knock off those where its force beats a
-    // random threshold (30..95), armor included, and damage them, on every vehicle around. For our blasts the
-    // game gets an empty list, so it does none of that; AmmoRacks.WreckInsides does the damage, by blast
-    // physics, inside the vehicle and around it. Other explosions are untouched.
+    // A rack's bang is only for show: the game's blast would push the parts it reaches, knock off those where
+    // its force beats a random threshold (30..95), armor included, and damage them, on every vehicle around. For
+    // our blasts the game gets an empty list, so it does none of that; AmmoRacks.WreckInsides does the damage,
+    // by blast physics, inside the vehicle and around it. Other explosions are untouched.
     [HarmonyPatch(typeof(BodyScript), "HandleExplosiveBlast")]
     internal static class AmmoRackBlastPatch
     {
@@ -1432,9 +1416,8 @@ namespace ArmorFragments
     }
 
     // ExplodePart is also never allowed on a rack itself: every fuselage type has damageDisconnect="true", so
-    // each new damage stage rolls a chance to ExplodePart it (BodyScript.OnPartDamageLevelIncreased), without
-    // reaching 0 health; for a rack in the cockpit's group that blew the whole vehicle up at once (Jakniphe's
-    // second cook-off test, with the rack held at 99.9%: the top stage has the highest chance).
+    // each new damage stage rolls a chance to ExplodePart it (BodyScript.OnPartDamageLevelIncreased) before it
+    // reaches 0 health, and for a rack in the cockpit's group that blows the whole vehicle up at once.
     // ExplodePart is only ever called because of damage (the damage-stage roll, fuel tanks, propellers, explosion
     // chains): see VehicleRules for all of them. Same rule as above.
     [HarmonyPatch(typeof(BodyScript), "ExplodePart", new Type[] { typeof(PartScript) })]
