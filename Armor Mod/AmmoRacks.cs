@@ -480,6 +480,40 @@ namespace ArmorFragments
             return part != null && RackOf.ContainsKey(part);
         }
 
+        // Since 0.7.0 the mod adds up a shot's damage per part and hands the game ONE hit, at the biggest piece's
+        // point and direction (FragmentSpawner.Accumulate). For a rack that is not enough: a big fragment through
+        // its empty top would hide small ones through its rounds. So FragmentSpawner shows us every piece first
+        // (Jakniphe: "each piece counts"), and OnDamaged then counts only the damage of the pieces whose path
+        // crossed rounds. Only racks this game owns: a remote rack's owner gets the summed hit over the network
+        // and judges it by the biggest piece. Everything of one shot happens in the same frame.
+        private static readonly Dictionary<PartScript, float> ThroughRounds = new Dictionary<PartScript, float>();
+        private static int throughFrame = -1;
+
+        public static void NotePiece(PartScript part, float damage, Vector3 point, Vector3 direction)
+        {
+            Rack rack;
+            if (damage <= 0f || part == null || !RackOf.TryGetValue(part, out rack) || rack.Grid == null) return;
+            if (part.Aircraft == null || part.Aircraft.RemoteAircraft) return;
+            if (throughFrame != Time.frameCount)
+            {
+                ThroughRounds.Clear();
+                throughFrame = Time.frameCount;
+            }
+
+            float through;
+            ThroughRounds.TryGetValue(part, out through);
+            if (rack.Grid.Remaining > 0 && rack.Grid.HitsRounds(part.transform, point, direction)) through += damage;
+            ThroughRounds[part] = through;   // kept at 0 too: pieces hit it, none through its rounds
+        }
+
+        private static bool TakeNoted(PartScript part, out float through)
+        {
+            through = 0f;
+            if (throughFrame != Time.frameCount || !ThroughRounds.TryGetValue(part, out through)) return false;
+            ThroughRounds.Remove(part);
+            return true;
+        }
+
         // hitShare: the hit's damage as a share of the rack's health, before AmmoRackDamagePatch cut it (a rack
         // already held at 99.9% gains no damage level, but a hit there still counts for its rounds).
         public static void OnDamaged(PartScript part, float levelBefore, float hitShare, int? attacker,
@@ -487,14 +521,14 @@ namespace ArmorFragments
         {
             Rack rack;
             if (!RackOf.TryGetValue(part, out rack)) return;
+            float through;
+            bool perPiece = TakeNoted(part, out through);
             if (rack.Burning || rack.Exploded || rack.Grid == null || rack.Grid.Remaining <= 0) return;
 
             AircraftScript aircraft = part.Aircraft;
             if (aircraft == null || aircraft.LoadContext != CraftLoadContext.Flight || aircraft.RemoteAircraft) return;
 
             float level = DamageLevel(part);
-            float rise = Mathf.Max(level - levelBefore, hitShare);
-            if (rise <= 0f) return;
             // "Destroyed" = the rack's box has lost all its health (held at 0.999 by AmmoRackDamagePatch; room for
             // rounding). That is the box, not the rounds: only a hit whose path crosses rounds can set them off.
             bool destroyedNow = level >= 0.998f && levelBefore < 0.998f;
@@ -505,10 +539,28 @@ namespace ArmorFragments
             // that missed its rounds keeps them; later hits through them roll like any other hit.
             string levels = "damage level " + Fmt(levelBefore, "F3") + " -> " + Fmt(level, "F3") +
                             (destroyedNow ? " (destroyed by this hit)" : wreckedBefore ? " (already wrecked)" : "");
-            if (!rack.Grid.HitsRounds(part.transform, position, direction))
+            float rise;
+            if (perPiece)
             {
-                ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' hit where it holds no rounds (" + levels + ")");
-                return;
+                // A shot of the mod's own (shell, fragments, bursts): only what went through rounds counts.
+                if (through <= 0f)
+                {
+                    ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' hit, but no piece went through its rounds (" + levels + ")");
+                    return;
+                }
+                rise = through / Mathf.Max(part.MaxHealth, 1f);
+                levels += ", " + Fmt(rise * 100f, "F1") + "% of its health through its rounds";
+            }
+            else
+            {
+                // Any other hit (the game's own, or a summed hit from another player): its one line decides.
+                rise = Mathf.Max(level - levelBefore, hitShare);
+                if (rise <= 0f) return;
+                if (!rack.Grid.HitsRounds(part.transform, position, direction))
+                {
+                    ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' hit where it holds no rounds (" + levels + ")");
+                    return;
+                }
             }
 
             if (destroyedNow)

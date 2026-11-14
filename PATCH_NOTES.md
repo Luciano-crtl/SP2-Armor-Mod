@@ -2,11 +2,11 @@
 
 ## Unreleased: Ammo racks (by Jakniphe)
 
-Not tested in multiplayer yet. Builds on 0.6.2; the version number is the author's call.
+Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author's call.
 
 ### New: ammo racks
 - **Any fuselage can be an ammo rack.** Turn on **Ammo rack** in the part's Armor Fragments section (the name gets an `[AMM]` tag).
-- **Racks feed cannons.** A cannon with the **Cannon** toggle on draws its rounds from the racks in its group. With no `g=`, every tagged cannon and rack share one default group. For separate guns, add a group name in the part name field: `[CAN f=20 k=100 g=Main]` on the gun, `[AMM g=Main]` on its racks.
+- **Racks feed cannons.** A cannon with the **Cannon** toggle on draws its rounds from the racks in its group. With no `g=`, every tagged cannon and rack share one default group. For separate guns, add a group name in the part name field: `[CAN k=100 g=Main]` on the gun, `[AMM g=Main]` on its racks.
 - **Racks replace the Ammo Count slider.** A cannon fed by racks fires until its racks are empty. The game's Ammo Count slider is hidden for it as soon as a rack is linked. Cannons without racks work exactly as before.
 - **Rounds are solid.** A rack holds only the whole rounds that fit its shape, lying along the fuselage's length:
   - Rounds are cylinders sized from the cannon. The case is 1.3 x the caliber wide. Its length grows with muzzle energy (about 2 litres per MJ), so faster guns have longer rounds, calibrated on the Pz III's 50 mm guns. The shell in front is the game's own (Slug 1.5 calibers long, Sphere 1).
@@ -18,6 +18,7 @@ Not tested in multiplayer yet. Builds on 0.6.2; the version number is the author
 - **Broken-off racks:** a rack knocked off the vehicle keeps its rounds, which can still cook off, but no longer feeds the gun.
 - **Cook-offs.**
   - **What counts:** a hit only matters if it passes through the part of a rack that still holds rounds. A half-empty rack is safe at the top.
+  - **Every piece counts:** a shot can reach a rack as the shell itself, as spall from a plate, or as the fragments of an HE or APHE burst, including HE spall through thin armor. Each piece's path is checked against the rounds, and only the damage of the pieces that went through rounds counts toward a cook-off.
   - **Chance:** 1 - e^(-3 x the rise in the rack's damage level), using the same 0 to 1 damage scale as damage modules. Losing a third of its health gives 63%.
   - **Destroyed racks:** the hit that destroys a rack always cooks it off, if it goes through its rounds. A hit that wrecks the rack but misses the rounds (say, through the empty top of a half-empty rack) leaves them lying there, and later hits through them roll the normal chance.
   - **The game never destroys or explodes a rack.** It stops at 99.9% health, which counts as destroyed, and the game's random "part explodes" roll is off for it. Every fuselage rolls that at each new damage stage, and for a rack welded to the cockpit's structure it blew the whole vehicle apart at once, skipping the burn. From the moment a rack catches fire, the vehicle is knocked out (below).
@@ -50,7 +51,7 @@ Not tested in multiplayer yet. Builds on 0.6.2; the version number is the author
   - Up to 20,000 rounds per rack are drawn; past that, all of them still count, and the log says so.
 - **Rack read-out:** Status, Rounds held, Layout, Lost to shape, Space (L x W x H), Round size, Shell, Rounds weight and its Funky Trees variables. It updates as you reshape the fuselage or change the cannon.
 - **Cannon read-out:** Ammo group, Ammo from, Rounds, Round size and Shell.
-- **Estimated penetration, on every cannon:** shell energy, plus the thickest plate it gets through at 0, 30 and 60 degrees. It's worked out from the mod's armor rule at the muzzle, with the current armor resistance; ricochets and plate hardness aren't counted. Example: a 100 mm Slug at 1000 m/s gets through 142 / 123 / 71 mm.
+- **Estimated penetration, on every cannon:** shell energy, plus the thickest plate it gets through at 0, 30 and 60 degrees. It's worked out from the mod's armor rule at the muzzle, with the current armor resistance; ricochets and plate hardness aren't counted. Example: a 100 mm Slug at 1000 m/s gets through 142 / 123 / 71 mm. APHE gets through like AP; HE shows "none: bursts on contact", since only its fragments go on.
 - **Cook-off vent:** a toggle on every part.
 
 ### Settings (config file only, section `[AmmoRacks]`; the host's values apply in multiplayer)
@@ -70,7 +71,8 @@ Not tested in multiplayer yet. Builds on 0.6.2; the version number is the author
 - **Project file:** finds the game's data folder whether it is named `SimplePlanes 2_Data` or `SimplePlanes 2 (1.1)_Data`. Override it with `-p:ManagedDir=...`.
 
 ### Known limits
-- **Damage per kJ:** at very low values (for example 0.001), fragments do almost no damage, so racks behind armor will almost never cook off. Direct shell hits use the game's own damage and are not affected.
-- **Explosive shells** don't add to the blast yet; only propellant does.
+- **Damage per kJ:** a cannon with the Cannon tag does no game damage, so every hit on a rack from it goes through this setting. At very low values (for example 0.001), racks will almost never cook off.
+- **Multiplayer:** fragments still spall into an opponent's vehicle and damage its racks, but another player's shot reaches your rack as one summed hit, judged by its biggest piece's path, not piece by piece. Piece-by-piece hits over the network are planned as a separate update.
+- **Explosive filler** (HE, APHE) doesn't add to a rack's blast; only propellant does.
 - **Center of mass** doesn't move with the rounds' weight.
 - **Shell shapes:** if they are reworked later, the round size (`AmmoRound.cs`) has to follow. Racks, the hit check and the designer drawing all read the round from there.

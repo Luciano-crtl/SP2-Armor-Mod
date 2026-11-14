@@ -723,6 +723,9 @@ namespace ArmorFragments
 
         private static void Accumulate(PartScript part, float damage, Vector3 point, Vector3 dir)
         {
+            // An ammo rack judges each piece's path against its rounds before the pieces are summed up.
+            AmmoRacks.NotePiece(part, damage, point, dir);
+
             if (batchDepth <= 0)
             {
                 ApplyDamage(part, damage, point, dir);   // nobody will flush: apply it now

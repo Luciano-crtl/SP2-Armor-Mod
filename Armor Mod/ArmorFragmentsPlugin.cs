@@ -437,9 +437,9 @@ namespace ArmorFragments
                     new AcceptableValueRange<float>(1f, 1000f)));
             BlastType = Config.Bind("AmmoRacks", "BlastType", "BombExplosion",
                 new ConfigDescription(
-                    "The game explosion a cook-off vents as (a pillar of them, from the rack up through the nearest " +
-                    "[VNT] part, or straight up). Sizes are worked out in the bombs' scale (Boom 25 = 250 lb = 0.8), so " +
-                    "other types will look bigger or smaller.",
+                    "The game explosion of a cook-off's bang, at the nearest [VNT] part (or just above the rack), before " +
+                    "the fire jet. Sizes are worked out in the bombs' scale (Boom 25 = 250 lb = 0.8), so other types " +
+                    "will look bigger or smaller.",
                     new AcceptableValueList<string>("BombExplosion", "GeneralExplosion", "MissileExplosion", "RocketExplosion")));
             ShowRacksInDesigner = Config.Bind("AmmoRacks", "ShowInDesigner", true,
                 "If true, ammo racks are drawn see-through in the designer with their rounds inside (they can still be " +

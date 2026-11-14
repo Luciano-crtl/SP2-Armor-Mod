@@ -432,15 +432,32 @@ namespace ArmorFragments.UI
                 (energy / 1000f).ToString("F0", CultureInfo.InvariantCulture) + " kJ (" +
                     round.ShellMass.ToString("F2", CultureInfo.InvariantCulture) + " kg at " +
                     round.Velocity.ToString("F0", CultureInfo.InvariantCulture) + " m/s)",
-                Mm(0f) + " / " + Mm(30f) + " / " + Mm(60f) + " mm",
+                // HE bursts on the first thing it touches (FragmentSpawner.BurstOnSurface): the shell itself
+                // goes through nothing, only its fragments do. APHE goes through like AP.
+                KindOfCannon(cannonPart) == AmmoKind.HE
+                    ? "none: HE bursts on contact (fragments only)"
+                    : Mm(0f) + " / " + Mm(30f) + " / " + Mm(60f) + " mm",
             };
+        }
+
+        private static AmmoKind KindOfCannon(PartScript cannonPart)
+        {
+            bool explosive = false;
+            foreach (PartModifierData modifier in cannonPart.Part.Modifiers)
+            {
+                CannonData data = modifier as CannonData;
+                if (data == null) continue;
+                explosive = data.AmmoType == CannonData.ProjectileType.Explosive;
+                break;
+            }
+            return Ammunition.KindOf(explosive, TagCodec.Parse(cannonPart.Part.Name).Cannon);
         }
 
         private static string PenetrationSignature(PartScript cannonPart)
         {
             AmmoRound round;
             return (AmmoRound.TryFromPart(cannonPart, out round) ? round.Describe() + round.ShellMass : "") +
-                   "|" + ArmorFragmentsPlugin.ArmorResistance.Value;
+                   "|" + ArmorFragmentsPlugin.ArmorResistance.Value + "|" + KindOfCannon(cannonPart);
         }
 
         private static string[] CannonTexts(PartScript cannonPart, string group)
