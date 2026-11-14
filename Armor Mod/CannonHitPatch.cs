@@ -28,8 +28,14 @@ namespace ArmorFragments
             if (collision.contactCount == 0) return;
 
             ContactPoint contact = collision.GetContact(0);
+            if (contact.otherCollider == null) return;
             PartScript part = contact.otherCollider.GetComponentInParent<PartScript>();
-            if (part == null) return;
+            if (part == null)
+            {
+                // Not a part: the ground, a building... An explosive shell bursts there.
+                __state = ResolveScenery(__instance, contact, ____previousFrameVelocity, ____cannonScript);
+                return;
+            }
 
             // Only parts whose name carries an [ARM ...] tag act as armor.
             ArmorTag armor = TagCodec.Parse(part.Part.Name).Armor;
@@ -82,6 +88,8 @@ namespace ArmorFragments
             FragmentSpawner.ImpactSink = impactSink;
             float impactTime = Time.time;
 
+            // Damage is added up per part while the shot is resolved and applied once, at the end.
+            FragmentSpawner.BeginBatch();
             try
             {
                 PartPhysics.BeginShot();   // part densities and colliders are remembered per shot
@@ -93,7 +101,8 @@ namespace ArmorFragments
                     if (shell.Kind == AmmoKind.HE)
                     {
                         // An explosive shell without a fuse bursts on the first thing it touches.
-                        BurstOnPart(shell, contact.point, direction, contact.normal, angle);
+                        BurstOnPart(shell, speed, contact.point, direction, contact.normal, angle,
+                                    "it burst on touching a part (no fuse)");
                     }
                     else
                     {
@@ -105,12 +114,12 @@ namespace ArmorFragments
                     return;
                 }
 
-                ImpactOutcome outcome = FragmentSpawner.Spawn(part, armor, cannon, shell, contact.point, direction,
+                FragmentSpawner.Spawn(part, armor, cannon, shell, contact.point, direction,
                     contact.normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value);
 
-                // Blocked or penetrated: the energy has been accounted for. Only a ricochet leaves
-                // the physical shell flying (it really does bounce away).
-                __state = outcome != ImpactOutcome.Ricochet;
+                // Whatever happened (blocked, penetrated, burst, or bounced off: the bounced shell flies on as a
+                // ray), the energy has been accounted for and the physical shell has done its job.
+                __state = true;
             }
             catch (System.Exception e)
             {
@@ -118,6 +127,7 @@ namespace ArmorFragments
             }
             finally
             {
+                FragmentSpawner.EndBatch();   // the damage is applied now, while the attacker is still known
                 FragmentSpawner.Attacker = null;
                 RayDrawer.Anchor = null;
                 RayDrawer.FallbackAnchor = null;
@@ -199,10 +209,74 @@ namespace ArmorFragments
             }
         }
 
-        // An HE shell (explosive, no fuse) has touched a part that is not armor: it bursts there, on the surface.
-        private static void BurstOnPart(ShellInfo shell, Vector3 point, Vector3 direction, Vector3 normal, float angle)
+        // An explosive shell of a cannon with a [CAN] tag has hit something that is not a part (the ground, a
+        // building...): HE bursts there; one with a fuse is stopped and bursts where it stopped. A solid shell does
+        // nothing, and neither does a cannon without a tag (the game's own explosion is still on for it).
+        // Returns true if the shell was resolved (the physical shell is then retired).
+        private static bool ResolveScenery(CannonProjectileScript projectile, ContactPoint contact,
+                                           Vector3 previousVelocity, CannonScript cannonScript)
         {
-            LastImpact.ShellEnergy = shell.Energy;
+            if (contact.otherCollider.GetComponentInParent<CannonProjectileScript>() != null) return false;   // another shell
+
+            CannonTag cannon = null;
+            if (cannonScript != null && cannonScript.PartScript != null)
+                cannon = TagCodec.Parse(cannonScript.PartScript.Part.Name).Cannon;
+            if (cannon == null) return false;
+
+            float speed = previousVelocity.magnitude;
+            if (speed < 1f) return false;
+
+            ShellInfo shell = BuildShell(projectile, cannonScript, cannon, speed);
+            if (!shell.Explosive) return false;
+            if (!Handled.Add(projectile.GetInstanceID())) return false;   // once per shell
+
+            Vector3 direction = previousVelocity.normalized;
+            float angle = Vector3.Angle(direction, contact.normal);
+            angle = Mathf.Min(angle, 180f - angle);
+
+            ArmorFragmentsPlugin.Log.LogInfo(
+                "Shell hit the scenery ('" + contact.otherCollider.name + "') at " + speed.ToString("F0") + " m/s, angle " +
+                angle.ToString("F0") + " deg, " + Ammunition.NameOf(shell.Kind) + ", mass " + shell.Mass.ToString("F2") +
+                ", caliber " + shell.CaliberMm.ToString("F0") + " mm");
+
+            FragmentSpawner.BeginBatch();
+            try
+            {
+                PartPhysics.BeginShot();
+                FragmentSpawner.Attacker = projectile.Owner != null && projectile.Owner.NetworkAircraft != null
+                    ? projectile.Owner.NetworkAircraft.PlayerId : (int?)null;
+
+                string why = "it burst on touching the scenery (no fuse)";
+                if (shell.HasFuse)
+                {
+                    shell.Speed = 0f;   // stopped dead by the ground
+                    why = "it hit the scenery and stopped";
+                }
+                BurstOnPart(shell, speed, contact.point, direction, contact.normal, angle, why);
+                return true;
+            }
+            catch (System.Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogError("Burst on the scenery failed: " + e);
+                return false;
+            }
+            finally
+            {
+                FragmentSpawner.EndBatch();
+                FragmentSpawner.Attacker = null;
+                RayDrawer.Anchor = null;
+                RayDrawer.FallbackAnchor = null;
+            }
+        }
+
+        // An explosive shell has touched something that is not armor and bursts on the spot, on its surface
+        // (HE on a part; HE or a stopped shell with a fuse on the scenery).
+        //   arrivingSpeed: how fast the shell came in (shell.Speed is 0 if the touch stopped it)
+        private static void BurstOnPart(ShellInfo shell, float arrivingSpeed, Vector3 point, Vector3 direction,
+                                        Vector3 normal, float angle, string why)
+        {
+            float arrivingEnergy = 0.5f * shell.Mass * arrivingSpeed * arrivingSpeed;
+            LastImpact.ShellEnergy = arrivingEnergy;
             LastImpact.Absorbed = 0f;
             LastImpact.Residual = 0f;
             LastImpact.ShellAfter = 0f;
@@ -212,9 +286,9 @@ namespace ArmorFragments
 
             // The shell's last meters, drawn as the impact ray; the burst happens when it arrives.
             float lead = BallisticRay.DrawSimpleTrack(point - direction * FragmentSpawner.ShellLeadIn, point,
-                                                      shell.Energy, shell.Mass, shell.CaliberMm * 0.001f);
+                                                      arrivingEnergy, shell.Mass, shell.CaliberMm * 0.001f);
             FragmentSpawner.BurstOnSurface(shell, point, direction, normal, angle, ArmorFragmentsPlugin.ApplyDamage.Value,
-                                           false, lead, "it burst on touching a part (no fuse)");
+                                           false, lead, why);
         }
 
         // The shell has stopped in 'stoppedIn', which is not armor. The ray goes on in the shell's

@@ -10,23 +10,28 @@ namespace ArmorFragments
     // shell's own velocity, added as vectors, so it carries the kinetic energy the shell already had and the
     // explosion's: the fragments that go forward are the fastest, those that go back the slowest.
     //
-    // How many, and how heavy: the casing's mass over a typical fragment mass (the setting, scaled with the
-    // caliber: a bigger shell has a thicker casing, which breaks into bigger pieces), within the limits.
-    // The pieces are not all alike: their masses vary (0.4 to 1.6 times the average) and, with the sideways
-    // bias, more of the casing goes out sideways than along the shell's axis (a cylinder's walls throw most
-    // of the metal sideways). The mass of every fragment sums to the casing's.
+    // How many, and how heavy: the casing's mass over the typical mass of one fragment, which is
+    //   the setting (FragmentMass, for a 75 mm shell)
+    //   x the caliber's scale (a bigger shell has a thicker casing, which breaks into bigger pieces)
+    //   x the casing's brittleness (a brittle casing breaks into smaller pieces: 2x down to 0.25x)
+    //   x the explosion's strength (a stronger burst breaks it up more: the reference is an outward speed of 800 m/s).
+    // There is no limit to that number. The rays are limited (MaxVisualFragments); when there are more fragments
+    // than rays, each ray stands for a bundle of them (see FragmentDistribution).
+    // The pieces are not all alike: the mass of a ray varies at random (log-normal: many small, a few big) and
+    // the masses add up to the casing's.
     //
-    // Where: evenly over the sphere (stratified: each fragment takes an equal slice of it, spiralling, so a
-    // few rays still cover it), around the shell's axis.
+    // Where: over the sphere around the shell's axis, one slice of it per ray (stratified, spiralling, so a few
+    // rays still cover it). With the sideways bias more of them go sideways than along the axis (a cylinder's
+    // walls throw most of the metal sideways): the density of directions follows (1-b) + b x 1.5 x sin^2(theta).
     //
-    // Each fragment's diameter comes from its mass, as for the plates' fragments.
+    // Each fragment's cross-section comes from its mass, as for the plates' fragments.
     internal static class DetonationCloud
     {
         private const float SteelDensityKgPerCm3 = 0.00785f;
         private const float GoldenAngle = 2.39996323f;
-        private const int MinFragments = 3;
         private const float ReferenceCaliberMm = 75f;   // the caliber the typical fragment mass is quoted for
         private const float CaliberExponent = 2.33f;    // typical mass ~ caliber^(7/3): wall thickness ~ caliber
+        private const float ReferenceBurstSpeed = 800f; // outward speed (m/s) at which the burst does not change the size
 
         // forward: the shell's direction of flight when it bursts.
         public static FragmentSpec[] Generate(ShellInfo shell, Vector3 forward, out CloudSummary summary)
@@ -42,11 +47,17 @@ namespace ArmorFragments
             float outward = ArmorFragmentsPlugin.GurneySpeed.Value * Mathf.Sqrt(ratio / (1f + 0.5f * ratio));
             float shellSpeed = Mathf.Max(shell.Speed, 0f);
 
-            // How many fragments.
+            // How many fragments there are, and how many rays show them.
             float caliberScale = Mathf.Pow(Mathf.Clamp(shell.CaliberMm, 5f, 500f) / ReferenceCaliberMm, CaliberExponent);
-            float typicalMass = Mathf.Max(ArmorFragmentsPlugin.FragmentMass.Value / 1000f, 0.00005f) * caliberScale;
-            int count = Mathf.Clamp(Mathf.RoundToInt(casing / typicalMass), MinFragments,
-                                    Mathf.Max(MinFragments, ArmorFragmentsPlugin.MaxFragments.Value));
+            float brittleFactor = Mathf.Lerp(2f, 0.25f, Mathf.Clamp01(shell.Brittleness));
+            float burstFactor = Mathf.Clamp(ReferenceBurstSpeed / Mathf.Max(outward, 1f), 0.5f, 2f);
+            float typicalMass = Mathf.Max(ArmorFragmentsPlugin.FragmentMass.Value / 1000f, 0.00005f)
+                                * caliberScale * brittleFactor * burstFactor;
+
+            int count;
+            float multiplicity;
+            int realCount;
+            FragmentDistribution.Plan(casing / typicalMass, out count, out multiplicity, out realCount);
 
             // The frame around the shell's axis.
             Vector3 axis = forward.sqrMagnitude > 0.000001f ? forward.normalized : Vector3.forward;
@@ -63,8 +74,9 @@ namespace ArmorFragments
 
             for (int i = 0; i < count; i++)
             {
-                // The i-th equal slice of the sphere: its height along the axis, then around it.
-                float cosTheta = 1f - 2f * (i + 0.5f) / count;
+                // The i-th equal slice of the sphere (of the directions' density): its height along the axis,
+                // then around it.
+                float cosTheta = HeightOfSlice((i + 0.5f) / count, bias);
                 float sinTheta = Mathf.Sqrt(Mathf.Max(0f, 1f - cosTheta * cosTheta));
                 float phi = startAngle + i * GoldenAngle;
                 Vector3 outwardDirection =
@@ -76,28 +88,50 @@ namespace ArmorFragments
                 fragments[i].Direction = speed > 0.01f ? velocity / speed : outwardDirection;
                 fragments[i].Speed = speed;
                 fragments[i].Weight = 1f;
+                fragments[i].Multiplicity = multiplicity;
 
-                // More of the casing goes sideways (mean 1 over the sphere), and no two pieces are alike.
-                float sideways = (1f - bias) + bias * 1.5f * sinTheta * sinTheta;
-                massShare[i] = simple ? 1f : sideways * Random.Range(0.4f, 1.6f);
+                massShare[i] = simple ? 1f : FragmentDistribution.MassFactor();
                 massShareSum += massShare[i];
             }
 
             float totalEnergy = 0f;
             for (int i = 0; i < count; i++)
             {
-                fragments[i].Mass = Mathf.Max(casing * massShare[i] / massShareSum, 0.000001f);
+                // The ray's share of the casing, split among the fragments it stands for.
+                fragments[i].Mass = Mathf.Max(casing * massShare[i] / massShareSum / multiplicity, 0.000001f);
                 fragments[i].Energy = 0.5f * fragments[i].Mass * fragments[i].Speed * fragments[i].Speed;
                 fragments[i].AreaCm2 = simple
                     ? ArmorFragmentsPlugin.SimpleFragmentArea.Value
                     : Mathf.Pow(fragments[i].Mass / SteelDensityKgPerCm3, 2f / 3f);
-                totalEnergy += fragments[i].Energy;
+                totalEnergy += fragments[i].Energy * multiplicity;
             }
 
             summary.TotalEnergy = totalEnergy;
             summary.TotalMass = casing;
             summary.Speed = Mathf.Sqrt(2f * totalEnergy / casing);
+            summary.Count = realCount;
+            summary.Rays = count;
+            summary.Multiplicity = multiplicity;
             return fragments;
+        }
+
+        // The height along the axis (cos of the angle from it, -1..1) that cuts off the share 'u' (0..1) of the
+        // directions. Directions are spread by the density (1-b) + 1.5 b (1 - c^2), which is flat for b = 0 and
+        // thickest around the equator for b = 1. The share up to height c is
+        //     F(c) = [ (1-b)(c+1) + 1.5 b ((c+1) - (c^3+1)/3) ] / 2
+        // which only goes up, so the height is found by halving the range.
+        private static float HeightOfSlice(float u, float bias)
+        {
+            float low = -1f;
+            float high = 1f;
+            for (int step = 0; step < 24; step++)
+            {
+                float mid = 0.5f * (low + high);
+                float share = ((1f - bias) * (mid + 1f) +
+                               1.5f * bias * ((mid + 1f) - (mid * mid * mid + 1f) / 3f)) * 0.5f;
+                if (share < u) low = mid; else high = mid;
+            }
+            return 0.5f * (low + high);
         }
     }
 }

@@ -15,7 +15,7 @@ namespace ArmorFragments
         // after the first run, so you can tune them without rebuilding.
         internal static ConfigEntry<bool> ApplyDamage;
         internal static ConfigEntry<float> FragmentMass;
-        internal static ConfigEntry<int> MaxFragments;
+        internal static ConfigEntry<int> MaxVisualFragments;
         internal static ConfigEntry<float> BallisticRayRange;
         internal static ConfigEntry<bool> DrawRays;
         internal static ConfigEntry<float> RayWidthScale;
@@ -72,6 +72,9 @@ namespace ArmorFragments
         internal static ConfigEntry<float> GurneySpeed;
         internal static ConfigEntry<float> DetonationSidewaysBias;
         internal static ConfigEntry<float> DefaultFuse;
+        internal static ConfigEntry<float> FragmentArmorFactor;
+        internal static ConfigEntry<float> DefaultShellBrittleness;
+        internal static ConfigEntry<float> SimShellBrittleness;
         internal static ConfigEntry<bool> SimShellFuse;
         internal static ConfigEntry<float> SimShellFuseDistance;
         internal static ConfigEntry<float> MaxDeflection;
@@ -119,14 +122,16 @@ namespace ArmorFragments
                 "If true, fragments damage the parts they hit.");
             FragmentMass = Config.Bind("Fragments", "FragmentMass", 10f,
                 new ConfigDescription(
-                    "Typical mass (grams) of one fragment. The number of fragments (rays) of a penetration is the cloud's " +
-                    "mass over this (halved for a fully brittle plate, doubled for an unbrittle one), within the limits.",
+                    "Typical mass (grams) of one fragment of a 75 mm shell or a plate. The number of fragments of a cloud is " +
+                    "its mass over this: smaller for a brittle plate or casing and for a stronger explosion, bigger for " +
+                    "a bigger shell. There is no limit to that number (see MaxVisualFragments).",
                     new AcceptableValueRange<float>(0.5f, 500f)));
-            MaxFragments = Config.Bind("Fragments", "MaxFragments", 60,
+            MaxVisualFragments = Config.Bind("Fragments", "MaxVisualFragments", 400,
                 new ConfigDescription(
-                    "Most fragment rays one penetration makes. It only limits detail (and the cost): the cloud's total " +
-                    "energy and mass do not change, so with fewer rays each one stands for more material.",
-                    new AcceptableValueRange<int>(5, 300)));
+                    "Most fragment RAYS one cloud is traced and drawn with (detail and cost). A cloud with more fragments than " +
+                    "this puts a bundle of them in each ray: how far a fragment goes is worked out for one real fragment, " +
+                    "only the damage it leaves is multiplied by the bundle's size. So this never changes the penetration.",
+                    new AcceptableValueRange<int>(100, 1000)));
             BallisticRayRange = Config.Bind("Fragments", "BallisticRayRange", 100f,
                 new ConfigDescription(
                     "When a real shell stops in a part that is not armor, a ballistic ray carries on this far (m) looking for armor.",
@@ -280,6 +285,19 @@ namespace ArmorFragments
                     "How much more of the casing flies sideways than along the shell's axis when it bursts. " +
                     "0 = the same in every direction, 1 = mostly sideways (as the casing of a real shell does).",
                     new AcceptableValueRange<float>(0f, 1f)));
+            FragmentArmorFactor = Config.Bind("Energy", "FragmentArmorFactor", 1f,
+                new ConfigDescription(
+                    "A fragment that meets armor pays what a shell would (ArmorResistance x thickness x its own cross-section) " +
+                    "times this. Above 1 armor stops fragments sooner; below 1 they get through more easily.",
+                    new AcceptableValueRange<float>(0.05f, 20f)));
+            DefaultShellBrittleness = Config.Bind("Energy", "DefaultShellBrittleness", 50f,
+                new ConfigDescription(
+                    "How easily the casing of an explosive shell breaks into small fragments (percent), for a cannon whose " +
+                    "[CAN] tag does not say. More brittle = more, smaller fragments.",
+                    new AcceptableValueRange<float>(0f, 100f)));
+            SimShellBrittleness = Config.Bind("Simulation", "SimulatedShellBrittleness", 50f,
+                new ConfigDescription("Casing brittleness (percent) of the simulated explosive shell.",
+                    new AcceptableValueRange<float>(0f, 100f)));
             DefaultFuse = Config.Bind("Energy", "DefaultFuse", 0.5f,
                 new ConfigDescription(
                     "Fuse distance (m after the impact) a cannon gets when its Fuse switch is turned on in the designer.",
@@ -368,10 +386,11 @@ namespace ArmorFragments
             // The settings that decide what happens to other players. On someone else's server they come
             // from the host (see NetSync); everything else (rays, X-ray, logs, simulated shot) stays yours.
             NetSync.RegisterGlobal(
-                ApplyDamage, FragmentMass, MaxFragments, BallisticRayRange, IgnoreGameDamageOnArmor,
+                ApplyDamage, FragmentMass, MaxVisualFragments, BallisticRayRange, IgnoreGameDamageOnArmor,
                 DefaultShellHardness, ArmorResistance, RicochetFriction, RicochetRandomness,
                 DamagePerKiloJoule, DensityModifier, ConstantForceLoss, SimpleFragments,
                 FillerHE, FillerAPHE, GurneySpeed, DetonationSidewaysBias, DefaultFuse,
+                FragmentArmorFactor, DefaultShellBrittleness,
                 SimpleFragmentArea, MaxPartsPerFragment, SpreadBaseAngle, AxisTilt, SpreadAnisotropy,
                 MaxDeflection, MaxPlates, MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
                 FragmentRicochetAngle, FragmentRicochetMultiplier);

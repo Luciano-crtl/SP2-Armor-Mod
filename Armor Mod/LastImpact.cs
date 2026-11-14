@@ -25,10 +25,15 @@ namespace ArmorFragments
         public static float FragmentEnergy;             // joules, all fragments together
         public static float FragmentMass;               // kilograms, all fragments together
         public static float FragmentSpeed;              // m/s (rms)
+        public static int FragmentCount;                // real fragments
+        public static int FragmentRays;                 // rays that show them
+        public static float FragmentBundle;             // fragments per ray
 
         public static void ClearCloud()
         {
             SigmaX = SigmaY = AxisTilt = FragmentEnergy = FragmentMass = FragmentSpeed = 0f;
+            FragmentCount = FragmentRays = 0;
+            FragmentBundle = 0f;
         }
 
         internal static void SetCloud(CloudSummary cloud)
@@ -39,6 +44,9 @@ namespace ArmorFragments
             FragmentEnergy = cloud.TotalEnergy;
             FragmentMass = cloud.TotalMass;
             FragmentSpeed = cloud.Speed;
+            FragmentCount = cloud.Count;
+            FragmentRays = cloud.Rays;
+            FragmentBundle = cloud.Multiplicity;
         }
 
         public static void Record(string kind, float angle, float tolerated,

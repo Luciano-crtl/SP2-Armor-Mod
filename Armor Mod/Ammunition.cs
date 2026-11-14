@@ -51,6 +51,9 @@ namespace ArmorFragments
 
             float percent = tag != null && tag.FillerPercent.HasValue ? tag.FillerPercent.Value : DefaultFillerPercent(kind);
             shell.FillerFraction = explosive ? Mathf.Clamp(percent, 0f, 50f) / 100f : 0f;
+
+            float brittle = tag != null && tag.Brittleness.HasValue ? tag.Brittleness.Value : ArmorFragmentsPlugin.DefaultShellBrittleness.Value;
+            shell.Brittleness = explosive ? Mathf.Clamp(brittle, 0f, 100f) / 100f : 0f;
         }
     }
 }

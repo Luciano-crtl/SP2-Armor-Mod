@@ -32,6 +32,7 @@ namespace ArmorFragments
 
         private const float MaxRange = 30f;        // total path length of one ray, in meters
         private const float SurfaceOffset = 0.02f; // pushes a ricochet start point off the surface
+        private const int MaxBubblesPerCloud = 80;  // most rays of one cloud that get their end bubbles
 
         private static readonly RaycastHit[] Hits = new RaycastHit[64];
 
@@ -60,10 +61,28 @@ namespace ArmorFragments
         //           has already drawn it. Negative = draw the usual short shell track here.
         // plate: which plate of a chain this is (an armor-piercing shell that goes through a plate flies on
         //        and may meet another one; 1 = the first).
+        // bounces: ricochets this shell has had already (it may bounce off armor up to MaxRicochets times).
         public static ImpactOutcome Spawn(PartScript armor, ArmorTag armorTag, CannonTag cannonTag, ShellInfo shell,
                                  Vector3 point, Vector3 direction,
                                  Vector3 normal, float angle, bool applyDamage,
-                                 bool simulated = false, float leadTime = -1f, int plate = 1)
+                                 bool simulated = false, float leadTime = -1f, int plate = 1, int bounces = 0)
+        {
+            BeginBatch();
+            try
+            {
+                return SpawnCore(armor, armorTag, cannonTag, shell, point, direction, normal, angle, applyDamage,
+                                 simulated, leadTime, plate, bounces);
+            }
+            finally
+            {
+                EndBatch();
+            }
+        }
+
+        private static ImpactOutcome SpawnCore(PartScript armor, ArmorTag armorTag, CannonTag cannonTag, ShellInfo shell,
+                                 Vector3 point, Vector3 direction,
+                                 Vector3 normal, float angle, bool applyDamage,
+                                 bool simulated, float leadTime, int plate, int bounces)
         {
             string tag = simulated ? "[SIM] " : "";
 
@@ -77,7 +96,6 @@ namespace ArmorFragments
             LastImpact.ClearCloud();
 
             int mask = -1 & ~LayerMask.GetMask("WorldSpaceUI");
-            bool draw = ArmorFragmentsPlugin.DrawRays.Value;
 
             // The shell's last few meters before the impact, drawn as the (thicker) initial ray.
             // Everything that happens after the impact waits for it to arrive.
@@ -104,42 +122,31 @@ namespace ArmorFragments
                 tag + "Ricochet check: angle " + angle.ToString("F0") + " deg, critical " +
                 Mathf.Min(armorTolerated, 90f).ToString("F1") + " deg (" + criticalBreakdown + ")");
 
-            if (ArmorFragmentsPlugin.MaxRicochets.Value > 0 && angle >= armorTolerated)
+            if (ArmorFragmentsPlugin.MaxRicochets.Value > 0 && bounces < ArmorFragmentsPlugin.MaxRicochets.Value &&
+                angle >= armorTolerated)
             {
                 // Make the normal face the shell, then mirror the direction around it.
                 Vector3 n = Vector3.Dot(normal, direction) > 0f ? -normal : normal;
                 Vector3 reflected = Vector3.Reflect(direction, n).normalized;
 
-                // The ricocheted ray starts at the impact point (it is the shell: as thick as its caliber).
-                RayPath path = new RayPath { Width = shell.CaliberMm * 0.001f };
-                path.Add(point, RayKind.None);
-
-                // The armor bounce counts as the ray's first ricochet.
                 // What the shell keeps after the bounce; the rest stays in the armor.
                 float energyOut = EnergyModel.RicochetEnergyOut(shell.Energy, angle);
-                Slug bounced = new Slug
-                {
-                    Energy = energyOut,
-                    Mass = Mathf.Max(shell.Mass, 0.000001f),
-                    AreaM2 = shell.AreaCm2 * 0.0001f,
-                };
-                TraceResult r = TraceRay(path, point + n * SurfaceOffset, reflected, 0f, 1,
-                                         null, null, applyDamage, mask, leadTime, bounced);
-                if (draw) RayDrawer.Animate(path, leadTime);
-
                 LastImpact.Absorbed = shell.Energy - energyOut;
                 LastImpact.Residual = energyOut;
 
-                LastImpact.Record(tag + "Armor ricochet (single ray)", angle, Mathf.Min(armorTolerated, 90f),
-                                  r.HitPart ? 1 : 0, 1 + r.Ricochets, r.Damage);
-
+                LastImpact.Record(tag + "Armor ricochet", angle, Mathf.Min(armorTolerated, 90f), 0, 1, 0f);
                 ArmorFragmentsPlugin.Log.LogInfo(
                     tag + "Armor ricochet: angle " + angle.ToString("F0") + " >= critical " +
                     armorTolerated.ToString("F0") + " deg, shell keeps " + EnergyModel.Kilojoules(energyOut) +
-                    " of " + EnergyModel.Kilojoules(shell.Energy) + ". Single ray: " +
-                    (r.HitPart ? "hit a part" : "hit no part") + ", extra ricochets " +
-                    r.Ricochets + ", total damage " + r.Damage.ToString("F1") +
-                    (applyDamage ? "" : " (not applied)"));
+                    " of " + EnergyModel.Kilojoules(shell.Energy) + " and flies on");
+
+                // The bounced shell is the same shell: it flies on as a ballistic ray (through the parts it meets,
+                // paying energy in each; onto other armor, which is resolved in turn; a shell with a fuse still
+                // counts it down). The physical shell is retired by the hit patch.
+                ShellInfo bounced = shell;
+                bounced.Speed = Mathf.Sqrt(2f * energyOut / Mathf.Max(shell.Mass, 0.000001f));
+                ShellFlight.Continue(point + n * SurfaceOffset, reflected, bounced, cannonTag, null, armor,
+                                     leadTime, 0f, RayKind.Ricochet, applyDamage, simulated, plate, true, bounces + 1);
                 return ImpactOutcome.Ricochet;
             }
 
@@ -190,7 +197,9 @@ namespace ArmorFragments
                     EnergyModel.Kilojoules(shellEnergy - absorbed) + ")");
             else
                 ArmorFragmentsPlugin.Log.LogInfo(
-                    tag + "Fragment cloud: " + fragments.Length + " fragments, " + EnergyModel.Kilojoules(cloud.TotalEnergy) +
+                    tag + "Fragment cloud: " + cloud.Count + " fragments in " + fragments.Length + " rays" +
+                    (cloud.Multiplicity > 1.001f ? " (" + cloud.Multiplicity.ToString("F1") + " per ray)" : "") + ", " +
+                    EnergyModel.Kilojoules(cloud.TotalEnergy) +
                     " and " + (cloud.TotalMass * 1000f).ToString("F0") + " g in total, speed ~" + cloud.Speed.ToString("F0") +
                     " m/s, spread " + cloud.SigmaX.ToString("F1") + " x " + cloud.SigmaY.ToString("F1") +
                     " deg, axis leaning " + cloud.AxisTiltDegrees.ToString("F1") + " deg");
@@ -209,7 +218,7 @@ namespace ArmorFragments
             float spalled = fragments.Length > 0 ? cloud.TotalEnergy : 0f;
             ContinueAfterPlate(armor, armorTag, cannonTag, shell, point, direction, normal, angle,
                                shellEnergy, shellEnergy - absorbed - spalled, effectiveThickness,
-                               applyDamage, simulated, leadTime, plate, tag);
+                               applyDamage, simulated, leadTime, plate, tag, bounces);
             return ImpactOutcome.Penetrated;
         }
 
@@ -220,7 +229,8 @@ namespace ArmorFragments
         private static void ContinueAfterPlate(PartScript armor, ArmorTag armorTag, CannonTag cannonTag, ShellInfo shell,
                                                Vector3 point, Vector3 direction, Vector3 normal, float angle,
                                                float energyIn, float energyAfter, float effectiveThicknessMm,
-                                               bool applyDamage, bool simulated, float timeAtPlate, int plate, string tag)
+                                               bool applyDamage, bool simulated, float timeAtPlate, int plate, string tag,
+                                               int bounces)
         {
             // Does it stop here? (Too many plates already, or nothing left of its energy.)
             int maxPlates = Mathf.Max(1, ArmorFragmentsPlugin.MaxPlates.Value);
@@ -292,7 +302,7 @@ namespace ArmorFragments
 
             ShellFlight.Continue(exitPoint + newDirection * 0.01f, newDirection, next, cannonTag,
                                  null, armor, timeAtPlate + insideTime, 0f, RayKind.None,
-                                 applyDamage, simulated, plate + 1, true);
+                                 applyDamage, simulated, plate + 1, true, bounces);
         }
 
         // An explosive shell bursts on the surface it touches (HE, or an APHE whose fuse has run out or that the
@@ -314,6 +324,20 @@ namespace ArmorFragments
         public static void Detonate(ShellInfo shell, Vector3 point, Vector3 direction, PartScript inside,
                                     bool applyDamage, bool simulated, float delay, string why, float angle = -1f)
         {
+            BeginBatch();
+            try
+            {
+                DetonateCore(shell, point, direction, inside, applyDamage, simulated, delay, why, angle);
+            }
+            finally
+            {
+                EndBatch();
+            }
+        }
+
+        private static void DetonateCore(ShellInfo shell, Vector3 point, Vector3 direction, PartScript inside,
+                                         bool applyDamage, bool simulated, float delay, string why, float angle)
+        {
             string tag = simulated ? "[SIM] " : "";
             CloudSummary cloud;
             FragmentSpec[] fragments = DetonationCloud.Generate(shell, direction, out cloud);
@@ -332,10 +356,12 @@ namespace ArmorFragments
                               partsHit, ricochets, totalDamage);
 
             ArmorFragmentsPlugin.Log.LogInfo(
-                tag + kind + " burst (" + why + "): " + fragments.Length + " fragments, " +
+                tag + kind + " burst (" + why + "): " + cloud.Count + " fragments in " + fragments.Length + " rays" +
+                (cloud.Multiplicity > 1.001f ? " (" + cloud.Multiplicity.ToString("F1") + " per ray)" : "") + ", " +
                 EnergyModel.Kilojoules(cloud.TotalEnergy) + " and " + (cloud.TotalMass * 1000f).ToString("F0") +
                 " g of casing, speed ~" + cloud.Speed.ToString("F0") + " m/s, filler " +
-                (shell.FillerFraction * 100f).ToString("F1") + " %, shell speed " + shell.Speed.ToString("F0") + " m/s");
+                (shell.FillerFraction * 100f).ToString("F1") + " %, casing brittleness " +
+                (shell.Brittleness * 100f).ToString("F0") + " %, shell speed " + shell.Speed.ToString("F0") + " m/s");
             ArmorFragmentsPlugin.Log.LogInfo(
                 tag + "Burst fragments: " + partsHit + " of " + fragments.Length + " rays hit a part, " +
                 ricochets + " ricochets, total damage " + totalDamage.ToString("F1") +
@@ -356,6 +382,10 @@ namespace ArmorFragments
             totalDamage = 0f;
             bool draw = ArmorFragmentsPlugin.DrawRays.Value;
 
+            // Every ray ends in a bubble (a little sphere object). With hundreds of rays that would be hundreds of
+            // objects at once, so a big cloud only gives some of its rays their bubbles.
+            int bubbleStride = Mathf.Max(1, Mathf.CeilToInt(fragments.Length / (float)MaxBubblesPerCloud));
+
             for (int i = 0; i < fragments.Length; i++)
             {
                 // As thick as the fragment is wide.
@@ -368,10 +398,16 @@ namespace ArmorFragments
                     Energy = fragments[i].Energy,
                     Mass = fragments[i].Mass,
                     AreaM2 = fragments[i].AreaCm2 * 0.0001f,
+                    Multiplicity = Mathf.Max(fragments[i].Multiplicity, 1f),
                 };
                 TraceResult r = TraceRay(path, point, fragments[i].Direction, 0f, 0, ignore, inside, applyDamage,
                                          mask, delay, slug);
-                if (draw) RayDrawer.Animate(path, delay);
+                if (draw)
+                {
+                    if (i % bubbleStride != 0)
+                        for (int m = 1; m < path.Markers.Count; m++) path.Markers[m] = RayKind.None;
+                    RayDrawer.Animate(path, delay);
+                }
 
                 if (r.HitPart) partsHit++;
                 ricochets += r.Ricochets;
@@ -386,11 +422,19 @@ namespace ArmorFragments
                                              PartScript skip, bool applyDamage, float startDelay)
         {
             TraceResult total = default;
-            foreach (BallisticRay.Crossed crossing in ray.Crossings)
+            BeginBatch();
+            try
             {
-                if (crossing.Part == null || crossing.Part == skip) continue;
-                Deposit(crossing.Part, crossing.Dissipated, from + direction * crossing.Distance, direction,
-                        applyDamage, startDelay + crossing.ArrivalTime, ref total);
+                foreach (BallisticRay.Crossed crossing in ray.Crossings)
+                {
+                    if (crossing.Part == null || crossing.Part == skip) continue;
+                    Deposit(crossing.Part, crossing.Dissipated, from + direction * crossing.Distance, direction,
+                            applyDamage, startDelay + crossing.ArrivalTime, ref total);
+                }
+            }
+            finally
+            {
+                EndBatch();
             }
             return total.Damage;
         }
@@ -401,6 +445,9 @@ namespace ArmorFragments
             public float Energy;   // joules
             public float Mass;     // kilograms
             public float AreaM2;   // square meters
+            // How many real fragments the ray stands for (1 = just this one). Energy, mass and area are of ONE
+            // of them (that is what decides how far it goes); what it leaves in the parts is times this.
+            public float Multiplicity;
         }
 
         // Follows one piece (a fragment, or a ricocheted shell) and records its route in 'path'.
@@ -431,8 +478,9 @@ namespace ArmorFragments
             float tolerated = ToleratedAngle(
                 ArmorFragmentsPlugin.FragmentRicochetAngle.Value,
                 ArmorFragmentsPlugin.FragmentRicochetMultiplier.Value);
-            float floor = Mathf.Max(1f, slug.Energy * EnergyModel.StopFraction);
+            float floor = Mathf.Max(1f, slug.Energy * EnergyModel.StopFraction);   // of one fragment
             RayKind stopMarker = DamageSink != null ? RayKind.Landed : RayKind.Hit;
+            float bundle = Mathf.Max(slug.Multiplicity, 1f);   // fragments this ray stands for
 
             int partsCrossed = 0;
             PartScript skip = ignore;
@@ -447,23 +495,29 @@ namespace ArmorFragments
                 float insideChord = PartPhysics.Chord(startInside, origin, dir, MaxRange, out insideEntry, out insideExit);
                 if (insideChord > 0.001f)
                 {
+                    // Armor charges a fragment as it does a shell; anything else by its density.
+                    bool insideIsArmor = TagCodec.Parse(startInside.Part.Name).Armor != null;
                     float insideDensity = PartPhysics.Density(startInside);
                     float energyIn = slug.Energy;
-                    float energyOut = PartPhysics.EnergyAfter(energyIn, slug.Mass, slug.AreaM2, insideDensity, insideExit);
+                    float energyOut = insideIsArmor
+                        ? PartPhysics.EnergyAfterArmor(energyIn, slug.AreaM2, insideExit * 1000f)
+                        : PartPhysics.EnergyAfter(energyIn, slug.Mass, slug.AreaM2, insideDensity, insideExit);
                     float startSpeed = BallisticRay.VisualSpeed(energyIn, slug.Mass);
                     result.HitPart = true;
 
                     if (energyOut <= floor)
                     {
                         // It does not get out: everything stays in the part.
-                        Deposit(startInside, energyIn, origin, dir, applyDamage, time, ref result);
-                        float into = PartPhysics.StopDistance(energyIn, floor, slug.Mass, slug.AreaM2, insideDensity, insideExit);
+                        Deposit(startInside, energyIn * bundle, origin, dir, applyDamage, time, ref result);
+                        float into = insideIsArmor
+                            ? PartPhysics.ArmorStopDistance(energyIn, floor, slug.AreaM2, insideExit * 1000f, insideExit)
+                            : PartPhysics.StopDistance(energyIn, floor, slug.Mass, slug.AreaM2, insideDensity, insideExit);
                         path.Add(origin + dir * into, stopMarker, startSpeed * 0.5f);
                         path.Final = RayKind.Hit;
                         return result;
                     }
 
-                    Deposit(startInside, energyIn - energyOut, origin, dir, applyDamage, time, ref result);
+                    Deposit(startInside, (energyIn - energyOut) * bundle, origin, dir, applyDamage, time, ref result);
                     slug.Energy = energyOut;
                     float average = 0.5f * (startSpeed + BallisticRay.VisualSpeed(energyOut, slug.Mass));
                     time += insideExit / average;
@@ -521,7 +575,7 @@ namespace ArmorFragments
                 {
                     float kept = EnergyModel.RicochetEnergyOut(slug.Energy, angle);
                     if (part != null)
-                        Deposit(part, slug.Energy - kept, hit.point, dir, applyDamage, time, ref result);
+                        Deposit(part, (slug.Energy - kept) * bundle, hit.point, dir, applyDamage, time, ref result);
 
                     slug.Energy = kept;
                     path.Add(hit.point, RayKind.Ricochet, speed);
@@ -559,9 +613,19 @@ namespace ArmorFragments
                     chord = 0.01f;
                 }
 
+                // Armor charges a fragment what it would charge a shell of the same cross-section: its resistance
+                // per mm of thickness (the tag's, longer the more slanted the hit) and per cm2, times the
+                // fragment factor. Any other part slows it by its density.
+                ArmorTag partArmor = TagCodec.Parse(part.Part.Name).Armor;
+                float armorMm = partArmor != null
+                    ? partArmor.Thickness / Mathf.Max(Mathf.Cos(angle * Mathf.Deg2Rad), 0.1f)
+                    : 0f;
+
                 float density = PartPhysics.Density(part);
                 float energyIn = slug.Energy;
-                float energyOut = PartPhysics.EnergyAfter(energyIn, slug.Mass, slug.AreaM2, density, chord);
+                float energyOut = partArmor != null
+                    ? PartPhysics.EnergyAfterArmor(energyIn, slug.AreaM2, armorMm)
+                    : PartPhysics.EnergyAfter(energyIn, slug.Mass, slug.AreaM2, density, chord);
                 result.HitPart = true;
                 partsCrossed++;
 
@@ -571,14 +635,16 @@ namespace ArmorFragments
                 if (energyOut <= floor)
                 {
                     // It stops inside the part and leaves everything there; it slows to a halt on the way.
-                    Deposit(part, energyIn, hit.point, dir, applyDamage, time, ref result);
-                    float into = PartPhysics.StopDistance(energyIn, floor, slug.Mass, slug.AreaM2, density, chord);
+                    Deposit(part, energyIn * bundle, hit.point, dir, applyDamage, time, ref result);
+                    float into = partArmor != null
+                        ? PartPhysics.ArmorStopDistance(energyIn, floor, slug.AreaM2, armorMm, chord)
+                        : PartPhysics.StopDistance(energyIn, floor, slug.Mass, slug.AreaM2, density, chord);
                     path.Add(origin + dir * (entry + into), stopMarker, speed * 0.5f);
                     path.Final = RayKind.Hit;
                     break;
                 }
 
-                Deposit(part, energyIn - energyOut, hit.point, dir, applyDamage, time, ref result);
+                Deposit(part, (energyIn - energyOut) * bundle, hit.point, dir, applyDamage, time, ref result);
                 slug.Energy = energyOut;
 
                 // Inside the part the speed goes from what it was to what it becomes.
@@ -618,12 +684,81 @@ namespace ArmorFragments
 
             float damage = joules / 1000f * ArmorFragmentsPlugin.DamagePerKiloJoule.Value;
 
-            if (applyDamage) ApplyDamage(part, damage, point, dir);
+            if (applyDamage) Accumulate(part, damage, point, dir);
             result.Damage += damage;   // counted even when not applied: "would-be" damage
 
             // 'arrival' is when the drawn ray's head reaches this point.
             if (DamageSink != null) Record(DamageSink, part, damage, arrival);
             if (ImpactSink != null) Record(ImpactSink, part, damage, arrival);
+        }
+
+        // ---- Damage, added up per part -------------------------------------------------------
+        // A burst can have a thousand fragments hitting the same few parts. Calling the game (or sending a network
+        // message) for each would be a waste: while a shot is being resolved (between BeginBatch and the
+        // EndBatch that closes the outermost one) the damage is added up per part and applied once at the end.
+        // Everything happens in the same frame, so the result is the same.
+        private struct Pending
+        {
+            public float Damage;
+            public float Biggest;    // the biggest single piece so far: its point and direction are the hit's
+            public Vector3 Point;
+            public Vector3 Dir;
+        }
+
+        private static readonly Dictionary<PartScript, Pending> PendingDamage = new Dictionary<PartScript, Pending>();
+        private static int batchDepth;
+
+        public static void BeginBatch()
+        {
+            batchDepth++;
+        }
+
+        public static void EndBatch()
+        {
+            batchDepth--;
+            if (batchDepth > 0) return;
+            batchDepth = 0;
+            Flush();
+        }
+
+        private static void Accumulate(PartScript part, float damage, Vector3 point, Vector3 dir)
+        {
+            if (batchDepth <= 0)
+            {
+                ApplyDamage(part, damage, point, dir);   // nobody will flush: apply it now
+                return;
+            }
+
+            Pending pending;
+            PendingDamage.TryGetValue(part, out pending);
+            pending.Damage += damage;
+            if (damage >= pending.Biggest)
+            {
+                pending.Biggest = damage;
+                pending.Point = point;
+                pending.Dir = dir;
+            }
+            PendingDamage[part] = pending;
+        }
+
+        private static void Flush()
+        {
+            if (PendingDamage.Count == 0) return;
+
+            List<KeyValuePair<PartScript, Pending>> all = new List<KeyValuePair<PartScript, Pending>>(PendingDamage);
+            PendingDamage.Clear();
+            foreach (KeyValuePair<PartScript, Pending> pair in all)
+            {
+                if (pair.Key == null) continue;   // destroyed meanwhile
+                try
+                {
+                    ApplyDamage(pair.Key, pair.Value.Damage, pair.Value.Point, pair.Value.Dir);
+                }
+                catch (System.Exception e)
+                {
+                    ArmorFragmentsPlugin.Log.LogWarning("Applying damage to a part failed: " + e.Message);
+                }
+            }
         }
 
         private static void Record(Dictionary<PartScript, DamageRecord> sink, PartScript part, float damage, float arrival)

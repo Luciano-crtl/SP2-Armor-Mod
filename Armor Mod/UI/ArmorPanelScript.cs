@@ -100,6 +100,10 @@ namespace ArmorFragments.UI
             Live("Shell after the plate", () => LastImpact.ShellAfter <= 0f
                 ? "-"
                 : EnergyModel.Kilojoules(LastImpact.ShellAfter) + ", turned " + LastImpact.Deflection.ToString("F1") + " deg");
+            Live("Fragments", () => LastImpact.FragmentCount <= 0
+                ? "-"
+                : LastImpact.FragmentCount + " in " + LastImpact.FragmentRays + " rays" +
+                  (LastImpact.FragmentBundle > 1.001f ? " (" + LastImpact.FragmentBundle.ToString("F1") + " per ray)" : ""));
             Live("Fragment budget", () => LastImpact.FragmentEnergy <= 0f
                 ? "-"
                 : EnergyModel.Kilojoules(LastImpact.FragmentEnergy) + ", " + (LastImpact.FragmentMass * 1000f).ToString("F0") +
@@ -166,6 +170,8 @@ namespace ArmorFragments.UI
                 "For an explosive shell: on = APHE (it goes through armor and bursts inside, after the fuse distance). Off = HE (it bursts on the first thing it touches). A real cannon's fuse is in the designer.");
             FloatSetting(ArmorFragmentsPlugin.SimShellFuseDistance, "Simulated fuse distance",
                 "Meters of flight after the first impact at which the simulated APHE shell bursts.", 0.1f, " m");
+            FloatSetting(ArmorFragmentsPlugin.SimShellBrittleness, "Simulated casing brittleness",
+                "For an explosive shell: how easily its casing breaks into small fragments (more, smaller ones).", 5f, " %");
             FloatSetting(ArmorFragmentsPlugin.SimCaliber, "Simulated shell caliber",
                 "Caliber of the imaginary shell. It sets the area the armor has to open and, with it, the shell's mass.", 1f, " mm");
             Live("Calculated shell mass", () =>
@@ -237,6 +243,10 @@ namespace ArmorFragments.UI
                 "Explosive filler (percent of the shell's mass) of an explosive shell without a fuse. The designer's filler slider starts here.", 0.5f, " %");
             FloatSetting(ArmorFragmentsPlugin.FillerAPHE, "Filler of APHE shells",
                 "Explosive filler (percent of the shell's mass) of an explosive shell with a fuse. The designer's filler slider starts here.", 0.5f, " %");
+            FloatSetting(ArmorFragmentsPlugin.DefaultShellBrittleness, "Default shell brittleness",
+                "Casing brittleness of a cannon whose [CAN] tag does not say. A brittle casing makes more, smaller fragments.", 5f, " %");
+            FloatSetting(ArmorFragmentsPlugin.FragmentArmorFactor, "Fragment armor factor",
+                "A fragment that meets armor pays what a shell would (resistance x thickness x its own cross-section) times this. Above 1 armor stops fragments sooner.", 0.05f, "x");
             FloatSetting(ArmorFragmentsPlugin.GurneySpeed, "Explosive speed",
                 "Gurney velocity of the explosive (m/s): with the filler it sets how fast the casing fragments fly outward.", 10f, " m/s");
             FloatSetting(ArmorFragmentsPlugin.DetonationSidewaysBias, "Burst sideways bias",
@@ -312,9 +322,9 @@ namespace ArmorFragments.UI
             FloatSetting(ArmorFragmentsPlugin.DamagePerKiloJoule, "Damage per kJ",
                 "Part damage per kilojoule a fragment leaves in a part. This is the damage scale.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.FragmentMass, "Fragment mass",
-                "Typical mass of one fragment. The number of fragments is the cloud's mass over this.", 0.5f, " g");
-            IntSetting(ArmorFragmentsPlugin.MaxFragments, "Max fragments",
-                "Most fragment rays one penetration makes (a limit on detail and cost; the cloud's energy does not change).");
+                "Typical mass of one fragment (of a 75 mm shell or a plate). The number of fragments is the cloud's mass over this; there is no limit to it.", 0.5f, " g");
+            IntSetting(ArmorFragmentsPlugin.MaxVisualFragments, "Max number of visual fragments",
+                "Most rays one cloud is traced and drawn with. A cloud with more fragments puts a bundle of them in each ray: how far a fragment goes is worked out for one real fragment, so this changes the detail and the cost, never the penetration.");
             FloatSetting(ArmorFragmentsPlugin.BallisticRayRange, "Ballistic ray range",
                 "When a real shell stops in a non-armor part, a ray carries on this far looking for armor.", 1f, " m");
         }

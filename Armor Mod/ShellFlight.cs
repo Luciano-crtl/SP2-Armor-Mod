@@ -6,9 +6,10 @@ namespace ArmorFragments
     // A shell flying on as a "ballistic ray": through ordinary parts (paying energy in each, which is
     // their damage) until it meets armor, anything that is not a part, or runs out of energy.
     //
-    // Used in two places:
+    // Used in three places:
     //  - a real shell that hit a part without an [ARM] tag (the game stops the shell there; the ray goes on);
-    //  - an armor-piercing shell that has gone through a plate (it leaves the plate bent a little).
+    //  - a shell that has gone through a plate (it leaves the plate bent a little);
+    //  - a shell that has ricocheted off a plate (it flies off with the energy the bounce left it).
     // If the ray meets armor, that armor is resolved like any impact (ricochet, block or penetration),
     // which may send the shell on again, up to MaxPlates plates.
     //
@@ -24,11 +25,13 @@ namespace ArmorFragments
         // startDelay:   seconds after the impact at which this ray starts moving
         // leadIn:       meters of flight drawn before 'from' (the shell arriving); 0 for none
         // nextPlate:    the number the next armor met would have in the chain of plates
-        // continuation: the ray of a shell that left a plate (drawn thick, but it is not the impact ray)
+        // continuation: the ray of a shell that left a plate or bounced off one (drawn thick, but it is not the
+        //               impact ray)
+        // bounces:      ricochets the shell has had already (it may bounce off armor up to MaxRicochets times)
         public static void Continue(Vector3 from, Vector3 direction, ShellInfo shell, CannonTag cannon,
                                     PartScript enteredPart, PartScript ignorePart, float startDelay, float leadIn,
                                     RayKind startMarker, bool applyDamage, bool simulated, int nextPlate,
-                                    bool continuation)
+                                    bool continuation, int bounces = 0)
         {
             string tag = simulated ? "[SIM] " : "";
             float range = ArmorFragmentsPlugin.BallisticRayRange.Value;
@@ -59,7 +62,9 @@ namespace ArmorFragments
             float damage = FragmentSpawner.DepositCrossings(ray, from, direction, cannon == null ? enteredPart : null,
                                                             applyDamage, startDelay);
 
-            string origin = continuation ? "Shell through plate " + (nextPlate - 1) : "Shell stopped in a non-armor part";
+            string origin = startMarker == RayKind.Ricochet ? "Shell ricocheted off plate " + nextPlate
+                          : continuation ? "Shell through plate " + (nextPlate - 1)
+                          : "Shell stopped in a non-armor part";
 
             if (burst.Happens)
             {
@@ -102,7 +107,7 @@ namespace ArmorFragments
 
             // The fragments of that armor leave when this ray reaches it.
             FragmentSpawner.Spawn(ray.Part, ray.Armor, cannon, atArmor, ray.Hit.point, direction,
-                ray.Hit.normal, angle, applyDamage, simulated, startDelay + duration, nextPlate);
+                ray.Hit.normal, angle, applyDamage, simulated, startDelay + duration, nextPlate, bounces);
         }
     }
 }

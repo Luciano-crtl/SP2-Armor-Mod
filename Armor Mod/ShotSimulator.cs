@@ -107,11 +107,15 @@ namespace ArmorFragments
                 direction = camera.transform.forward;
             }
 
-            // The imaginary cannon has no properties of its own (the shell does), except the fuse, which is
-            // what the [CAN] tag's z= is for a real one.
+            // The imaginary cannon has no properties of its own (the shell does), except what a real cannon's
+            // [CAN] tag adds for explosive ammunition: the fuse (z=) and the casing's brittleness (q=).
             bool explosive = ArmorFragmentsPlugin.SimShellExplosive.Value;
-            CannonTag cannon = explosive && ArmorFragmentsPlugin.SimShellFuse.Value
-                ? new CannonTag { Fuse = ArmorFragmentsPlugin.SimShellFuseDistance.Value }
+            CannonTag cannon = explosive
+                ? new CannonTag
+                {
+                    Fuse = ArmorFragmentsPlugin.SimShellFuse.Value ? ArmorFragmentsPlugin.SimShellFuseDistance.Value : (float?)null,
+                    Brittleness = ArmorFragmentsPlugin.SimShellBrittleness.Value,
+                }
                 : null;
             ShellInfo shell = new ShellInfo
             {

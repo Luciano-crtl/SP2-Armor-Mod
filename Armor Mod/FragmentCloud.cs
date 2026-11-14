@@ -2,15 +2,17 @@ using UnityEngine;
 
 namespace ArmorFragments
 {
-    // One fragment of a penetrating shell: where it goes and what it carries.
+    // One fragment ray: where it goes and what ONE fragment carries. When there are more fragments than rays
+    // (see FragmentDistribution) the ray stands for a bundle of 'Multiplicity' fragments like this one.
     internal struct FragmentSpec
     {
         public Vector3 Direction;
-        public float Energy;     // joules
-        public float Mass;       // kilograms
-        public float Speed;      // m/s, from energy and mass
-        public float AreaCm2;    // cross-section (used when fragments start crossing parts)
-        public float Weight;     // share of the directional distribution, 1 = average
+        public float Energy;       // joules, of one fragment
+        public float Mass;         // kilograms, of one fragment
+        public float Speed;        // m/s, from energy and mass
+        public float AreaCm2;      // cross-section of one fragment
+        public float Weight;       // share of the directional distribution, 1 = average
+        public float Multiplicity; // fragments this ray stands for (1 = just one)
     }
 
     // What the panel shows about the cloud of the last impact.
@@ -22,6 +24,9 @@ namespace ArmorFragments
         public float TotalEnergy;
         public float TotalMass;
         public float Speed;           // rms speed of the whole cloud
+        public int Count;             // real fragments in the cloud
+        public int Rays;              // rays that show them
+        public float Multiplicity;    // fragments per ray (1 when every fragment has its own ray)
     }
 
     // Where the fragments of a penetrating shell go, and how much energy and mass they carry.
@@ -41,11 +46,14 @@ namespace ArmorFragments
     // could carry at the shell's speed. Mass: that spalled material (brittleness x the plug the shell
     // punched out). The shell itself does not break up here: it goes on (see FragmentSpawner), and an
     // explosive one bursts later (see DetonationCloud).
+    //
+    // How many fragments: the cloud's mass over the typical mass of one (no limit; a brittle plate breaks
+    // into smaller pieces). How many rays show them, and what a ray stands for when there are too many:
+    // see FragmentDistribution.
     internal static class FragmentCloud
     {
         private const float SteelDensityKgPerCm3 = 0.00785f;
         private const float GoldenAngle = 2.39996323f;   // radians: spreads the fragments around the axis
-        private const int MinFragments = 3;              // fewest rays that still show a cloud
 
         // The fragments are the plate's own material (spall): in proportion to its brittleness, and never more
         // than that material could carry at the shell's speed.
@@ -94,11 +102,12 @@ namespace ArmorFragments
 
             // ---- How many fragments -------------------------------------------------------------
             // The cloud's mass over the typical mass of one piece (a brittle plate breaks into smaller
-            // ones). The cap only limits detail: the cloud's total energy and mass do not change, so each
-            // ray of a capped cloud simply stands for more material.
-            float typicalMass = Mathf.Max(ArmorFragmentsPlugin.FragmentMass.Value / 1000f, 0.0001f) * Mathf.Lerp(2f, 0.5f, brittle);
-            int count = Mathf.Clamp(Mathf.RoundToInt(totalMass / typicalMass), MinFragments,
-                                    Mathf.Max(MinFragments, ArmorFragmentsPlugin.MaxFragments.Value));
+            // ones). Too many for the rays allowed: each ray then stands for a bundle of them.
+            float typicalMass = Mathf.Max(ArmorFragmentsPlugin.FragmentMass.Value / 1000f, 0.00005f) * Mathf.Lerp(2f, 0.5f, brittle);
+            int count;
+            float multiplicity;
+            int realCount;
+            FragmentDistribution.Plan(totalMass / typicalMass, out count, out multiplicity, out realCount);
 
             // ---- The fragments ----------------------------------------------------------------
             FragmentSpec[] fragments = new FragmentSpec[count];
@@ -123,14 +132,16 @@ namespace ArmorFragments
                 fragments[i].Weight = simple ? 1f : Mathf.Exp(-0.5f * radius * radius);
                 weightSum += fragments[i].Weight;
 
-                massShare[i] = simple ? 1f : 0.6f + 0.8f * Random.value;
+                massShare[i] = simple ? 1f : FragmentDistribution.MassFactor();
                 massShareSum += massShare[i];
             }
 
             for (int i = 0; i < count; i++)
             {
-                fragments[i].Energy = fragmentEnergy * fragments[i].Weight / weightSum;
-                fragments[i].Mass = Mathf.Max(totalMass * massShare[i] / massShareSum, 0.000001f);
+                // What the ray carries, shared among the fragments it stands for: each has its own mass and energy.
+                fragments[i].Multiplicity = multiplicity;
+                fragments[i].Energy = fragmentEnergy * fragments[i].Weight / weightSum / multiplicity;
+                fragments[i].Mass = Mathf.Max(totalMass * massShare[i] / massShareSum / multiplicity, 0.000001f);
                 fragments[i].Speed = Mathf.Sqrt(2f * fragments[i].Energy / fragments[i].Mass);
                 fragments[i].AreaCm2 = simple
                     ? ArmorFragmentsPlugin.SimpleFragmentArea.Value
@@ -144,6 +155,9 @@ namespace ArmorFragments
             summary.TotalEnergy = fragmentEnergy;
             summary.TotalMass = totalMass;
             summary.Speed = Mathf.Sqrt(2f * fragmentEnergy / totalMass);
+            summary.Count = realCount;
+            summary.Rays = count;
+            summary.Multiplicity = multiplicity;
             return fragments;
         }
 

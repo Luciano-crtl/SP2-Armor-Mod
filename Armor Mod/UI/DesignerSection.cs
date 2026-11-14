@@ -213,6 +213,9 @@ namespace ArmorFragments.UI
                         Slider(builder, tags, "Filler", "Explosive filler, as a percent of the shell's mass. The rest is the casing, which breaks into the fragments. It starts at the default of the kind of shell (HE and APHE have their own).",
                             0f, 50f, 0.5f, tags.Cannon.FillerPercent ?? Ammunition.DefaultFillerPercent(kind), " %",
                             v => tags.Cannon.FillerPercent = v);
+                        Slider(builder, tags, "Shell brittleness", "How easily the shell's casing breaks into small fragments. A brittle casing makes more, smaller fragments (a stronger burst, with more filler, breaks it up more too). A bigger caliber makes bigger fragments.",
+                            0f, 100f, 5f, tags.Cannon.Brittleness ?? ArmorFragmentsPlugin.DefaultShellBrittleness.Value, " %",
+                            v => tags.Cannon.Brittleness = v);
                     }
                 }
             }

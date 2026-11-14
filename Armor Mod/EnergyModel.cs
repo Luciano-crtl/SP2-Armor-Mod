@@ -20,6 +20,7 @@ namespace ArmorFragments
         public bool HasFuse;
         public float FuseLeft;        // meters of flight left before it bursts (only if HasFuse)
         public float FillerFraction;  // 0..1
+        public float Brittleness;     // 0..1: how easily the casing breaks into small fragments
 
         public AmmoKind Kind
         {

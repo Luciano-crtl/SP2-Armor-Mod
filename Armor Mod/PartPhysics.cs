@@ -116,6 +116,29 @@ namespace ArmorFragments
                 : energy * Mathf.Exp(-Mathf.Min(k, 80f));
         }
 
+        // Energy a fragment has left after crossing 'thicknessMm' of armor. It pays what a shell of the same
+        // cross-section would (ArmorResistance: joules per mm of thickness per cm2), times the fragment factor,
+        // so the armor that holds a shell back holds a fragment back in proportion to its size.
+        public static float EnergyAfterArmor(float energy, float areaM2, float thicknessMm)
+        {
+            return Mathf.Max(0f, energy - ArmorCost(areaM2, thicknessMm));
+        }
+
+        // How far into the chord a fragment gets in armor before its energy drops to 'floor' (it stops there):
+        // the price is paid evenly along the thickness.
+        public static float ArmorStopDistance(float energy, float floor, float areaM2, float thicknessMm, float chord)
+        {
+            float cost = ArmorCost(areaM2, thicknessMm);
+            if (cost <= 0f) return chord;
+            return Mathf.Clamp01((energy - floor) / cost) * chord;
+        }
+
+        private static float ArmorCost(float areaM2, float thicknessMm)
+        {
+            return ArmorFragmentsPlugin.ArmorResistance.Value * ArmorFragmentsPlugin.FragmentArmorFactor.Value *
+                   Mathf.Max(thicknessMm, 0f) * (areaM2 * 10000f);
+        }
+
         // How far into the chord the piece gets before its energy drops to 'floor' (it stops there).
         public static float StopDistance(float energy, float floor, float mass, float areaM2, float density, float chord)
         {

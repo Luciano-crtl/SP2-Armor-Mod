@@ -28,6 +28,7 @@ namespace ArmorFragments
         // Explosive ammunition only (the game's Projectile Type: Explosive):
         public float? Fuse;                // z: meters after the impact at which the shell bursts (none = no fuse: HE)
         public float? FillerPercent;       // e: explosive filler, percent of the shell's mass (none = the kind's default)
+        public float? Brittleness;         // q: how easily the casing breaks into small fragments, percent (none = the setting's default)
     }
 
     // Part that reacts to fragment damage (engine, tank, propeller, some fuselages).
@@ -96,6 +97,7 @@ namespace ArmorFragments
                         ShellHardness = Get(values, "k", 100f),
                         Fuse = Optional(values, "z"),
                         FillerPercent = Optional(values, "e"),
+                        Brittleness = Optional(values, "q"),
                     };
                 }
                 else if (kind == "MOD")
@@ -120,7 +122,8 @@ namespace ArmorFragments
             if (tags.Cannon != null)
                 Append(name, "[CAN k=" + Number(tags.Cannon.ShellHardness) +
                        (tags.Cannon.Fuse.HasValue ? " z=" + Number(tags.Cannon.Fuse.Value) : "") +
-                       (tags.Cannon.FillerPercent.HasValue ? " e=" + Number(tags.Cannon.FillerPercent.Value) : "") + "]");
+                       (tags.Cannon.FillerPercent.HasValue ? " e=" + Number(tags.Cannon.FillerPercent.Value) : "") +
+                       (tags.Cannon.Brittleness.HasValue ? " q=" + Number(tags.Cannon.Brittleness.Value) : "") + "]");
             if (tags.Module != null)
                 Append(name, string.IsNullOrEmpty(tags.Module.Variable)
                     ? "[MOD]" : "[MOD v=" + tags.Module.Variable + "]");
