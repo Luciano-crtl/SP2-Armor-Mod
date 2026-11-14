@@ -328,7 +328,7 @@ Motivo: no teste da fase B os fragmentos penetravam muito mais que a AP. Causas:
 ## Velocidade real dos raios fora da câmera de impacto e do tiro simulado (sem mudar a versão)
 `BallisticRay.VisualSpeed` só aplica `VisualSpeedMultiplier` quando `ShotSimulator.Active` (tiro simulado em andamento) ou `ImpactCamera.IsActive`; nos demais tiros reais os raios andam na velocidade real (`√(2E/m)`), então fragmentos rápidos quase não são vistos. A velocidade fica gravada no caminho na hora do desenho, então vale o estado da câmera nesse instante.
 
-## v0.7.0 (versão atual)
+## v0.7.0
 Reúne tudo desde a v0.6.3: munição AP/APHE/HE, fragmentos como projéteis, feixes, brittleness, explosões no cenário, ricochete como raio, dano do jogo desligado em canhões com `[CAN]`, velocidade real dos raios fora da câmera de impacto e do tiro simulado. Changelog para os testadores gerado na conversa (estilo do Discord).
 
 ## Porta-munição `[AMM]` e mudanças nos canhões (Jakniphe, branch `ammo-rack`)
@@ -340,3 +340,6 @@ Referência completa (em inglês): `AMMO_RACKS_CONTEXT.md`. Resumo para o jogado
 - **Morte do veículo:** em veículo blindado (alguma peça `[ARM]`) o jogo não explode peças nem o veículo por dano (`GameDamageExplosions` desligado) e só `[MOD]` e `[AMM]` levam dano do mod (`ArmoredStructureDamage` desligado); ele morre quando um porta-munição explode (`VehicleRules.Kill` chama o `MarkAsCriticallyDamaged` do jogo: crédito do abate, kill cam, respawn). Veículo sem blindagem morre como no jogo base. Planejado: abates decididos pelos módulos; a explosão do porta-munição continua sendo abate.
 - **No seu código:** `ContinueAfterPlate` recomeça o raio do projétil na face da frente da placa; `DepositCrossings` e `Accumulate` informam o porta-munição.
 - **Pendente:** acerto peça por peça no multiplayer; carga explosiva (HE/APHE) não entra no cook-off (decisão).
+
+## v0.8.0 (versão atual)
+A v0.7.0 mais os porta-munições (ammo racks, `[AMM]`/`[VNT]`), do fork de Jakniphe (branch `ammo-rack`, integrado com autorização dele; créditos: Jakniphe): cook-off com explosão por física de onda de choque, morte do veículo sem destruir o casco em veículos blindados, estimativa de penetração por canhão, variáveis `_rounds`/`_fire`/`_boom` do Funky Trees, sincronização do fogo no multiplayer e `.csproj` que acha a pasta de dados do jogo. Detalhes na seção do porta-munições acima e em `PATCH_NOTES.md` / `AMMO_RACKS_CONTEXT.md`. Ainda sem teste no jogo.
