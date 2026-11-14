@@ -32,15 +32,20 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
     - Each round counts as its propellant's explosive equivalent: about 0.58 lb for a 50 mm round at 835 m/s, so a Pz III's 90 rounds make about 55 lb.
     - The total is capped at 120 lb. The bang is drawn at 75% of a game bomb of the same weight ("Boom 25", 250 lb, is 0.8), so 55 lb is 0.13 and 96 lb is 0.23.
   - **One bang, then a jet of fire:** the cook-off vents through the nearest part marked **Cook-off vent** (`[VNT]`: a fuselage at the turret ring, or a hatch; not armor), or just above the rack with no vent. There is a single bomb-style bang sized by its pounds, then the fire flares up and rises in a jet for 3 to 10 s depending on the pounds. At the 120 lb cap, the flare-up is about 3x wider and 8x taller than the fire it settles into.
-  - **The tank holds its shape:**
-    - the cook-off only cooks your damage modules (`[MOD]`) and other ammo racks near the rack, by real blast physics:
-      - **The charge:** the propellant still in the rack, counted at 25% of its TNT equivalent, since a cook-off is an inefficient detonation.
-      - **The pressure:** peak overpressure falls with distance ÷ the cube root of the charge (Mills' formula).
-      - **The damage:** a part is wrecked at 1000 kPa (145 psi), and nothing happens below 200 kPa (29 psi).
-      - **Examples:** a 96 lb rack (42 rounds of 100 mm) wrecks within 2.7 m and damages out to 4.8 m; 55 lb within 2.2 m and out to 4 m; 23 lb within 1.7 m and out to 3 m.
-      - **Distance:** measured to each part's nearest surface.
-    - armor and structure aren't touched: the blast doesn't damage, push or knock off any part of your vehicle, and doesn't knock off armor plates on any vehicle;
-    - other racks it reaches roll their own chance.
+  - **The blast follows real blast physics:**
+    - **The charge:** the propellant still in the rack, counted at 25% of its TNT equivalent, since a cook-off is an inefficient detonation.
+    - **The pressure:** peak overpressure falls with distance ÷ the cube root of the charge (Mills' formula).
+    - **The damage:** a part is wrecked at 1000 kPa (145 psi), and nothing happens below 200 kPa (29 psi).
+    - **Examples:** a 96 lb rack (42 rounds of 100 mm) wrecks within 2.7 m and damages out to 4.8 m; 55 lb within 2.2 m and out to 4 m; 23 lb within 1.7 m and out to 3 m.
+    - **Distance:** measured to each part's nearest surface.
+  - **Inside your vehicle,** from the rack: only damage modules (`[MOD]`) and other ammo racks are hit, so the tank holds its shape. Other racks it reaches roll their own chance.
+  - **Outside,** from where the blast leaves the hull (the vent, or just above the rack):
+    - other vehicles nearby take the same blast;
+    - armor never takes damage;
+    - armored vehicles are hit in their modules and racks;
+    - vehicles without armor are hit in every part;
+    - other players' vehicles are damaged over the network.
+  - **The bang is only for show:** the game's explosion doesn't damage, push or knock off anything, on any vehicle.
   - **The wreck keeps burning:** the jet then shrinks smoothly into a half-size fire that never goes out, even when the vehicle runs out of fuel; only water puts it out. Every other cook-off vent on the vehicle catches the same small fire a moment later, as the fire spreads through the hull. Only the nearest vent gets the bang and the jet.
   - **Other players see the same cook-off:** the game already sends them its fires and the bang. Their mod gives those fires the same look (the half-size rack fire, the jet flaring up and settling, vent fires that never go out) and keeps the bang off the burning vehicle and armor on their screen too. Players without the mod see the game's plain fires.
   - **Knocked out, not blown apart:** once a rack catches fire, the vehicle is knocked out. The game's own vehicle and part explosions are off for it, so the cooked modules, or a fuel tank going up later, can't tear the shell apart. The game no longer counts it as destroyed: use Funky Trees on `<group>_boom` or the modules' damage to cut its controls.
@@ -87,7 +92,7 @@ Not tested in multiplayer yet. Builds on 0.7.0; the version number is the author
 - `CookOffWreckKPa` (1000) / `CookOffDamageKPa` (200): blast overpressure that wrecks a module or rack / below which it does nothing
 - `BlastStrength`: multiplies each round's pounds
 - `MaxBlastLb`: cap on one rack's cook-off (default 120 lb)
-- `BlastVisualPercent` (75%): size of the bang compared with a game bomb of the same weight
+- `BlastVisualPercent` (75%): size of the bang compared with a game bomb of the same weight (only for show)
 - `BlastType`: `BombExplosion` (default; the sizes are worked out in its scale), `GeneralExplosion`, `MissileExplosion` or `RocketExplosion`
 - `ShowInDesigner` (only changes what you see)
 - `DebugDumpShape` (off by default): writes the last measured rack's shape and round positions to `BepInEx/ammo-rack-shape.obj`, for reporting measuring problems

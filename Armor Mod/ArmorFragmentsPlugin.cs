@@ -477,8 +477,8 @@ namespace ArmorFragments
             BlastVisualPercent = Config.Bind("AmmoRacks", "BlastVisualPercent", 75f,
                 new ConfigDescription(
                     "Size of the cook-off's bang, in % of a game bomb of the same pounds (Boom 25 = 250 lb = 0.8): at 75%, " +
-                    "96 lb gives 0.23. It is also the game's blast on other vehicles nearby (the burning vehicle and " +
-                    "armor are left out). The damage inside the vehicle is set by CookOffTNTEfficiency, not this.",
+                    "96 lb gives 0.23. Only for show: the cook-off's damage, inside the vehicle and around it, comes from " +
+                    "the blast physics (CookOffTNTEfficiency), not from this.",
                     new AcceptableValueRange<float>(0f, 200f)));
             BlastType = Config.Bind("AmmoRacks", "BlastType", "BombExplosion",
                 new ConfigDescription(

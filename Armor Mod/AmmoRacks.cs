@@ -755,8 +755,8 @@ namespace ArmorFragments
 
             rack.Group.Boomed = true;   // <group>_boom: detachers wired to it fire now (turret toss)
             KnockOut(rack.Aircraft);    // before the cook: no game explosion may blow the shell apart
-            Blast(rack, center, pounds);   // before the wreck: it may destroy the vent part
-            WreckInsides(rack, center, pounds);
+            Vector3 ventAt = Blast(rack, center, pounds);   // before the wreck: it may destroy the vent part
+            WreckInsides(rack, center, ventAt, pounds);
             SyncCannons(rack.Group);
         }
 
@@ -825,7 +825,7 @@ namespace ArmorFragments
         private const float BombSizePerLb = 0.8f / 250f;
 
         // The bang: sized like the game's bombs by the pounds, times BlastVisualPercent (Jakniphe: a bit big at
-        // 100%; 75%). It is also the game's blast on other vehicles nearby (this one and armor are left out).
+        // 100%; 75%). Only for show: AmmoRackBlastPatch gives the game's blast nothing to act on.
         private static float BangSize(float pounds)
         {
             return pounds * BombSizePerLb * Mathf.Max(ArmorFragmentsPlugin.BlastVisualPercent.Value, 0f) / 100f;
@@ -834,7 +834,8 @@ namespace ArmorFragments
         // The fire jet's flare-up (size and extra flames), as a share of the first version's.
         private const float JetSize = 1f / 3f;
 
-        private static void Blast(Rack rack, Vector3 center, float pounds)
+        // Returns where the blast comes out of the vehicle (the vent, or just above the rack).
+        private static Vector3 Blast(Rack rack, Vector3 center, float pounds)
         {
             PartScript vent = NearestVent(rack.Aircraft, center);
             PartScript firePart = vent != null ? vent : rack.Part;
@@ -876,6 +877,7 @@ namespace ArmorFragments
                 Fmt(width, "F1") + " x " + Fmt(width * 2.5f, "F1") + " for " + Fmt(duration, "F1") +
                 " s, settling into a burn-out that never goes out" +
                 (others > 0 ? "; " + others + " other vent(s) catch fire too" : ""));
+            return at;
         }
 
         // Vents ([VNT] parts) burning since a cook-off, and the other vents' fires still to light.
@@ -1046,14 +1048,15 @@ namespace ArmorFragments
         //    wrecked), up to twice it closer in; in between it grows with ln(P), as damage does with pressure.
         //  - R is the distance to the part's nearest surface (its colliders), not its center.
         // Example at 25%: 96 lb (42 rounds of 100 mm) is 10.9 kg of TNT: wrecks within 2.7 m, damages out to 4.8 m.
-        // Nothing else of the vehicle is touched: the game's own blast is kept off it (AmmoRackBlastPatch, which
-        // also skips the game's blast damage), so armor and structure keep the shape. Racks hit this way roll their
-        // own chance (chain).
-        private static void WreckInsides(Rack rack, Vector3 center, float pounds)
+        // It is the cook-off's only damage (the bang is just for show: AmmoRackBlastPatch), inside and outside
+        // (Jakniphe: "the whole point of the blast physics was to damage things outside"):
+        //  - Its own vehicle, from the rack: only its damage modules and racks on an armored vehicle (VehicleRules).
+        //  - Every other vehicle around, from where the blast leaves the hull (the vent, or just above the rack):
+        //    by the same rules (armor never; armored vehicles in modules and racks; others in every part). A
+        //    remote player's vehicle is damaged over the network, as fragments are.
+        // Racks hit this way roll their own chance (chain).
+        private static void WreckInsides(Rack rack, Vector3 center, Vector3 ventAt, float pounds)
         {
-            AircraftScript aircraft = rack.Aircraft;
-            if (aircraft == null || aircraft.Aircraft == null || aircraft.Aircraft.Assembly == null) return;
-
             float tntKg = pounds * 0.4536f * Mathf.Clamp(ArmorFragmentsPlugin.CookOffTNTEfficiency.Value, 0f, 100f) / 100f;
             if (tntKg <= 0f) return;
             float cubeRoot = Mathf.Pow(tntKg, 1f / 3f);
@@ -1062,16 +1065,22 @@ namespace ArmorFragments
             float reach = ScaledDistanceAt(onsetKPa) * cubeRoot;       // m: no damage beyond
             float wreckWithin = ScaledDistanceAt(wreckKPa) * cubeRoot;  // m: for the log
 
-            int hit = 0;
-            foreach (PartData data in aircraft.Aircraft.Assembly.Parts)
-            {
-                PartScript part = data != null ? data.PartScript : null;
-                if (part == null || part == rack.Part) continue;
-                PartTags tags = TagCodec.Parse(data.Name);
-                if (tags.Armor != null || (tags.Module == null && tags.AmmoRack == null)) continue;
+            // Every part near the rack (its own vehicle) or near the vent (everyone else), at its nearest surface.
+            Dictionary<PartScript, Vector3> nearest = new Dictionary<PartScript, Vector3>();
+            Collect(nearest, center, reach, rack, true);
+            Collect(nearest, ventAt, reach, rack, false);
 
-                Vector3 nearest = NearestPoint(part, center);
-                float distance = Vector3.Distance(nearest, center);
+            int inside = 0, outside = 0;
+            HashSet<AircraftScript> others = new HashSet<AircraftScript>();
+            foreach (KeyValuePair<PartScript, Vector3> pair in nearest)
+            {
+                PartScript part = pair.Key;
+                if (part == null || part.Part == null) continue;
+                bool own = part.Aircraft == rack.Aircraft;
+                if (!VehicleRules.TakesModDamage(part, TagCodec.Parse(part.Part.Name))) continue;
+
+                Vector3 origin = own ? center : ventAt;
+                float distance = Vector3.Distance(pair.Value, origin);
                 if (distance >= reach) continue;
 
                 float pressure = Overpressure(Mathf.Max(distance, 0.05f) / cubeRoot);
@@ -1079,14 +1088,62 @@ namespace ArmorFragments
                 float damage = part.MaxHealth * Mathf.Clamp(share, 0f, 2f);
                 if (damage <= 0f) continue;
 
-                Vector3 away = part.transform.position - center;
-                part.OnDamaged(rack.Attacker, damage, nearest, away.sqrMagnitude > 1e-6f ? away.normalized : Vector3.up);
-                hit++;
+                Vector3 away = pair.Value - origin;
+                Vector3 direction = away.sqrMagnitude > 1e-6f ? away.normalized : Vector3.up;
+                if (ApplyBlastDamage(part, damage, pair.Value, direction, rack.Attacker))
+                {
+                    if (own) inside++;
+                    else
+                    {
+                        outside++;
+                        if (part.Aircraft != null) others.Add(part.Aircraft);
+                    }
+                }
             }
             ArmorFragmentsPlugin.Log.LogInfo("Ammo rack '" + rack.Label + "' cook-off: " + Fmt(pounds, "F0") + " lb at " +
                 Fmt(ArmorFragmentsPlugin.CookOffTNTEfficiency.Value, "F0") + "% = " + Fmt(tntKg, "F1") + " kg of TNT; wrecks within " +
-                Fmt(wreckWithin, "F1") + " m, damages out to " + Fmt(reach, "F1") + " m; cooked " + hit +
-                " damage modules / racks (armor and structure untouched)");
+                Fmt(wreckWithin, "F1") + " m, damages out to " + Fmt(reach, "F1") + " m; damaged " + inside +
+                " module(s) / rack(s) inside, " + outside + " part(s) of " + others.Count + " other vehicle(s) outside");
+        }
+
+        // Parts with a collider within 'radius' of 'from': own = the rack's own vehicle only, else everyone else.
+        private static void Collect(Dictionary<PartScript, Vector3> nearest, Vector3 from, float radius, Rack rack, bool own)
+        {
+            foreach (Collider collider in Physics.OverlapSphere(from, radius, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (collider == null) continue;
+                if (collider.GetComponentInParent<CannonProjectileScript>() != null) continue;   // a shell in flight
+                PartScript part = collider.GetComponentInParent<PartScript>();
+                if (part == null || part == rack.Part || (part.Aircraft == rack.Aircraft) != own) continue;
+
+                MeshCollider mesh = collider as MeshCollider;
+                Vector3 point = mesh != null && !mesh.convex ? collider.bounds.ClosestPoint(from) : collider.ClosestPoint(from);
+                Vector3 known;
+                if (!nearest.TryGetValue(part, out known) || (point - from).sqrMagnitude < (known - from).sqrMagnitude)
+                    nearest[part] = point;
+            }
+        }
+
+        // Damages a part on this game, or tells its owner when it is another player's (like fragments do).
+        private static bool ApplyBlastDamage(PartScript part, float damage, Vector3 point, Vector3 direction, int? attacker)
+        {
+            try
+            {
+                AircraftScript aircraft = part.Aircraft;
+                if (aircraft != null && aircraft.RemoteAircraft)
+                {
+                    if (aircraft.NetworkAircraft == null) return false;
+                    aircraft.NetworkAircraft.DamagePart(attacker, part, damage, point, direction);
+                    return true;
+                }
+                part.OnDamaged(attacker, damage, point, direction);
+                return true;
+            }
+            catch (Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("Ammo rack blast damage failed on '" + part.Part.Name + "': " + e.Message);
+                return false;
+            }
         }
 
         // Mills (1987): peak incident overpressure, kPa, at scaled distance z (m/kg^1/3) from a TNT charge.
@@ -1106,26 +1163,6 @@ namespace ArmorFragments
                 else far = mid;
             }
             return 0.5f * (near + far);
-        }
-
-        // The point of the part closest to the blast (its colliders), or its center if it has none.
-        private static Vector3 NearestPoint(PartScript part, Vector3 from)
-        {
-            Vector3 best = part.transform.position;
-            float bestDistance = (best - from).sqrMagnitude;
-            foreach (Collider collider in PartPhysics.Colliders(part))
-            {
-                if (collider == null || !collider.enabled) continue;
-                MeshCollider mesh = collider as MeshCollider;
-                Vector3 point = mesh != null && !mesh.convex ? collider.bounds.ClosestPoint(from) : collider.ClosestPoint(from);
-                float distance = (point - from).sqrMagnitude;
-                if (distance < bestDistance)
-                {
-                    best = point;
-                    bestDistance = distance;
-                }
-            }
-            return best;
         }
 
         private static string Fmt(float value, string format)
@@ -1313,10 +1350,11 @@ namespace ArmorFragments
         }
     }
 
-    // A rack's blast keeps off its own vehicle and off every armor plate: the game's blast pushes the parts
-    // it reaches and knocks off those where its force beats a random threshold (30..95), armor included,
-    // without going through OnDamaged (so ArmorDamagePatch can't stop it). For our blasts, those parts are
-    // taken out of the list the game works on. Other explosions are untouched.
+    // A rack's bang is only for show (Jakniphe: "the whole point of the blast physics was to damage things
+    // outside"): the game's blast would push the parts it reaches, knock off those where its force beats a
+    // random threshold (30..95), armor included, and damage them, on every vehicle around. For our blasts the
+    // game gets an empty list, so it does none of that; AmmoRacks.WreckInsides does the damage, by blast
+    // physics, inside the vehicle and around it. Other explosions are untouched.
     [HarmonyPatch(typeof(BodyScript), "HandleExplosiveBlast")]
     internal static class AmmoRackBlastPatch
     {
@@ -1326,15 +1364,7 @@ namespace ArmorFragments
             {
                 AircraftScript owner;
                 if (parts == null || !AmmoRacks.IsRackBlast(blastOrigin, out owner)) return;
-                List<PartScript> kept = new List<PartScript>(parts.Count);
-                foreach (PartScript part in parts)
-                {
-                    if (part == null || part.Part == null) continue;
-                    if (owner != null && part.Aircraft == owner) continue;
-                    if (TagCodec.Parse(part.Part.Name).Armor != null) continue;
-                    kept.Add(part);
-                }
-                parts = kept;
+                parts = new List<PartScript>();
             }
             catch (Exception e)
             {
