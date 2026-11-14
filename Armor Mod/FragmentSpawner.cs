@@ -256,7 +256,6 @@ namespace ArmorFragments
             float inside = chord > 0.001f
                 ? Mathf.Max(exit - stepBack, 0.005f)
                 : Mathf.Max(effectiveThicknessMm * 0.001f, 0.005f);   // the colliders gave nothing: use the tag's thickness
-            Vector3 exitPoint = point + direction * inside;
 
             // The shell's own time to cross the plate: slowing down, from what it had to what it keeps.
             float insideTime = inside / BallisticRay.VisualSpeed(0.5f * (energyIn + Mathf.Max(energyAfter, 0f)), shell.Mass);
@@ -291,7 +290,9 @@ namespace ArmorFragments
 
             ShellInfo next = shell;
             next.Speed = Mathf.Sqrt(2f * energyAfter / Mathf.Max(shell.Mass, 0.000001f));
-            if (shell.HasFuse) next.FuseLeft = Mathf.Max(shell.FuseLeft - inside, 0f);
+            // (The ray below starts on the plate's front surface, so its fuse counts from there: the plate's own
+            // thickness is part of the ray's length, not taken off first.)
+            if (shell.HasFuse) next.FuseLeft = Mathf.Max(shell.FuseLeft, 0f);
 
             LastImpact.ShellAfter = energyAfter;
             LastImpact.Deflection = Vector3.Angle(direction, newDirection);
@@ -300,13 +301,13 @@ namespace ArmorFragments
                 tag + "Shell goes through plate " + plate + " with " + EnergyModel.Kilojoules(energyAfter) + " of " +
                 EnergyModel.Kilojoules(energyIn) + ", turned " + LastImpact.Deflection.ToString("F1") + " deg");
 
-            // The ray starts a little BACK inside the plate (which it ignores), not past its back face: a part
-            // touching that face (an ammo rack behind the armor) has its surface right there, and a ray that
-            // starts inside a collider never sees it (Jakniphe's test: a 100 mm through a 64 mm plate "went
-            // through 0 parts" with the rack right behind it).
-            float backOff = Mathf.Min(0.02f, inside * 0.5f);
-            ShellFlight.Continue(exitPoint - newDirection * backOff, newDirection, next, cannonTag,
-                                 null, armor, timeAtPlate + insideTime, 0f, RayKind.None,
+            // The ray restarts on the plate's FRONT surface, where the shell went in, with the plate ignored, not
+            // past its back face. A part touching the back face (an ammo rack behind the armor) has its surface
+            // right there, and a ray that starts inside a collider never sees it (Jakniphe's test: a 100 mm through
+            // a 64 mm plate "went through 0 parts" with the rack right behind it). Starting on the front surface
+            // works whatever the plate's thickness, in the 3D model or in its tag.
+            ShellFlight.Continue(point, newDirection, next, cannonTag,
+                                 null, armor, timeAtPlate, 0f, RayKind.None,
                                  applyDamage, simulated, plate + 1, true, bounces);
         }
 
