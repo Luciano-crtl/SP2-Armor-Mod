@@ -70,6 +70,9 @@ namespace ArmorFragments
                 Member(typeof(CannonData), "ProjectileVelocity", typeof(float));
                 Member(typeof(CannonData), "ProjectileLifetime", typeof(float));
                 Member(typeof(CannonData), "AmmoType", typeof(CannonData.ProjectileType));
+                Member(typeof(CannonData), "ImpactDamageScalar", typeof(float));
+                Member(typeof(CannonData), "ExplosionScalar", typeof(float));
+                Method(typeof(CannonScript), "Fire");
                 Member(typeof(CannonProjectileScript), "_isExplosive", typeof(bool));
 
                 // Multiplayer
