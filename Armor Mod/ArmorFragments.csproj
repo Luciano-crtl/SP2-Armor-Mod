@@ -5,6 +5,9 @@
 		<AssemblyName>ArmorFragments</AssemblyName>
 		<RootNamespace>ArmorFragments</RootNamespace>
 		<LangVersion>latest</LangVersion>
+			<!-- Symbols inside the DLL (one file to copy, nothing to forget): error lines in the log then say which line of the mod failed.
+			     Build with -p:DebugType=portable to get a separate .pdb instead. -->
+			<DebugType>embedded</DebugType>
 		<GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\SimplePlanes 2</GameDir>
 	</PropertyGroup>
 

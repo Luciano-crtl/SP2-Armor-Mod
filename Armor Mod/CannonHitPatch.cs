@@ -149,6 +149,8 @@ namespace ArmorFragments
                     if (shell.Kind == AmmoKind.HE)
                     {
                         // An explosive shell without a fuse bursts on the first thing it touches.
+                        if (ArmorFragmentsPlugin.ApplyDamage.Value)
+                            PartDecals.Burst(part, point, direction, normal, shell.CaliberMm, Mathf.Clamp01(shell.FillerFraction * 6f));
                         BurstOnPart(shell, speed, point, direction, normal, angle,
                                     "it burst on touching a part (no fuse)");
                     }

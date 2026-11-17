@@ -27,6 +27,14 @@ namespace ArmorFragments
             get { return !Explosive ? AmmoKind.AP : (HasFuse ? AmmoKind.APHE : AmmoKind.HE); }
         }
 
+        // The shape of its nose. A projectile that brings a shape of its own (a custom or procedural projectile) sets Custom; the others
+        // have the shape of their kind of ammunition.
+        public ShellProfile Custom;
+        public ShellProfile Profile
+        {
+            get { return Custom.IsSet ? Custom : Ammunition.ProfileOf(Kind); }
+        }
+
         // Kinetic energy: 1/2 m v^2.
         public float Energy
         {

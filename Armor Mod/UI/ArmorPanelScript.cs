@@ -72,6 +72,7 @@ namespace ArmorFragments.UI
                 BuildRicochet();
                 BuildRays();
                 BuildTools();
+                BuildDamageMaps();
                 BuildLog();
             }
             catch (Exception e)
@@ -217,8 +218,6 @@ namespace ArmorFragments.UI
             builder.Header("Energy model", collapsed: true);
             builder.Text("Status", NetSync.GlobalLocked ? "Balance set by the host" : "All active");
 
-            ToggleSetting(ArmorFragmentsPlugin.LogChordDiagnostics, "Log chord diagnostics",
-                "Each simulated shot writes how far the line travels inside every part to the log ([CHORD] lines).");
             FloatSetting(ArmorFragmentsPlugin.VisualSpeedMultiplier, "Visual speed multiplier",
                 "Drawn rays move at their real speed (from energy) times this, and slow down as they lose energy.", 0.005f, "x");
 
@@ -292,6 +291,9 @@ namespace ArmorFragments.UI
                 "Degrees.", 1f, " deg");
             ToggleSetting(ArmorFragmentsPlugin.ImpactCameraXRay, "X-ray on impact",
                 "Switches to the X-ray view the moment the shot hits, showing the damage as the fragments arrive.");
+            ToggleSetting(ArmorFragmentsPlugin.ImpactCameraDamageView, "Armor damage view",
+                "Draws the armor's damage map over the plates in the impact camera: dark red where a plate is badly dented or holed, a lighter " +
+                "see-through red where it is slightly marked, nothing where it is untouched.");
             IntSetting(ArmorFragmentsPlugin.ImpactCameraGhostLayer, "X-ray layer",
                 "Unity layer of the X-ray ghosts (29 or 30 = the game's mod layers, 3 = unused). Change it if the ghosts do not show; it applies to the next impact.");
             ToggleSetting(ArmorFragmentsPlugin.ImpactCameraShadows, "Shadows",
@@ -350,6 +352,8 @@ namespace ArmorFragments.UI
             builder.Header("Ray display");
             ToggleSetting(ArmorFragmentsPlugin.DrawRays, "Draw rays",
                 "Shows each fragment ray and impact in the world.");
+            ToggleSetting(ArmorFragmentsPlugin.HideRaysOutsideViews, "Rays only in the camera and simulated shot",
+                "On: rays are drawn only in the impact camera and in the simulated shot; the shots of the world around you draw none (what they do does not change). Off: every shot draws its rays.");
             FloatSetting(ArmorFragmentsPlugin.RayWidthScale, "Ray width scale",
                 "Rays are as thick as what they show (the shell as wide as its caliber, a fragment as wide as the fragment). This multiplies that.", 0.1f, "x");
             FloatSetting(ArmorFragmentsPlugin.MinRayWidth, "Thinnest ray",
@@ -362,6 +366,99 @@ namespace ArmorFragments.UI
                 "Seconds an impact bubble takes to shrink away.", 0.05f, " s");
         }
 
+        // Marks on armor plates (see DamageMaps/).
+        private void BuildDamageMaps()
+        {
+            builder.Header("Damage maps", collapsed: true);
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsEnabled, "Marks on armor",
+                "Shots leave dents, holes, grooves and pits on armor plates.");
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsPaintDamage, "Scorched and flaked paint",
+                "Marks scorch the paint and knock it off, showing steel. Marked plates are drawn with the Lit shader in their paint's color. Applies to the next vehicle that gets marks (Clear starts over).");
+            ToggleSetting(ArmorFragmentsPlugin.PartDecalsEnabled, "Marks on parts that are not armor",
+                "Holes, scorch and bare metal on wings, plain fuselage and other parts a shell goes through or bursts on, laid over the surface as decals. Only where seen from outside.");
+            IntSetting(ArmorFragmentsPlugin.PartDecalsMax, "Decals kept per vehicle",
+                "The oldest are taken off beyond this (each is a small mesh and two 128 x 128 textures).");
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsFlex, "Heavy hits bend plates",
+                "A heavy blow bends the whole plate it hits, and a little the armor plates joined to it. Only a look.");
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsAvoidOverlap, "Marks stay inside overlapping plates",
+                "Where armor plates overlap or are clipped into each other, a dent cannot run through the plate behind it and metal pushed out cannot come through the plate in front.");
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsSteelGloss, "Shiny steel, dull soot",
+                "The steel that shows through the paint is metallic and shiny (brightest where a shell skidded or cut through) and scorched paint is dull. Needs 'Scorched and flaked paint'. Applies to the next vehicle that gets marks.");
+            ToggleSetting(ArmorFragmentsPlugin.ImpactEffectsEnabled, "Impact effects",
+                "A flash, sparks, paint dust and smoke where a shell hits armor.");
+            ToggleSetting(ArmorFragmentsPlugin.ImpactEffectsLitSmoke, "Smoke and dust lit by the scene",
+                "Smoke and paint dust use the URP lit particle shader (sun, sky and shadows light them). Takes effect after F6 or a restart.");
+            FloatSetting(ArmorFragmentsPlugin.ImpactEffectsAmount, "Impact effects amount",
+                "How many sparks and how much smoke (1 = normal).", 0.1f, "x");
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsShareMarks, "Share marks with other players",
+                "In multiplayer, send the marks of your shots to the other players who have the mod, and draw theirs. Players without the mod see nothing.");
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsSimulatedShots, "Marks on simulated shots",
+                "The simulated shot leaves its marks (and impact simulation) on the plates too. Only a look: they never weaken the armor, and Clear removes them.");
+            ToggleSetting(ArmorFragmentsPlugin.KeepPlatesApart, "Keep armor plates out of the mesh merge",
+                "Needed for the marks. Takes effect when a flight starts: the game merges the meshes of a group then, and a merged plate cannot be changed.");
+            if (!NetSync.GlobalLocked)
+                ToggleSetting(ArmorFragmentsPlugin.DamageMapsWeakenArmor, "Marks weaken the armor",
+                    "A hole lets shells and fragments through; a dent makes the plate thinner there. Not synchronized between players yet.");
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsGeometry, "Real geometry (experimental)",
+                "Marked flat armor plates are rewritten as real geometry: a fine grid pushed in or out by the damage, and holes that are " +
+                "really holes. The plate keeps its own paint, texture and decals. Thick, curved or non-rectangular plates keep the maps.");
+            FloatSetting(ArmorFragmentsPlugin.DamageMapsGridMm, "Geometry grid",
+                "Cell size of the real geometry, in millimeters. Smaller = finer, more vertices.", 1f, " mm");
+            FloatSetting(ArmorFragmentsPlugin.DamageMapsFineGridMm, "Fine grid at holes",
+                "Cell size of the real geometry around holes and sharp features (cracks, rims), in millimeters. 0 = none. Smaller = sharper edges.", 0.5f, " mm");
+            IntSetting(ArmorFragmentsPlugin.DamageMapsMaxKiloVertices, "Geometry vertex limit",
+                "Most vertices, in thousands, one plate's real geometry may have. A bigger plate gets a coarser grid.");
+            IntSetting(ArmorFragmentsPlugin.DamageMapsBudgetKiloVertices, "Geometry budget per vehicle",
+                "Most vertices, in thousands, all of a vehicle's damaged plates may have together. Too many makes every frame slow; plates marked after the budget is used get a coarser grid.");
+            FloatSetting(ArmorFragmentsPlugin.GeometryStartPixels, "Geometry from (pixels)",
+                "Below this many pixels of error the maps are used. The error is the biggest push x tan(view angle) x pixels per meter.", 0.1f, " px");
+            FloatSetting(ArmorFragmentsPlugin.GeometryFullPixels, "Full geometry at (pixels)",
+                "From this many pixels the plate shows its full geometry; in between the maps and the geometry are mixed.", 0.1f, " px");
+            FloatSetting(ArmorFragmentsPlugin.GeometryAngleStart, "Geometry from angle",
+                "Degrees from the plate's normal (0 = head-on, 90 = grazing). Seen at less than this, the maps are always enough.", 1f, " deg");
+            FloatSetting(ArmorFragmentsPlugin.GeometryAngleFull, "Full geometry at angle",
+                "From this angle the geometry may be shown in full (if the pixel error says so too).", 1f, " deg");
+            FloatSetting(ArmorFragmentsPlugin.GeometryBlendSeconds, "Transition time",
+                "Seconds the change between the maps and the geometry takes.", 0.05f, " s");
+            ToggleSetting(ArmorFragmentsPlugin.DamageMapsHoleBothSides, "Holes: draw both sides",
+                "Shows the inside of the plate through a hole.");
+            FloatSetting(ArmorFragmentsPlugin.DamageMapsDensity, "Detail",
+                "Pixels per meter of plate. Applies to vehicles that get their maps from now on.", 16f, " px/m");
+            FloatSetting(ArmorFragmentsPlugin.DamageMapsNormalStrength, "Dent depth",
+                "How deep the dents look.", 0.1f, "x");
+            ChoiceSetting(ArmorFragmentsPlugin.DamageMapsRelief, "Relief",
+                "How the marks are shaded. Normal map: lighting only (as before). Bump map: the shader's parallax moves the surface itself " +
+                "by the marks' height. Both: the two together.",
+                new[] { "Normal map", "Bump map", "Normal + bump" });
+            IntSetting(ArmorFragmentsPlugin.DamageMapsMaxVehicles, "Vehicles at once",
+                "Vehicles with maps at the same time. The one hit longest ago gives its maps back.");
+            ToggleSetting(ArmorFragmentsPlugin.UseGpu, "Use the graphics card (OpenCL)",
+                "The impact simulation runs on the graphics card when the computer has OpenCL, and on the CPU if not. Takes effect the next time the game or the plugin loads.");
+            Live("Graphics card", () => GpuStatus.Text);
+            IntSetting(ArmorFragmentsPlugin.SimQuality, "Simulation quality",
+                "0 = off (the quick marks), 1 = low (40x40), 2 = medium (64x64), 3 = high (96x96), 4 = ultra (128x128), never finer than the map can show. A shell's impact is worked out by a small physics simulation of the plate, in the background; the mark appears when it is ready.");
+            ToggleSetting(ArmorFragmentsPlugin.SimCracks, "Cracks in the marks",
+                "The torn links of the simulated plate make thin grooves around a hole and across a dent.");
+            ToggleSetting(ArmorFragmentsPlugin.SimSmoothEdges, "Smooth, ragged hole edges",
+                "The edge of a hole follows where the simulated metal runs out, a little ragged, instead of the simulation grid's square steps.");
+            IntSetting(ArmorFragmentsPlugin.SimThreads, "Simulation threads",
+                "Threads the simulation may use. 0 = automatic (all the cores but two). They run below the game's own threads and take work only when free.");
+            FloatSetting(ArmorFragmentsPlugin.SimTimeLimit, "Simulation time limit",
+                "Seconds a simulation may take; a slower one is given up and the quick marks are drawn instead.", 0.5f, " s");
+            ToggleSetting(ArmorFragmentsPlugin.SimAutoQuality, "Lower the quality if it is slow",
+                "If a simulation takes most of its time limit the next ones use a lower quality, and go back up when they are quick.");
+            IntSetting(ArmorFragmentsPlugin.SimMaxQueue, "Simulations that may wait (at least)",
+                "When that many are waiting, new impacts get the quick marks. While simulations are quick (a graphics card) more may wait, up to about 0.8 s of work or 12.");
+            ToggleSetting(ArmorFragmentsPlugin.SimShedLoad, "Give threads back when the FPS drops",
+                "While a simulation works and the frame rate drops, it uses fewer threads for a while.");
+            Live("Simulation", () => PlateDamageMaps.SimStatus);
+            Live("Maps", () => PlateDamageMaps.Status);
+            builder.Buttons(new List<KeyValuePair<string, Action>>
+            {
+                new KeyValuePair<string, Action>("Clear", PlateDamageMaps.Clear),
+            });
+        }
+
         private void BuildTools()
         {
             builder.Header("Tools");
@@ -371,7 +468,6 @@ namespace ArmorFragments.UI
             {
                 new KeyValuePair<string, Action>("Reset to defaults", ResetToDefaults),
                 new KeyValuePair<string, Action>("Clear rays", ClearRays),
-                new KeyValuePair<string, Action>("Camera diagnostic", CameraDiagnostic.Run),
             });
         }
 
@@ -441,6 +537,17 @@ namespace ArmorFragments.UI
         private void ToggleSetting(ConfigEntry<bool> entry, string label, string tooltip)
         {
             builder.Toggle(label, tooltip, entry.Value, x => SetValue(entry, x, true));
+        }
+
+        // A setting that is one of a few named choices (a slider with that many positions that shows the name).
+        private void ChoiceSetting(ConfigEntry<int> entry, string label, string tooltip, string[] names)
+        {
+            int last = names.Length - 1;
+            builder.Slider(label, tooltip, 0f, last, names.Length,
+                Mathf.Clamp(entry.Value, 0, last), "",
+                x => names[Mathf.Clamp(Mathf.RoundToInt(x), 0, last)],
+                x => SetValue(entry, Mathf.Clamp(Mathf.RoundToInt(x), 0, last), false),
+                x => NetSync.SaveConfig());
         }
 
         private void IntSetting(ConfigEntry<int> entry, string label, string tooltip)

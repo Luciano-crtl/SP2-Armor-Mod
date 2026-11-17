@@ -75,6 +75,16 @@ namespace ArmorFragments
                 Method(typeof(CannonScript), "Fire");
                 Member(typeof(CannonProjectileScript), "_isExplosive", typeof(bool));
 
+                // Damage probe / damage maps
+                Method(typeof(PartGroupScript), "Initialize");
+                Member(typeof(PartMaterialScript.RendererMaterialMap), "ExcludeFromMeshCombine", typeof(bool));
+                Member(typeof(PartMaterialScript.RendererMaterialMap), "OriginalMaterials", typeof(Material[]));
+                Member(typeof(PartMaterialScript.RendererMaterialMap), "MeshIsUnique", typeof(bool));
+                Method(typeof(PartMaterialScript.RendererMaterialMap), "SetRendererMaterial", typeof(Material[]));
+                Method(typeof(ThemeScript), "RequestDefaultPartMaterialInstance");
+                Method(typeof(ThemeScript), "ReleaseDefaultPartMaterialInstance");
+                Member(typeof(ThemeScript), "MaterialTransparent", typeof(Material));
+
                 // Multiplayer
                 Method(typeof(NetworkAircraftScript), "DamagePart");
                 Method(typeof(NetworkAircraftScript), "ProcessPartNetworkMessage");

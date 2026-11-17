@@ -219,18 +219,6 @@ namespace ArmorFragments
             ArmorTag armor = ray.Armor;
             RaycastHit hit = ray.Hit;
 
-            // Diagnostic: how far the line travels inside each part (method A), in the log.
-            if (ArmorFragmentsPlugin.LogChordDiagnostics.Value)
-            {
-                try
-                {
-                    ChordProbe.Report(origin, direction, Mathf.Min(MaxDistance, hit.distance + 15f));
-                }
-                catch (System.Exception e)
-                {
-                    ArmorFragmentsPlugin.Log.LogWarning("Chord probe failed: " + e.Message);
-                }
-            }
 
             float angle = Vector3.Angle(direction, hit.normal);
             angle = Mathf.Min(angle, 180f - angle);

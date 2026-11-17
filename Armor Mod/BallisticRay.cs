@@ -331,7 +331,7 @@ namespace ArmorFragments
         {
             float speed = VisualSpeed(shellEnergy, shellMass);
             float duration = Vector3.Distance(start, end) / speed;
-            if (!ArmorFragmentsPlugin.DrawRays.Value) return duration;
+            if (!RayDrawer.Wanted) return duration;
 
             RayPath path = new RayPath { Final = RayKind.ArmorImpact, Width = diameterMeters };
             path.Add(start, RayKind.None);
@@ -410,7 +410,7 @@ namespace ArmorFragments
                 path.Markers[path.Markers.Count - 1] = endMarker;
             }
 
-            if (ArmorFragmentsPlugin.DrawRays.Value)
+            if (RayDrawer.Wanted)
             {
                 if (continuation) RayDrawer.Animate(path, delay, false, true);
                 else RayDrawer.Animate(path, delay, true);

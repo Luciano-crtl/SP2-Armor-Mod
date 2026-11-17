@@ -19,6 +19,17 @@ namespace ArmorFragments
             return tag != null && tag.Fuse.HasValue ? AmmoKind.APHE : AmmoKind.HE;
         }
 
+        // The nose of each kind of shell: AP is pointed and round, APHE fuller, HE nearly flat. (Where a projectile's own shape would go in.)
+        public static ShellProfile ProfileOf(AmmoKind kind)
+        {
+            switch (kind)
+            {
+                case AmmoKind.APHE: return ShellProfile.Capped;
+                case AmmoKind.HE: return ShellProfile.Blunt;
+                default: return ShellProfile.Ogive;
+            }
+        }
+
         public static string NameOf(AmmoKind kind)
         {
             switch (kind)

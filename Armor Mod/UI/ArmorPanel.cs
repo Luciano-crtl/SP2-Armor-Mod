@@ -1,5 +1,6 @@
 using System;
 using System.Xml.Linq;
+using Assets.Scripts.Flight.UI.Panels;
 using Jundroo.Juicy;
 using Jundroo.Juicy.Widgets;
 
@@ -43,6 +44,7 @@ namespace ArmorFragments.UI
             panel = null;   // a new flight scene means any old panel is gone
             UpdateButtonColor();
         }
+
 
         public static void Toggle()
         {

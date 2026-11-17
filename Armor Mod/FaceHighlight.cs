@@ -261,6 +261,16 @@ namespace ArmorFragments
             overlayLayerSource = filters.Count > 0 && filters[0].Value != null ? filters[0].Value : part.transform;
         }
 
+        // The plugin is being unloaded: the tint's mesh and materials are freed (nothing of it is in the scene).
+        internal static void Shutdown()
+        {
+            Clear();
+            if (pickedMaterial != null) Object.Destroy(pickedMaterial);
+            if (armoredMaterial != null) Object.Destroy(armoredMaterial);
+            pickedMaterial = armoredMaterial = null;
+            materialsTried = false;
+        }
+
         private static void Clear()
         {
             if (overlayMesh != null) Object.Destroy(overlayMesh);

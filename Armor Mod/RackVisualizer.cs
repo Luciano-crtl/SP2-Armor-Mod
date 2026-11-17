@@ -76,6 +76,19 @@ namespace ArmorFragments
             }
         }
 
+        // The plugin is being unloaded: the real racks are drawn again, the copies and the rounds go, and so do the materials.
+        internal static void Shutdown()
+        {
+            foreach (Visual visual in Visuals.Values.ToList()) Remove(visual);
+            Visuals.Clear();
+            suspended = false;
+
+            foreach (Material material in new[] { ghostMaterial, ghostSelectedMaterial, caseMaterial, shellMaterial, burningMaterial })
+                if (material != null) Object.Destroy(material);
+            ghostMaterial = ghostSelectedMaterial = caseMaterial = shellMaterial = burningMaterial = null;
+            materialsTried = false;
+        }
+
         public static void Tick()
         {
             try

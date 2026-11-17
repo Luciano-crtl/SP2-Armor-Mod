@@ -97,6 +97,7 @@ namespace ArmorFragments.UI
         // Called once when the designer's properties panel is created.
         public static void Attach(PartPropertiesPanelScript properties)
         {
+            if (container != null && panel != null) container.Destroy();   // the game built the panel again: one section only
             panel = properties;
             Widget itemsParent = properties.Widget.FindWidget("items-parent");
             container = properties.Widget.Context.LoadWidgetFromXml(LayoutPath, itemsParent);
@@ -104,6 +105,7 @@ namespace ArmorFragments.UI
             container.Visible = false;
             part = null;
         }
+
 
         public static void OnPartSelected(PartPropertiesPanelScript properties, PartScript selected)
         {

@@ -87,7 +87,10 @@ namespace ArmorFragments
             {
                 if (!entry.Armor) return null;
                 // In flight a block's shape stays as built; in the designer it can be reshaped under its armor.
-                bool designer = Designer.Instance != null;
+                // The designer object stays alive after a visit, so "a designer exists" is not "this part is being designed": a part of a
+                // craft in flight never changes shape, and checking its shape on every read made every body's mass cost milliseconds a frame
+                // (the game reads it for each body every frame) once the designer had been opened.
+                bool designer = Designer.Instance != null && !InFlight(part);
                 if (entry.Ready && (!designer || entry.ShapeKey == ShapeKey(part))) return entry;
                 if (!entry.Ready && Time.unscaledTime < entry.RetryAt) return entry;
             }
@@ -108,6 +111,12 @@ namespace ArmorFragments
             }
             Measure(part, name, entry);
             return entry;
+        }
+
+        private static bool InFlight(PartData part)
+        {
+            PartScript script = part.PartScript;
+            return script != null && script.Aircraft != null && script.Aircraft.LoadContext == Assets.Scripts.Craft.CraftLoadContext.Flight;
         }
 
         private static float ShapeKey(PartData part)

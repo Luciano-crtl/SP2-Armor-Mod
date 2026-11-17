@@ -11,6 +11,10 @@ namespace ArmorFragments
         internal static ManualLogSource Log;
         internal static ArmorFragmentsPlugin Instance;
 
+        // Kept so that OnDestroy (Lifecycle.Shutdown) can take back what Awake put in: the Harmony instance and the log listener.
+        internal static Harmony HarmonyInstance;
+        internal static ILogListener MirrorListener;
+
         // These show up in BepInEx/config/com.yourname.armorfragments.cfg
         // after the first run, so you can tune them without rebuilding.
         internal static ConfigEntry<bool> ApplyDamage;
@@ -18,6 +22,7 @@ namespace ArmorFragments
         internal static ConfigEntry<int> MaxVisualFragments;
         internal static ConfigEntry<float> BallisticRayRange;
         internal static ConfigEntry<bool> DrawRays;
+        internal static ConfigEntry<bool> HideRaysOutsideViews;   // local: rays only in the impact camera and the simulated shot
         internal static ConfigEntry<float> RayWidthScale;
         internal static ConfigEntry<float> MinRayWidth;
         internal static ConfigEntry<bool> IgnoreGameDamageOnArmor;
@@ -43,6 +48,18 @@ namespace ArmorFragments
         internal static ConfigEntry<float> ImpactCameraFov;
         internal static ConfigEntry<bool> ImpactCameraShadows;
         internal static ConfigEntry<bool> ImpactCameraXRay;
+        internal static ConfigEntry<bool> ImpactCameraDamageView;   // local: the damage map drawn over the plates in the impact camera
+        internal static ConfigEntry<int> DamageMapsRelief;           // local: 0 normal map, 1 bump (height) map, 2 both
+        internal static ConfigEntry<bool> UseGpu;                    // local: the impact simulation on the graphics card (OpenCL), the CPU if it cannot
+        internal static ConfigEntry<bool> DamageMapsGeometry;        // local, experimental: marked flat plates are rewritten as real geometry
+        internal static ConfigEntry<float> DamageMapsGridMm;         // local: that geometry's cell size
+        internal static ConfigEntry<int> DamageMapsMaxAtlas;         // local: the biggest atlas a vehicle's plates may share (2048 or 4096)
+        internal static ConfigEntry<float> DamageMapsFineGridMm;     // local: the finer cell size around holes and sharp features (0 = none)
+        internal static ConfigEntry<int> DamageMapsMaxKiloVertices;  // local: the most vertices one plate's geometry may have (thousands)
+        internal static ConfigEntry<int> DamageMapsBudgetKiloVertices;  // local: the most vertices all of a vehicle's plates may have together (thousands)
+        internal static ConfigEntry<float> GeometryStartPixels, GeometryFullPixels;   // local: the transition from maps to geometry, in pixels of error
+        internal static ConfigEntry<float> GeometryAngleStart, GeometryAngleFull;     // local: ... and in degrees of view angle
+        internal static ConfigEntry<float> GeometryBlendSeconds;                      // local: ... and how fast it moves
         internal static ConfigEntry<int> ImpactCameraGhostLayer;
 
         // Shot simulation and X-ray view.
@@ -55,7 +72,6 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> XRayShowUndamaged;
         internal static ConfigEntry<int> XRayMaxRimKiloVertices;
         internal static ConfigEntry<int> XRayBudgetKiloVertices;
-        internal static ConfigEntry<bool> LogChordDiagnostics;
 
         // Energy model (phase 2: defined and editable, not used by the calculation yet).
         internal static ConfigEntry<float> DefaultShellHardness;
@@ -74,6 +90,32 @@ namespace ArmorFragments
         internal static ConfigEntry<float> GurneySpeed;
         internal static ConfigEntry<float> DetonationSidewaysBias;
         internal static ConfigEntry<float> DefaultFuse;
+        internal static ConfigEntry<bool> KeepPlatesApart;          // local: armor plates keep their own renderer in flight
+        internal static ConfigEntry<bool> DamageMapsEnabled;        // local: marks on the plates
+        internal static ConfigEntry<bool> DamageMapsPaintDamage;    // local: marks scorch the paint and flake it off, showing steel (marked plates are drawn with the Lit shader)
+        internal static ConfigEntry<bool> PartDecalsEnabled;        // local: marks (holes, scorch) on the parts that are not armor, as decals
+        internal static ConfigEntry<int> PartDecalsMax;             // local: how many a vehicle keeps
+        internal static ConfigEntry<bool> DamageMapsFlex;           // local: a heavy blow bends the plate it hits, and the armor plates joined to it, a little
+        internal static ConfigEntry<bool> DamageMapsAvoidOverlap;   // local: marks do not push a plate's metal through the armor plates it overlaps
+        internal static ConfigEntry<bool> DamageMapsSteelGloss;     // local: bare steel is metallic and shiny (a metallic/smoothness map next to the paint), scorched paint is dull
+        internal static ConfigEntry<bool> ImpactEffectsEnabled;            // local: sparks, flash, smoke and paint dust where a shell hits armor
+        internal static ConfigEntry<bool> ImpactEffectsLitSmoke;    // local: smoke and dust are drawn with the URP lit particle shader (lit by the scene)
+        internal static ConfigEntry<float> ImpactEffectsAmount;     // local: how many sparks and how much smoke (1 = normal)
+        internal static ConfigEntry<bool> DamageMapsShareMarks;     // local: send the marks of my shots to the other players, and draw theirs
+        internal static ConfigEntry<bool> DamageMapsSimulatedShots; // local: the simulated shot leaves (visual only) marks too
+        internal static ConfigEntry<bool> DamageMapsWeakenArmor;    // global: holes let shots through, dents thin the plate
+        internal static ConfigEntry<float> DamageMapsDensity;       // local: pixels per meter of the maps
+        internal static ConfigEntry<float> DamageMapsNormalStrength;// local: how deep the dents look
+        internal static ConfigEntry<bool> DamageMapsHoleBothSides;  // local: draw both sides of a holed plate
+        internal static ConfigEntry<int> DamageMapsMaxVehicles;     // local: vehicles with maps at once
+        internal static ConfigEntry<int> SimQuality;                // local: 0 off, 1 low, 2 medium, 3 high, 4 ultra
+        internal static ConfigEntry<bool> SimCracks;                // local: the simulation's torn links make grooves in the marks
+        internal static ConfigEntry<bool> SimSmoothEdges;           // local: the edge of a hole is smooth and a little ragged, not the grid's steps
+        internal static ConfigEntry<int> SimThreads;                // local: 0 = all cores but two
+        internal static ConfigEntry<float> SimTimeLimit;            // local: seconds before a simulation is given up
+        internal static ConfigEntry<bool> SimAutoQuality;           // local: lower the quality when it is too slow
+        internal static ConfigEntry<int> SimMaxQueue;               // local: simulations waiting before new impacts get the quick marks
+        internal static ConfigEntry<bool> SimShedLoad;              // local: lend threads back when the frame rate drops
         internal static ConfigEntry<float> FragmentArmorFactor;
         internal static ConfigEntry<float> DefaultShellBrittleness;
         internal static ConfigEntry<float> SimShellBrittleness;
@@ -123,8 +165,17 @@ namespace ArmorFragments
         // Shown in the log and the panel, to tell which build the game is really running.
         public const string Version = "0.10.0";
 
+        private float attachMenuAt = -1f;
+
         private void Update()
         {
+            if (attachMenuAt > 0f && UnityEngine.Time.unscaledTime >= attachMenuAt)
+            {
+                attachMenuAt = -1f;
+                try { GpuStatus.Start(); }
+                catch (System.Exception e) { Log.LogWarning("Couldn't start the graphics card check: " + e.Message); }
+            }
+            GpuStatus.Tick();
             UI.DesignerSection.Tick();
             XRayView.Tick();
             VehicleXRay.Tick();
@@ -135,11 +186,14 @@ namespace ArmorFragments
             Crew.Tick();
             CrewBodies.Tick();
             RackFireSync.Tick();
+            if (DamageMapsShareMarks.Value) MarksSync.Tick();
             RackVisualizer.Tick();
             FaceHighlight.Tick();
             ArmorMass.Tick();
             AmmoRackXRay.Tick();
             ImpactCamera.Tick();
+            PlateDamageMaps.Tick();
+            ImpactEffects.Tick();
         }
 
         private void Awake()
@@ -149,7 +203,8 @@ namespace ArmorFragments
             Log.LogInfo("Armor Fragments " + Version + " loading");
 
             // Keeps this plugin's latest log lines for the in-game panel.
-            BepInEx.Logging.Logger.Listeners.Add(new LogMirror());
+            MirrorListener = new LogMirror();
+            BepInEx.Logging.Logger.Listeners.Add(MirrorListener);
 
             ApplyDamage = Config.Bind("Fragments", "ApplyDamage", true,
                 "If true, fragments damage the parts they hit.");
@@ -171,6 +226,10 @@ namespace ArmorFragments
                     new AcceptableValueRange<float>(1f, 1000f)));
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
+            HideRaysOutsideViews = Config.Bind("Debug", "HideRaysOutsideViews", true,
+                "On: the rays are only drawn where they are watched, in the impact camera and in the simulated shot; the shots " +
+                "of the world around you draw none (nothing changes in what they do). Off: every shot draws its rays. " +
+                "(Needs DrawRays on.)");
             RayWidthScale = Config.Bind("Debug", "RayWidthScale", 1f,
                 new ConfigDescription(
                     "A drawn ray is as thick as the thing it shows: the shell as wide as its caliber, a fragment as wide " +
@@ -239,6 +298,10 @@ namespace ArmorFragments
             ImpactCameraXRay = Config.Bind("ImpactCamera", "XRay", true,
                 "If true, the impact camera switches to an X-ray view of the vehicle the moment the shell hits, " +
                 "showing the damage (yellow, orange, red) as the fragments reach each part.");
+            ImpactCameraDamageView = Config.Bind("ImpactCamera", "DamageView", false,
+                "If true, the impact camera also draws the armor's damage map over the plates: dark red where a plate is badly dented " +
+                "or holed, a lighter, more see-through red where it is only slightly marked, nothing where it is untouched. " +
+                "(Only in the impact camera: the main view does not change.)");
             ImpactCameraGhostLayer = Config.Bind("ImpactCamera", "XRayLayer", 29,
                 new ConfigDescription("Unity layer the impact camera's X-ray ghosts live on. Only that camera draws it (the main camera is told to skip it while the camera is open). " +
                     "29 and 30 are the game's 'Mod Layer 2/3'; 3 is unused. If the ghosts do not show, try another of these.",
@@ -268,9 +331,6 @@ namespace ArmorFragments
                     "A part that would lose this percentage of its health is shown fully dark.",
                     new AcceptableValueRange<float>(1f, 100f)));
 
-            LogChordDiagnostics = Config.Bind("Simulation", "LogChordDiagnostics", true,
-                "Each simulated shot also writes to the log how far the line travels inside every part " +
-                "(lines starting with [CHORD]). Diagnostic for the energy model; changes nothing.");
 
             DefaultShellHardness = Config.Bind("Energy", "DefaultShellHardness", 100f,
                 new ConfigDescription("Shell hardness (%) for cannons without a [CAN k=] tag. Compared with the armor's hardness for the ricochet angle.",
@@ -328,6 +388,141 @@ namespace ArmorFragments
                     "How much more of the casing flies sideways than along the shell's axis when it bursts. " +
                     "0 = the same in every direction, 1 = mostly sideways (as the casing of a real shell does).",
                     new AcceptableValueRange<float>(0f, 1f)));
+            KeepPlatesApart = Config.Bind("DamageMaps", "KeepPlatesApart", true,
+                "Armor plates keep their own renderer in flight instead of being merged into their group's mesh (a few more draw calls). " +
+                "Needed for the damage maps: a merged plate cannot be changed. Takes effect when a flight starts.");
+            DamageMapsEnabled = Config.Bind("DamageMaps", "Enabled", true,
+                "Shots leave marks on armor plates: dents, holes, grooves and pits, drawn into the plate's normal map and hole mask.");
+            DamageMapsPaintDamage = Config.Bind("DamageMaps", "PaintDamage", true,
+                "Marks also change the plate's COLOR: the paint is scorched dark around a hit and flakes off where the metal was struck, showing bright " +
+                "steel (and a bright rim round holes). Plates with marks are then drawn with the Lit shader in their paint's color (a plate with a pattern " +
+                "or a texture loses it). Takes effect for the next vehicle that gets marks (the panel's Clear button starts over).")
+            ;
+            PartDecalsEnabled = Config.Bind("Decals", "Enabled", true,
+                "Shells that go through or burst on parts that are NOT armor (wings, plain fuselage, engines...) leave marks: a hole where they went in and, " +
+                "if they came out, a bigger torn one, with scorch and bare metal round it. Laid over the surface as small decals (those parts are merged into " +
+                "their group's mesh in flight, so they cannot be marked like armor plates), only where seen from outside. Local: other players' are not sent.");
+            PartDecalsMax = Config.Bind("Decals", "MaxPerVehicle", 48,
+                new ConfigDescription("How many of these decals a vehicle keeps (each is a small mesh and two 128 x 128 textures); the oldest are taken off.",
+                    new AcceptableValueRange<int>(4, 200)));
+            DamageMapsFlex = Config.Bind("DamageMaps", "Flex", true,
+                "A heavy blow bends the whole plate it hits (a broad dish on the struck face, a bulge on the other) and, a little, the armor plates joined " +
+                "to it, the less the further they are. Only a look, and only for heavy hits (a big shell against a plate that stops it).");
+            DamageMapsAvoidOverlap = Config.Bind("DamageMaps", "AvoidOverlap", true,
+                "Where armor plates overlap or are clipped into each other, the marks of a hit stay inside the room there is: a dent cannot run through " +
+                "the plate behind it and metal pushed out cannot come through the plate in front. Costs a few physics queries the first time a plate with " +
+                "neighbors is hit.");
+            DamageMapsSteelGloss = Config.Bind("DamageMaps", "SteelGloss", true,
+                "With paint damage on, the steel that shows through is metallic and shiny (rubbed bright where a shell skidded or cut through, duller where " +
+                "the metal was torn) and scorched paint is dull. Uses the plate's bump atlas as a metallic/smoothness map (one more atlas per vehicle, " +
+                "about 21 MB). Takes effect for the next vehicle that gets marks.");
+            ImpactEffectsEnabled = Config.Bind("Effects", "Impacts", true,
+                "Where a shell hits armor: a flash, sparks, paint dust and smoke (a skid of sparks for a ricochet, a spray out the back for a penetration, a " +
+                "fireball for an HE shell). Only for the shells the mod resolves.");
+            ImpactEffectsLitSmoke = Config.Bind("Effects", "LitSmoke", true,
+                "Smoke and paint dust are drawn with the URP lit particle shader, so the sun, the sky and the shadows light them (the flash, sparks and " +
+                "embers glow on their own). If the build has no such shader they fall back to the plain one. Takes effect after F6 or a restart.");
+            ImpactEffectsAmount = Config.Bind("Effects", "Amount", 1f,
+                "How many sparks and how much smoke the impact effects make (1 = normal, 0.3 to 2).");
+            DamageMapsShareMarks = Config.Bind("DamageMaps", "ShareMarks", true,
+                "In multiplayer, the marks of the shells you shoot at another player's vehicle are sent to the other players who have the mod " +
+                "(and to the player who was shot), and theirs are drawn on your screen and your vehicle. Players without the mod see nothing of it.");
+            DamageMapsSimulatedShots = Config.Bind("DamageMaps", "SimulatedShots", false,
+                "The panel's simulated shot leaves its marks (dents, holes, grooves, pits, worked out like a real shot's, with the " +
+                "impact simulation) on the plates it hits. Only the look: they never weaken the armor or let anything through, " +
+                "and the panel's Clear button takes them off.");
+            DamageMapsWeakenArmor = Config.Bind("DamageMaps", "WeakenArmor", true,
+                "The marks count: a hole lets shells and fragments through, a dent makes the plate thinner there. " +
+                "(Not synchronized between players yet: each computer keeps the marks of the shots it worked out.)");
+            DamageMapsDensity = Config.Bind("DamageMaps", "PixelsPerMeter", 512f,
+                new ConfigDescription("How detailed the maps are: pixels per meter of plate. More = finer marks, more memory.",
+                    new AcceptableValueRange<float>(64f, 1024f)));
+            DamageMapsMaxAtlas = Config.Bind("DamageMaps", "MaxAtlasSize", 2048,
+                new ConfigDescription("The biggest atlas (texture) the maps of one vehicle's plates may share, in pixels per side: 2048 (16 MB each, up to 4 " +
+                    "of them a vehicle) or 4096 (64 MB each, up to 256 MB a vehicle, about twice the detail on a vehicle with many plates, " +
+                    "and each atlas takes about 4 times as long to make). Experimental: the log says the density and the memory it got.",
+                    new AcceptableValueRange<int>(1024, 4096)));
+            DamageMapsNormalStrength = Config.Bind("DamageMaps", "NormalStrength", 1.5f,
+                new ConfigDescription("How deep the dents look (the normal map's strength).",
+                    new AcceptableValueRange<float>(0.2f, 5f)));
+            DamageMapsRelief = Config.Bind("DamageMaps", "Relief", 0,
+                new ConfigDescription(
+                    "How a mark's relief is shown on the plate: 0 = the normal map (as before), 1 = the bump (height) map, which the " +
+                    "shader's parallax reads and which moves the surface itself, 2 = both together.",
+                    new AcceptableValueRange<int>(0, 2)));
+            UseGpu = Config.Bind("DamageMaps", "UseGpu", true,
+                "Run the impact simulation on the graphics card through OpenCL when the computer has it (it comes with the graphics driver). " +
+                "If it is missing or fails, the CPU does the work, as before. (This is the player's wish: the game itself never depends on it.)");
+            DamageMapsGeometry = Config.Bind("DamageMaps", "RealGeometry", false,
+                "EXPERIMENTAL. A flat rectangular armor plate that has been marked is rewritten as real geometry: a fine grid pushed in or " +
+                "out by the damage, and a hole is cells that are not there. Keeps the plate's own paint, texture and decals (a hole " +
+                "needs no other material). Plates that are thick, curved or not rectangular keep the maps. The normal and bump maps " +
+                "are switched off on a plate that has it.");
+            DamageMapsGridMm = Config.Bind("DamageMaps", "GridMillimeters", 8f,
+                new ConfigDescription("Cell size of the real geometry's grid, in millimeters. Smaller = finer, more vertices.",
+                    new AcceptableValueRange<float>(2f, 40f)));
+            DamageMapsFineGridMm = Config.Bind("DamageMaps", "FineGridMillimeters", 3f,
+                new ConfigDescription("Cell size of the real geometry around holes and sharp features (cracks, rims), in millimeters; the rest of " +
+                    "the damage uses the grid above. 0 = no finer zone. Smaller = sharper hole edges, more vertices there.",
+                    new AcceptableValueRange<float>(0f, 8f)));
+            DamageMapsMaxKiloVertices = Config.Bind("DamageMaps", "MaxKiloVertices", 30,
+                new ConfigDescription("Most vertices (in thousands) one plate's real geometry may have; a bigger plate gets a coarser grid.",
+                    new AcceptableValueRange<int>(10, 500)));
+            DamageMapsBudgetKiloVertices = Config.Bind("DamageMaps", "BudgetKiloVertices", 80,
+                new ConfigDescription("Most vertices (in thousands) ALL of one vehicle's damaged plates may have together. Past it the plates marked later get a coarser " +
+                    "grid. (In a test, 230 thousand vertices made frames take over a second; 180 thousand was still playable.)",
+                    new AcceptableValueRange<int>(10, 1000)));
+            GeometryStartPixels = Config.Bind("DamageMaps", "GeometryStartPixels", 1f,
+                new ConfigDescription(
+                    "Real geometry fades in with how much the maps would get wrong on screen: the biggest push x tan(view angle) x pixels " +
+                    "per meter. Below this many pixels only the maps (normal / bump) are used.",
+                    new AcceptableValueRange<float>(0.1f, 20f)));
+            GeometryFullPixels = Config.Bind("DamageMaps", "GeometryFullPixels", 3f,
+                new ConfigDescription("From this many pixels of error the plate shows its full geometry (and the maps are off); in between they are mixed.",
+                    new AcceptableValueRange<float>(0.2f, 40f)));
+            GeometryAngleStart = Config.Bind("DamageMaps", "GeometryAngleStart", 65f,
+                new ConfigDescription("Degrees between the view and the plate's normal (0 = head-on, 90 = grazing) below which the maps are always enough.",
+                    new AcceptableValueRange<float>(0f, 89f)));
+            GeometryAngleFull = Config.Bind("DamageMaps", "GeometryAngleFull", 78f,
+                new ConfigDescription("From this angle the geometry may be shown in full (if the pixel error says so too).",
+                    new AcceptableValueRange<float>(1f, 90f)));
+            GeometryBlendSeconds = Config.Bind("DamageMaps", "GeometryBlendSeconds", 0.35f,
+                new ConfigDescription("Seconds the transition between the maps and the geometry takes, from one end to the other.",
+                    new AcceptableValueRange<float>(0.05f, 3f)));
+            DamageMapsHoleBothSides = Config.Bind("DamageMaps", "HoleBothSides", true,
+                "A plate with a hole is drawn on both sides (shows the inside of the plate through the hole). Off = back faces are not drawn.");
+            SimQuality = Config.Bind("DamageMaps", "SimQuality", 2,
+                new ConfigDescription(
+                    "How a shell's impact on a plate is worked out: 0 = off (the quick analytic marks), 1 = low (a 40 x 40 patch), " +
+                    "2 = medium (64 x 64), 3 = high (96 x 96), 4 = ultra (128 x 128). It is a small physics simulation of the plate, run in the " +
+                    "background on spare threads; the mark appears when it is ready. Higher = finer, slower, and never finer than the plate's map " +
+                    "can show (a vehicle with many plates has a coarse map, and then 'ultra' is lowered by itself). " +
+                    "(Only the look: the energy model decides the game.)",
+                    new AcceptableValueRange<int>(0, 4)));
+            SimCracks = Config.Bind("DamageMaps", "SimCracks", true,
+                "The torn links of the simulated plate make thin cracks (grooves) around a hole and across a dent.");
+            SimSmoothEdges = Config.Bind("DamageMaps", "SimSmoothEdges", true,
+                "The edge of a hole follows where the simulated metal runs out, a little ragged, instead of the simulation grid's square steps.");
+            SimThreads = Config.Bind("DamageMaps", "SimThreads", 0,
+                new ConfigDescription(
+                    "Threads the simulation may use, the simulation's own included. 0 = automatic (all the cores but two). " +
+                    "They run below the game's own threads and hand the work to whichever is free.",
+                    new AcceptableValueRange<int>(0, 64)));
+            SimTimeLimit = Config.Bind("DamageMaps", "SimTimeLimit", 8f,
+                new ConfigDescription(
+                    "Seconds a simulation may take. One that takes longer is given up and the quick marks are drawn instead.",
+                    new AcceptableValueRange<float>(1f, 60f)));
+            SimAutoQuality = Config.Bind("DamageMaps", "SimAutoQuality", true,
+                "If a simulation takes most of its time limit, the next ones use a lower quality, and go back up when they are quick again.");
+            SimMaxQueue = Config.Bind("DamageMaps", "SimMaxQueue", 3,
+                new ConfigDescription(
+                    "The fewest simulations that may wait their turn. When that many are waiting, new impacts get the quick marks (a burst of shots does not pile up). While simulations are quick (a graphics card) more may wait, up to about 0.8 s of work or 12.",
+                    new AcceptableValueRange<int>(1, 10)));
+            SimShedLoad = Config.Bind("DamageMaps", "SimShedLoad", true,
+                "When the frame rate drops, the simulation uses fewer threads for a while (and takes them back when it recovers).");
+            DamageMapsMaxVehicles = Config.Bind("DamageMaps", "MaxVehicles", 6,
+                new ConfigDescription("Most vehicles with damage maps at once (each has atlases of up to 32 MB). The one hit longest ago gives it back.",
+                    new AcceptableValueRange<int>(1, 20)));
             FragmentArmorFactor = Config.Bind("Energy", "FragmentArmorFactor", 1f,
                 new ConfigDescription(
                     "A fragment that meets armor pays what a shell would (ArmorResistance x thickness x its own cross-section) " +
@@ -521,7 +716,7 @@ namespace ArmorFragments
                 DefaultShellHardness, ArmorResistance, RicochetFriction, RicochetRandomness,
                 DamagePerKiloJoule, DensityModifier, ConstantForceLoss, SimpleFragments,
                 FillerHE, FillerAPHE, GurneySpeed, DetonationSidewaysBias, DefaultFuse,
-                FragmentArmorFactor, DefaultShellBrittleness,
+                FragmentArmorFactor, DefaultShellBrittleness, DamageMapsWeakenArmor,
                 SimpleFragmentArea, MaxPartsPerFragment, SpreadBaseAngle, AxisTilt, SpreadAnisotropy,
                 MaxDeflection, MaxPlates, MaxRicochets, ArmorRicochetAngle, ArmorRicochetMultiplier,
                 FragmentRicochetAngle, FragmentRicochetMultiplier,
@@ -531,9 +726,12 @@ namespace ArmorFragments
                 CrewEnabled, CrewSwitchSeconds);
 
             // One patch failing (for example after a game update) must not stop the others.
-            SafePatcher.PatchAll(new Harmony("com.yourname.armorfragments"), typeof(ArmorFragmentsPlugin).Assembly);
+            HarmonyInstance = new Harmony("com.yourname.armorfragments");
+            SafePatcher.PatchAll(HarmonyInstance, typeof(ArmorFragmentsPlugin).Assembly);
             CompatibilityCheck.Run();   // says in the log what a game update has changed
             Log.LogInfo("Armor Fragments loaded!");
+            attachMenuAt = UnityEngine.Time.unscaledTime + 0.5f;   // loaded in the middle of a flight (a reload): the flight menu is already built
         }
+
     }
 }

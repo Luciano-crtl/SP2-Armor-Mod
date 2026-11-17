@@ -165,6 +165,24 @@ namespace ArmorFragments
 
         // ---- Registering (VariableSystemScript.RefreshVariables) -----------------------
 
+        // After a hot reload (F6) the new copy knows nothing of the vehicles already flying: the racks are only found when the game rebuilds a
+        // vehicle's variable list. So it is asked to rebuild it for every vehicle in flight, which runs the patch that registers the racks (and
+        // the damage module variables) the same way as at the start of a flight. A rack keeps no rounds from before (it is full again).
+        public static int RegisterExisting()
+        {
+            int count = 0;
+            foreach (AircraftScript aircraft in UnityEngine.Object.FindObjectsByType<AircraftScript>(FindObjectsSortMode.None))
+            {
+                if (aircraft == null || aircraft.LoadContext != CraftLoadContext.Flight || aircraft.RemoteAircraft) continue;
+                VariableSystemScript system = aircraft.VariableSystem;
+                if (system == null) continue;
+                try { system.RefreshVariables(); count++; }
+                catch (Exception e) { ArmorFragmentsPlugin.Log.LogWarning("Could not rebuild the variables of '" + aircraft.name + "': " + e.Message); }
+            }
+            if (count > 0) ArmorFragmentsPlugin.Log.LogInfo("[LIFECYCLE] looked for ammo racks in " + count + " vehicle(s) already in flight");
+            return count;
+        }
+
         public static void Register(VariableSystemScript system)
         {
             if (!ArmorFragmentsPlugin.AmmoRacksEnabled.Value) return;

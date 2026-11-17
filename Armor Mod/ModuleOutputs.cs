@@ -143,6 +143,30 @@ namespace ArmorFragments
             }
         }
 
+        // The plugin is being unloaded. The variables made for the modules would stay in the game's variable lists with their last value
+        // and nobody writing them, so the lists are asked to rebuild: the game drops every variable nothing of its own uses. Called
+        // AFTER our Harmony patches are gone (Lifecycle), so ModuleVariablesPatch does not make them again; a copy of the plugin loaded
+        // meanwhile has its own patch, which does.
+        public static void Shutdown()
+        {
+            List<VariableSystemScript> systems = new List<VariableSystemScript>(Systems.Keys);
+            Systems.Clear();
+            Warned.Clear();
+
+            foreach (VariableSystemScript system in systems)
+            {
+                if (system == null) continue;
+                try
+                {
+                    system.RefreshVariables();
+                }
+                catch (Exception e)
+                {
+                    ArmorFragmentsPlugin.Log.LogWarning("[LIFECYCLE] Could not refresh a variable list while unloading: " + e.Message);
+                }
+            }
+        }
+
         // ---- Writing the values ----------------------------------------------------
 
         // Called every frame by the plugin.

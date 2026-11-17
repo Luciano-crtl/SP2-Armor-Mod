@@ -142,6 +142,17 @@ namespace ArmorFragments
             return m;
         }
 
+        // Are rays drawn right now? DrawRays is the master switch; with HideRaysOutsideViews only the impact camera and the
+        // simulated shot (the two places the rays are there to be watched) get them. What the shot does is the same either way.
+        public static bool Wanted
+        {
+            get
+            {
+                if (!ArmorFragmentsPlugin.DrawRays.Value) return false;
+                return !ArmorFragmentsPlugin.HideRaysOutsideViews.Value || ShotSimulator.Active || ImpactCamera.IsActive;
+            }
+        }
+
         // Animates a glowing head moving along the path, with a fading trail behind it.
         // 'delay' (seconds) waits before starting, so rays can leave after the shell arrives.
         // thick: as thick as the shell's ray, without being the impact ray (see TracerAnimation).
@@ -152,7 +163,7 @@ namespace ArmorFragments
             if (!available) return;
 
             GameObject go = new GameObject("ArmorFragmentRay");
-            go.layer = ImpactCamera.RayLayer;
+            go.layer = ImpactCamera.RaysLayer;
             LineRenderer lr = go.AddComponent<LineRenderer>();
             lr.useWorldSpace = true;
             lr.positionCount = 0;
@@ -186,6 +197,32 @@ namespace ArmorFragments
             PersistentBubbles.Clear();
         }
 
+        // The plugin is being unloaded: every ray and bubble of THIS copy of the code goes (a copy loaded later has its own, of other
+        // types, so only these are found), and so do the materials.
+        public static void Shutdown()
+        {
+            ClearPersistent();
+            foreach (TracerAnimation tracer in Object.FindObjectsByType<TracerAnimation>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                Object.Destroy(tracer.gameObject);
+            foreach (BubbleAnimation bubble in Object.FindObjectsByType<BubbleAnimation>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                Object.Destroy(bubble.gameObject);
+
+            InitialTracer = null;
+            Anchor = null;
+            FallbackAnchor = null;
+
+            if (lineMaterial != null) Object.Destroy(lineMaterial);
+            lineMaterial = null;
+            for (int i = 0; i < BubbleMaterials.Length; i++)
+            {
+                if (BubbleMaterials[i] != null) Object.Destroy(BubbleMaterials[i]);
+                BubbleMaterials[i] = null;
+            }
+            shaderUsed = null;
+            initialized = false;
+            available = false;
+        }
+
         // A small colored ball that shrinks away. The "Landed" kind does not shrink: it stays,
         // a little smaller, until ClearPersistent is called.
         public static void SpawnBubble(Vector3 position, RayKind kind, Transform anchor = null)
@@ -195,7 +232,7 @@ namespace ArmorFragments
 
             GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "ArmorFragmentBubble";
-            go.layer = ImpactCamera.RayLayer;
+            go.layer = ImpactCamera.RaysLayer;
 
             // The primitive comes with a collider; remove it NOW or later rays would hit it.
             Collider col = go.GetComponent<Collider>();

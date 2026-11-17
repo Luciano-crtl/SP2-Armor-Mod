@@ -307,6 +307,23 @@ namespace ArmorFragments
             RimList.Clear();
         }
 
+        // The plugin is being unloaded: the view goes off and its materials are freed (Hide keeps them for the next view).
+        public static void Shutdown()
+        {
+            Hide();
+            FreeMaterials(ref normalMaterials);
+            FreeMaterials(ref armorMaterials);
+            FreeMaterials(ref whiteMaterials);
+        }
+
+        private static void FreeMaterials(ref Material[] materials)
+        {
+            if (materials == null) return;
+            foreach (Material material in materials)
+                if (material != null) Object.Destroy(material);
+            materials = null;
+        }
+
         // Called every frame by the plugin: turns the view off when its time is up and
         // spends a limited amount of work on rim colors.
         public static void Tick()
@@ -482,7 +499,8 @@ namespace ArmorFragments
             // Any other mesh that is currently visible (propeller blades, for example).
             foreach (MeshRenderer renderer in part.GetComponentsInChildren<MeshRenderer>())
             {
-                if (renderer.name == "ArmorXRayGhost" || renderer.name == "AmmoRackRounds" || renderer.name == "AmmoRackGhost") continue;
+                if (renderer.name == "ArmorXRayGhost" || renderer.name == "AmmoRackRounds" || renderer.name == "AmmoRackGhost" ||
+                    renderer.name == DamageOverlay.ObjectName) continue;
                 if (renderer.shadowCastingMode == ShadowCastingMode.ShadowsOnly) continue;
                 if (renderer.enabled && seen.Add(renderer)) yield return renderer;
             }

@@ -44,6 +44,13 @@ namespace ArmorFragments
         // The shot simulator sets it for one shot, then clears it.
         public static Dictionary<PartScript, DamageRecord> DamageSink;
 
+        // Does this shot mark the plates it hits? A real one that applies damage does. A simulated one does only when the
+        // setting asks for it, and then the marks are only a look (PlateDamageMaps keeps them out of the armor model).
+        private static bool LeavesMarks(bool simulated, bool applyDamage)
+        {
+            return simulated ? ArmorFragmentsPlugin.DamageMapsSimulatedShots.Value : applyDamage;
+        }
+
         // Same idea for a REAL shot, for the impact camera's X-ray: what each part took, and when the
         // drawn ray reaches it. (A separate one: DamageSink also changes how the rays are drawn.)
         public static Dictionary<PartScript, DamageRecord> ImpactSink;
@@ -118,10 +125,27 @@ namespace ArmorFragments
             //    surface: it never gets in, the plate sheds nothing, and the fragments start outside the vehicle.
             if (shell.Explosive && (!shell.HasFuse || shell.FuseLeft <= 0f))
             {
+                if (LeavesMarks(simulated, applyDamage))
+                    PlateDamageMaps.OnImpact(armor, armorTag, DamageKind.Burst, point, Vector3.Dot(normal, direction) > 0f ? -normal : normal, direction,
+                                             shell.CaliberMm * 0.001f, Mathf.Clamp01(shell.FillerFraction * 6f), angle, leadTime,
+                                             0f, 0f, 1f, simulated, 0f, shell.Profile);
                 BurstOnSurface(shell, point, direction, normal, angle, applyDamage, simulated, leadTime,
                                shell.HasFuse ? "its fuse ran out at the plate" : "it burst on touching the plate (no fuse)");
                 return ImpactOutcome.Blocked;
             }
+
+            // The marks of earlier shots: a hole lets the shell through as if the plate were not there, and a dent
+            // makes the plate thinner where it was hit (see DamageMaps/).
+            Vector3 facingNormal = Vector3.Dot(normal, direction) > 0f ? -normal : normal;
+            if (PlateDamageMaps.InHole(armor, point, facingNormal))
+            {
+                ArmorFragmentsPlugin.Log.LogInfo(tag + "The shell hit a hole in the plate and flies on");
+                LastImpact.Record(tag + "Through a hole", angle, 0f, 0, 0, 0f);
+                ShellFlight.Continue(point + direction * SurfaceOffset, direction, shell, cannonTag, null, leaveOut, leadTime, 0f,
+                                     RayKind.None, applyDamage, simulated, plate, true, bounces, resolved);
+                return ImpactOutcome.Penetrated;
+            }
+            armorTag = PlateDamageMaps.Weakened(armor, armorTag, point);
 
             // 1) Ricochet: does this shell bounce off this armor at this angle? The critical angle
             //    depends on the hardnesses, the speed and the caliber against the thickness.
@@ -143,6 +167,10 @@ namespace ArmorFragments
                 LastImpact.Absorbed = shell.Energy - energyOut;
                 LastImpact.Residual = energyOut;
 
+                if (LeavesMarks(simulated, applyDamage))
+                    PlateDamageMaps.OnImpact(armor, armorTag, DamageKind.Ricochet, point, n, reflected, shell.CaliberMm * 0.001f,
+                                             1f - energyOut / Mathf.Max(shell.Energy, 1f), angle, leadTime,
+                                             shell.Mass, shell.Speed, energyOut / Mathf.Max(shell.Energy, 1f), simulated, 0f, shell.Profile);
                 LastImpact.Record(tag + "Armor ricochet", angle, Mathf.Min(armorTolerated, 90f), 0, 1, 0f);
                 ArmorFragmentsPlugin.Log.LogInfo(
                     tag + "Armor ricochet: angle " + angle.ToString("F0") + " >= critical " +
@@ -174,6 +202,10 @@ namespace ArmorFragments
             {
                 LastImpact.Record(tag + "Blocked (" + comparison + ")", angle, Mathf.Min(armorTolerated, 90f), 0, 0, 0f);
                 ArmorFragmentsPlugin.Log.LogInfo(tag + "Shell blocked by armor: " + comparison);
+                if (LeavesMarks(simulated, applyDamage))
+                    PlateDamageMaps.OnImpact(armor, armorTag, DamageKind.Blocked, point, facingNormal, direction,
+                                             shell.CaliberMm * 0.001f, Mathf.Clamp01(shellEnergy / Mathf.Max(absorbed, 1f)), angle, leadTime,
+                                             shell.Mass, shell.Speed, 1f, simulated, 0f, shell.Profile);
 
                 // A shell with a fuse that the plate stops bursts where it stopped: on the plate's surface.
                 if (shell.HasFuse)
@@ -221,6 +253,11 @@ namespace ArmorFragments
                 tag + "Fragments: " + partsHit + " of " + fragments.Length + " rays hit a part, " +
                 ricochets + " ricochets, total damage " + totalDamage.ToString("F1") +
                 (applyDamage ? "" : " (not applied)") + BounceText());
+
+            if (LeavesMarks(simulated, applyDamage))
+                PlateDamageMaps.OnImpact(armor, armorTag, DamageKind.Penetrated, point, facingNormal, direction,
+                                         shell.CaliberMm * 0.001f, Mathf.Clamp01(absorbed / Mathf.Max(shellEnergy, 1f)), angle, leadTime,
+                                         shell.Mass, shell.Speed, 1f, simulated, EnergyModel.DeflectionDegrees(armorTag, shell, angle), shell.Profile);
 
             // 4) The shell is not spent by the plate: what the plate did not take and did not turn into
             //    fragments goes on, bent a little toward the plate's normal. (An explosive shell with a fuse
@@ -475,7 +512,7 @@ namespace ArmorFragments
             ricochets = 0;
             totalDamage = 0f;
             Bounces.Clear();
-            bool draw = ArmorFragmentsPlugin.DrawRays.Value;
+            bool draw = RayDrawer.Wanted;
 
             // Every ray ends in a bubble (a little sphere object). With hundreds of rays that would be hundreds of
             // objects at once, so a big cloud only gives some of its rays their bubbles.
@@ -518,6 +555,7 @@ namespace ArmorFragments
                                              PartScript skip, bool applyDamage, float startDelay, float shellCaliberMm = 0f)
         {
             TraceResult total = default;
+            if (applyDamage) PartDecals.FromCrossings(ray, from, direction, shellCaliberMm);   // the holes it leaves in the parts it goes through
             BeginBatch();
             depositingShell = true;   // an ammo rack treats the shell itself as a direct hit
             shellRadius = Mathf.Max(shellCaliberMm, 0f) * 0.0005f;   // mm of caliber -> m of radius
@@ -670,6 +708,9 @@ namespace ArmorFragments
                     at = d;
                     PartScript part = e.Part;
 
+                    // A hole in an armor plate (see DamageMaps/): the fragment goes through as if the plate were not there.
+                    if (part != null && e.Armor != null && PlateDamageMaps.InHole(part, e.Point, e.Normal)) continue;
+
                     // A grazing hit throws it back. What it keeps is sin^2 of the angle; the rest stays
                     // in whatever it hit.
                     float angle = ImpactAngle(dir, e.Normal);
@@ -716,13 +757,17 @@ namespace ArmorFragments
                     {
                         // An armored face of a per-face block: a plate on the block's surface, charged as a shell
                         // of the fragment's cross-section would be (its thickness, longer the more slanted).
-                        float plateMm = e.Mm / Mathf.Max(Mathf.Cos(angle * Mathf.Deg2Rad), 0.1f);
+                        float plateMm = PlateDamageMaps.WeakenedMm(part, e.Mm, e.Point) / Mathf.Max(Mathf.Cos(angle * Mathf.Deg2Rad), 0.1f);   // dents make it thinner
+                        bool faceMarks = LeavesMarks(DamageSink != null, applyDamage);   // a real shot leaves marks (the simulated one only if asked)
                         float plateIn = slug.Energy;
                         float plateOut = PartPhysics.EnergyAfterArmor(plateIn, slug.AreaM2, plateMm);
 
                         if (plateOut <= floor)
                         {
                             Deposit(part, plateIn * bundle, e.Point, dir, applyDamage, time, ref result);
+                            if (faceMarks)
+                                PlateDamageMaps.OnFragment(part, false, e.Point, e.Normal, dir,
+                                                           RayPath.DiameterOf(slug.AreaM2 * 10000f), 0.6f, time);
                             path.Add(origin + dir * d, stopMarker, speed);
                             path.Final = RayKind.Hit;
                             ended = true;
@@ -730,6 +775,9 @@ namespace ArmorFragments
                         }
 
                         Deposit(part, (plateIn - plateOut) * bundle, e.Point, dir, applyDamage, time, ref result);
+                        if (faceMarks)
+                            PlateDamageMaps.OnFragment(part, true, e.Point, e.Normal, dir,
+                                                       RayPath.DiameterOf(slug.AreaM2 * 10000f), 0.6f, time);
                         slug.Energy = plateOut;
 
                         if (partsCrossed >= maxParts)
@@ -763,6 +811,8 @@ namespace ArmorFragments
                     // resistance per mm of thickness (the tag's, longer the more slanted the hit) and per cm2, times the
                     // fragment factor. Any other part slows it by its density.
                     ArmorTag partArmor = e.Armor;
+                    if (partArmor != null) partArmor = PlateDamageMaps.Weakened(part, partArmor, e.Point);   // dents make it thinner
+                    bool marks = partArmor != null && LeavesMarks(DamageSink != null, applyDamage);   // a real shot leaves marks (the simulated one only if asked)
                     float armorMm = partArmor != null
                         ? partArmor.Thickness / Mathf.Max(Mathf.Cos(angle * Mathf.Deg2Rad), 0.1f)
                         : 0f;
@@ -780,6 +830,9 @@ namespace ArmorFragments
                     {
                         // It stops inside the part and leaves everything there; it slows to a halt on the way.
                         Deposit(part, energyIn * bundle, e.Point, dir, applyDamage, time, ref result);
+                        if (marks)
+                            PlateDamageMaps.OnFragment(part, false, e.Point, e.Normal, dir,
+                                                       RayPath.DiameterOf(slug.AreaM2 * 10000f), 0.6f, time);
                         float into = partArmor != null
                             ? PartPhysics.ArmorStopDistance(energyIn, floor, slug.AreaM2, armorMm, chord)
                             : PartPhysics.StopDistance(energyIn, floor, slug.Mass, slug.AreaM2, density, chord);
@@ -790,6 +843,9 @@ namespace ArmorFragments
                     }
 
                     Deposit(part, (energyIn - energyOut) * bundle, e.Point, dir, applyDamage, time, ref result);
+                    if (marks)
+                        PlateDamageMaps.OnFragment(part, true, e.Point, e.Normal, dir,
+                                                   RayPath.DiameterOf(slug.AreaM2 * 10000f), 0.6f, time);
                     slug.Energy = energyOut;
 
                     // Inside the part the speed goes from what it was to what it becomes.

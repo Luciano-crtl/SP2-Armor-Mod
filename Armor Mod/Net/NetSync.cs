@@ -310,7 +310,7 @@ namespace ArmorFragments
             // Message layout: type (1 byte), part id (2 bytes), then what the sender wrote.
             if (data.Array == null || data.Count < 3) return true;
             byte type = data.Array[data.Offset];
-            if (type != NetSync.ConfigMessage && type != NetSync.HelloMessage && type != RackFireSync.FireMessage) return true;
+            if (type != NetSync.ConfigMessage && type != NetSync.HelloMessage && type != RackFireSync.FireMessage && type != MarksSync.Message) return true;
 
             try
             {
@@ -328,6 +328,7 @@ namespace ArmorFragments
                     reader.Store();
                 }
                 if (type == RackFireSync.FireMessage) RackFireSync.OnMessage(__instance, partId, text);
+                else if (type == MarksSync.Message) { if (ArmorFragmentsPlugin.DamageMapsShareMarks.Value) MarksSync.OnMessage(__instance, text); }
                 else NetSync.OnMessage(type, text, __instance);
             }
             catch (Exception e)
