@@ -158,7 +158,7 @@ Also
 
 # Damage marks and impact simulation
 
-0.10.0
+0.11.0
 - Armor plates now show what hit them: dents, holes, grooves, fragment pits and HE burst dishes, drawn as normal/height maps (with mip levels) and, near the damage, as real geometry within a per-vehicle vertex budget. Thick blocks get marks on their sides too.
 - Each projectile hit is simulated in 3D (lattice of particles, on the graphics card through OpenCL when available, otherwise the CPU) and drawn when the shell reaches the plate. It is visual only: the energy model still decides the outcome. Quality, threads, queue and time limit are in the "Damage maps" panel; the grid never gets finer than the map can show.
 - The shell's nose shape (AP ogive, APHE capped, HE blunt) shapes the hole. Thin or ductile plates petal outward on the back face; thick or brittle ones shear a clean plug. Brittle plates crack radially; the hole rim is smooth and irregular.
@@ -168,21 +168,22 @@ Also
 - Armor plates stay out of the game's mesh merge so they can carry marks.
 - Added an impact camera and a vehicle X-ray.
 
-0.10.0 (impact look)
+0.11.0 (impact look)
 - Sparks, a flash, paint dust and smoke where a shell hits armor: a fountain of sparks for a hit, a stream of long sparks along a ricochet, a hot spray and dark smoke out of the back of a penetration, a fireball for an HE shell. "Impact effects" and "Impact effects amount" in the panel.
 - A ricochet now skids a band of paint off the plate: wide and bright where it touched, thinning out with fine lines along the way, with a scorched spot where it hit.
 - The steel that shows through the paint is metallic and shiny (brightest where a shell skidded or cut through, duller where it was torn), and scorched paint is dull ("Shiny steel, dull soot"; one more 21 MB atlas per vehicle).
 
-0.10.0 (finer marks, bending)
+0.11.0 (finer marks, bending)
 - The detail of the marks no longer depends on how many armor plates the vehicle has: each plate gets its own piece of the vehicle's texture the first time it is hit (up to 768 pixels per meter, less if the texture is filling up). Before, a vehicle with many plates shared one texture and every mark came out at about 120 pixels per meter.
 - A heavy blow bends the whole plate it hits, and a little the armor plates joined to it ("Heavy hits bend plates").
 - Marks no longer push a plate's metal through the armor plates that overlap it ("Marks stay inside overlapping plates").
 
-0.10.0 (marks on every part)
+0.11.0 (marks on every part)
 - Shells that go through or burst on parts that are not armor (wings, plain fuselage, engines...) now leave marks: a hole where they went in and, if they came out, a bigger torn hole, with scorch and bare metal round it. They are decals laid over the surface, only where seen from outside ("Marks on parts that are not armor", "Decals kept per vehicle").
 
 # Turret mouse aim
 
+0.12.0
 - Mark a rotator as **Turret** (the designer's "Turret" toggle: a turret ring, a gun elevation) and a cannon as a turret ("Create turret group" on the cannon). Then switch the aim on with Backspace (`AimKey` in the config; or the panel's Tools > "Turret mouse aim") in flight.
 - The mouse turns the camera (an orbit view is selected for you) and the turret turns by itself until the pointer cannon points at what is under the circle in the middle of the screen. A small marker shows where the cannon really points: green when it is on target, yellow while it turns, red at the turret's limit.
 - The aim is stabilized: when the hull pitches or rolls, the turret keeps the gun on the circle. A rotator that does not move the pointer cannon is left out (the log says so).
