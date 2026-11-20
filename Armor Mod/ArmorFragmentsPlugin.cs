@@ -158,6 +158,38 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> ShowRacksInDesigner;   // local: only changes what you see
         internal static ConfigEntry<bool> DebugDumpShape;        // local: diagnostic file
 
+        // Mouse aim for turrets (see TurretAim.cs). Local: only your own controls.
+        internal static ConfigEntry<UnityEngine.InputSystem.Key> TurretAimKey;
+        internal static ConfigEntry<UnityEngine.InputSystem.Key> TurretLookKey;
+        internal static ConfigEntry<float> TurretZoom;
+        internal static ConfigEntry<float> TurretResponse;
+        internal static ConfigEntry<float> TurretCameraHeight;
+        internal static ConfigEntry<float> TurretDamping;
+        internal static ConfigEntry<float> TurretDerivative;
+        internal static ConfigEntry<bool> TurretFireOnTarget, TurretLineOfFire, TurretShareHull;
+        internal static ConfigEntry<float> TurretShareStrength, TurretErrorFilter;
+        internal static ConfigEntry<bool> TurretDirect, TurretAutoReach, TurretFreeCursor;
+        internal static ConfigEntry<float> TurretFreeCursorZone, TurretFreeCursorFollow, TurretFreeCursorSensitivity, TurretFreeCursorRecenter;
+        internal static ConfigEntry<float> TurretDirectRamp, TurretDirectDeadband, TurretDirectGain, TurretDirectBrake;
+        internal static ConfigEntry<bool> TurretGroupsHudEnabled;
+        internal static ConfigEntry<bool> TurretTestSingle;
+        internal static ConfigEntry<float> TurretFireTolerance, TurretFireStagger, TurretMoveStagger;
+        internal static ConfigEntry<bool> TurretAutoFire, TurretAutoLead, TurretAutoDrop, TurretAutoClearView, TurretAutoSkipFriendly;
+        internal static ConfigEntry<float> TurretAutoRange, TurretAutoAirAgl, TurretAutoAirSpeed;
+        internal static ConfigEntry<bool> TurretObstacleStop;
+        internal static ConfigEntry<float> TurretObstacleDegrees, TurretObstacleRetry;
+        internal static ConfigEntry<UnityEngine.InputSystem.Key> TurretSightKey;
+        internal static ConfigEntry<float> TurretSightZoom;
+        internal static ConfigEntry<float> TurretSightSensitivity;
+        internal static ConfigEntry<bool> TurretCrosshairFlipY;
+
+        // The rounds left in each ammo rack, on the flight screen (see AmmoHud.cs). Local.
+        internal static ConfigEntry<bool> AmmoHudEnabled;
+        internal static ConfigEntry<bool> AmmoHudRelative;
+        internal static ConfigEntry<TurretFireMouse> TurretFireMouseButton;
+        internal static ConfigEntry<UnityEngine.InputSystem.Key> TurretGroupKey;
+        internal static ConfigEntry<UnityEngine.InputSystem.Key> TurretFireKey;
+
         // Crew ([CRW] seats, see Crew.cs).
         internal static ConfigEntry<bool> CrewEnabled;
         internal static ConfigEntry<float> CrewSwitchSeconds;
@@ -194,6 +226,15 @@ namespace ArmorFragments
             ImpactCamera.Tick();
             PlateDamageMaps.Tick();
             ImpactEffects.Tick();
+            TurretAim.Tick();
+            AmmoHud.Tick();
+            TurretGroupsHud.Tick();
+        }
+
+        // The turret aim's circle and marker are drawn here (they invert the picture behind them).
+        private void OnGUI()
+        {
+            TurretAim.OnGui();
         }
 
         private void Awake()
@@ -272,6 +313,148 @@ namespace ArmorFragments
                 "Shows a small camera in the top right corner when a shell you fired hits another vehicle.");
             ImpactCameraKey = Config.Bind("ImpactCamera", "ToggleKey", UnityEngine.InputSystem.Key.F9,
                 "Key that switches the impact camera on and off. 'None' disables the key.");
+            TurretAimKey = Config.Bind("TurretAim", "AimKey", UnityEngine.InputSystem.Key.Backspace,
+                "Key that switches the mouse aim on and off (also the panel's Tools button). 'None' disables the key.");
+            TurretLookKey = Config.Bind("TurretAim", "FreeLookKey", UnityEngine.InputSystem.Key.C,
+                "Hold it to free the camera from the turret: the turret keeps pointing where it was while you look around the vehicle; " +
+                "let go and the camera comes back. 'None' disables it. While the aim is on, the game's view-switching keys do nothing.");
+            TurretZoom = Config.Bind("TurretAim", "Zoom", 4f,
+                new ConfigDescription("How many times the right mouse button zooms in (held: gradually in, let go: gradually out).",
+                    new AcceptableValueRange<float>(1.5f, 12f)));
+            TurretCameraHeight = Config.Bind("TurretAim", "PivotHeight", 0.5f,
+                new ConfigDescription("The point the camera turns around (where it sits at full zoom) is centered on the vehicle and this many meters above its highest point.",
+                    new AcceptableValueRange<float>(0f, 10f)));
+            AmmoHudEnabled = Config.Bind("AmmoDisplay", "Enabled", true,
+                "Shows a bar for each ammo rack above the fire buttons (bottom left of the flight screen): the rack's round (caliber and kind) and its rounds left. Clicking a bar switches them all between rounds and percent.");
+            AmmoHudRelative = Config.Bind("AmmoDisplay", "ShowPercent", false,
+                "The bars show the percent of the rack that is left instead of the rounds left (a click on a bar switches it).");
+            TurretGroupKey = Config.Bind("TurretAim", "GroupKey", UnityEngine.InputSystem.Key.Tab,
+                "In mouse aim, switches to the next turret group when the vehicle has more than one (the turrets of the active group are aimed and fire; the others hold). 'None' disables it.");
+            TurretFireMouseButton = Config.Bind("TurretAim", "FireMouseButton", TurretFireMouse.Left,
+                "In mouse aim, the mouse button that fires the cannons of the active turret group that are not set to fire by key (Left or Middle; the right button is the zoom).");
+            TurretShareHull = Config.Bind("TurretAim", "SlowSharedHull", true,
+                "Turrets on the same hull body push it together when they turn (a recording of 14 turrets on one ship: the hull rocked 5 degrees at 2 Hz, with the ship on land). " +
+                "With this on, each turret's gain is divided by the number of turrets of the active group that share its hull, so many turrets are gentler on the hull (and slower to arrive). " +
+                "Turn it off for turrets on a heavy hull that does not move.");
+            TurretTestSingle = Config.Bind("TurretAim", "TestOneTurret", false,
+                "For testing: in mouse aim only ONE turret of the active group is controlled and fires (the others hold where they are), so its behavior can be told apart from " +
+                "the effect of many turrets on one hull. The panel has < and > buttons to pick which one.");
+            TurretShareStrength = Config.Bind("TurretAim", "SharedHullFullGain", 1.9f,
+                new ConfigDescription("With SlowSharedHull: how many turrets of the group can work at full gain on one hull. With more, each turret's gain is this number divided by the number " +
+                    "of turrets (14 turrets: 1.9 / 14 = a seventh of the gain). A model of 14 turrets on a ship (and a recording of one) put the limit of a steady aim at about " +
+                    "1 turn a second of gain for 14 turrets; fewer turrets can have more.",
+                    new AcceptableValueRange<float>(1f, 20f)));
+            TurretGroupsHudEnabled = Config.Bind("TurretAim", "GroupsDisplay", true,
+                "In mouse aim, with more than one turret group, shows a bar for each group at the bottom right of the flight screen, above the camera buttons: lit = the group follows the mouse aim, dark = it holds. " +
+                "A click switches the group (several can be controlled together); hold Alt to free the cursor for it.");
+            TurretErrorFilter = Config.Bind("TurretAim", "ErrorFilterSeconds", 0.4f,
+                new ConfigDescription("When several turrets share a hull, the gap each one is closing is smoothed over this many seconds, so a hull that rocks (2 times a second) is not chased " +
+                    "by the turrets, which would rock it more. In the model it lets the gain be 4 times higher for the same steadiness. 0 = off. A single turret is never smoothed.",
+                    new AcceptableValueRange<float>(0f, 1.5f)));
+            TurretFreeCursor = Config.Bind("TurretAim", "FreeCursorEnabled", true,
+                "In the orbit view the ring is a cursor the mouse moves over the screen, instead of being fixed at the middle: the turrets aim where the ring is. The camera does not follow " +
+                "at once: it starts turning once the ring is some way off the middle (FreeCursorZonePercent) and follows more and more as the ring goes further, so there is no hard edge, and the ring " +
+                "drifts back toward the middle as the camera catches up. The sight view, the free look (C) and Alt work as before. Off = the ring stays at the middle and the mouse turns the camera.");
+            TurretFreeCursorZone = Config.Bind("TurretAim", "FreeCursorZonePercent", 30f,
+                new ConfigDescription("With FreeCursor: how far from the middle of the screen the ring can be before the camera starts to follow, as a percent of half the view's height. " +
+                    "The camera begins to follow a little inside this (at 60% of it) and follows fully a little outside it (at 140%).", new AcceptableValueRange<float>(5f, 90f)));
+            TurretFreeCursorFollow = Config.Bind("TurretAim", "FreeCursorFollowSeconds", 0.25f,
+                new ConfigDescription("With FreeCursor: how quickly the camera closes the distance to the ring once it is outside the zone (the time it takes to cover most of it). Smaller is tighter.",
+                    new AcceptableValueRange<float>(0.05f, 1.5f)));
+            TurretFreeCursorRecenter = Config.Bind("TurretAim", "FreeCursorRecenterSeconds", 3f,
+                new ConfigDescription("With FreeCursor: when the mouse has been still for about half a second, the camera slowly turns until the ring is back at the middle of the screen " +
+                    "(the aim does not change, only the view). This is the time it takes to cover most of the distance; 0 = the ring stays where it is.", new AcceptableValueRange<float>(0f, 20f)));
+            TurretFreeCursorSensitivity = Config.Bind("TurretAim", "FreeCursorSensitivity", 0.06f,
+                new ConfigDescription("With FreeCursor: degrees the ring moves per count of the mouse (less when zoomed in). The sight's own setting is SightSensitivity.", new AcceptableValueRange<float>(0.01f, 0.5f)));
+            TurretAutoReach = Config.Bind("TurretAim", "AutoPreferReachable", true,
+                "Automatic aim: a group prefers the target that the most of its turrets can point at with their rotators (their arcs, as read from each rotator's input), over simply the nearest one. " +
+                "A recording of a ship with 14 turrets on one target: 7 could not turn far enough, because the target was behind them. Turrets that cannot reach still turn as far as they can; they just " +
+                "do not decide what the group shoots at. Off = the nearest target the shell can reach, as before.");
+            TurretDirect = Config.Bind("TurretAim", "DirectControl", true,
+                "Aim without the gain: each rotator is moved along a speed profile worked out from what is read from it (its own top speed, the angle it still has to turn to " +
+                "bring the gun onto the aim, measured from where the barrel will settle), instead of closing a fraction of the gap every physics step. It speeds up over DirectRampSeconds, " +
+                "runs at the rotator's own top speed and slows down so as to arrive exactly. The hull stabilizer, the shared-hull gain division and the gap smoothing are not used. Off = the " +
+                "gain-based control, as before.");
+            TurretDirectRamp = Config.Bind("TurretAim", "DirectRampSeconds", 0.3f,
+                new ConfigDescription("With DirectControl: how long a rotator takes to go from rest to its top speed (and back). Shorter is faster to arrive and harder on the hull; with many " +
+                    "turrets on one hull a longer ramp is gentler.", new AcceptableValueRange<float>(0.05f, 2f)));
+            TurretDirectGain = Config.Bind("TurretAim", "DirectGain", 3f,
+                new ConfigDescription("With DirectControl: near the aim a rotator's speed is this many times the angle it still has to turn (per second): 3 means 3 degrees a second for a degree to go. " +
+                    "Farther away it follows the speed profile (speeds up, runs at top speed, slows to arrive). Without this zone the speed went to the top for a gap of a degree and a springy joint " +
+                    "(its barrel ringing at 3 to 5 Hz) made the rotator swing back and forth: a recording showed the elevation swinging at 4.5 Hz. Lower is calmer and slower to settle.",
+                    new AcceptableValueRange<float>(0.5f, 12f)));
+            TurretDirectBrake = Config.Bind("TurretAim", "DirectBrakingSeconds", 0.15f,
+                new ConfigDescription("With DirectControl and two or more turrets of the groups being aimed on one hull: the gap each rotator closes is reduced by the gun's own speed times this many " +
+                    "seconds (the same braking BrakingSeconds gives the gain-based control), and the gap is smoothed over ErrorFilterSeconds, and the gain near the aim is divided by the number of " +
+                    "turrets as SharedHullFullGain says. A model of turrets on one hull (the hull rocks at 2 Hz and the rotators push it) was unstable for any gain without the braking, and a " +
+                    "recording of 6 turrets under the direct control swung at 2 Hz with a growing amplitude. A lone turret uses none of the three. 0 = no braking.",
+                    new AcceptableValueRange<float>(0f, 0.5f)));
+            TurretDirectDeadband = Config.Bind("TurretAim", "DirectDeadbandDegrees", 0.05f,
+                new ConfigDescription("With DirectControl: a rotator whose angle still to go is smaller than this rests (the settled gap is noisy by about a tenth of a degree).",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            TurretFireOnTarget = Config.Bind("TurretAim", "FireOnlyOnTarget", true,
+                "In mouse aim, a turret fires only when its gun points within FireToleranceDegrees of where it should (the cursor). Turrets still turning, or stopped at their limit, hold fire while the others shoot.");
+            TurretFireTolerance = Config.Bind("TurretAim", "FireToleranceDegrees", 2f,
+                new ConfigDescription("How far off the cursor a turret's gun may be and still fire (with FireOnlyOnTarget).", new AcceptableValueRange<float>(0.2f, 20f)));
+            TurretFireStagger = Config.Bind("TurretAim", "FireStaggerSeconds", 0.1f,
+                new ConfigDescription("In mouse aim, a salvo fires one cannon at a time with this many seconds between them (a ripple), which also spreads the recoil on the hull. 0 = all at once.",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            TurretLineOfFire = Config.Bind("TurretAim", "CheckLineOfFire", true,
+                "In mouse aim, a cannon does not fire while its barrel points at a part of its own vehicle within 20 meters (a turret's own roof, another turret).");
+            TurretMoveStagger = Config.Bind("TurretAim", "MoveStaggerSeconds", 0.02f,
+                new ConfigDescription("The turrets of a group start following the cursor one after another, each this many seconds after the one before, so they don't all push the hull at the same instant. 0 = together.",
+                    new AcceptableValueRange<float>(0f, 0.1f)));
+            TurretAutoFire = Config.Bind("TurretAim", "AutoFire", true,
+                "A turret group on automatic aim (the Ground / Air buttons under its bar) also fires by itself at its target, one cannon at a time, when its gun points at it (FireToleranceDegrees), " +
+                "the line of fire is clear of its own vehicle and the target is within AutoRange. Off: the group only aims.");
+            TurretAutoRange = Config.Bind("TurretAim", "AutoRange", 2000f,
+                new ConfigDescription("Automatic aim only picks targets within this many meters of the group's lead turret.", new AcceptableValueRange<float>(100f, 6000f)));
+            TurretAutoLead = Config.Bind("TurretAim", "AutoLead", true,
+                "Automatic aim aims ahead of a moving target (and allows for the vehicle's own speed, which the shell has too). Off: it aims at where the target is now.");
+            TurretAutoDrop = Config.Bind("TurretAim", "AutoDrop", true,
+                "Automatic aim aims above the target by as much as the shell falls on the way (gravity and the shell's drag, flown like the game's physics does). Off: the barrel points straight at the target.");
+            TurretAutoClearView = Config.Bind("TurretAim", "AutoClearView", true,
+                "Automatic aim leaves out targets that are hidden behind the ground (the game's own occlusion layer), so the turrets don't shoot at a hill.");
+            TurretAutoSkipFriendly = Config.Bind("TurretAim", "AutoSkipFriendly", false,
+                "Automatic aim leaves out targets of your own team and friendly NPCs (the game's team rules). Off: only your own vehicle is left alone (every other player's vehicle is a target).");
+            TurretAutoAirAgl = Config.Bind("TurretAim", "AutoAirHeight", 12f,
+                new ConfigDescription("The game does not say whether a player's vehicle is a plane or a tank. One higher than this above the ground counts as air (for the Air button), otherwise as ground.",
+                    new AcceptableValueRange<float>(2f, 200f)));
+            TurretAutoAirSpeed = Config.Bind("TurretAim", "AutoAirSpeed", 70f,
+                new ConfigDescription("A player's vehicle faster than this (m/s) and more than 3 m above the ground counts as air, however low it flies.", new AcceptableValueRange<float>(10f, 400f)));
+            TurretObstacleStop = Config.Bind("TurretAim", "StopAtObstacles", true,
+                "A rotator that is blocked by something (a barrel on the deck, a turret on another) stops pushing: the joint is asked to stay where the part is, the rotator may turn away from the " +
+                "obstacle but not further into it, and it tries again after ObstacleRetrySeconds. Without it the angle the rotator asks for keeps running ahead and the joint pushes harder and harder.");
+            TurretObstacleDegrees = Config.Bind("TurretAim", "ObstacleDegrees", 2.5f,
+                new ConfigDescription("A rotator counts as blocked when the angle it asks for is this many degrees ahead of where the part really is and the part is not catching up. " +
+                    "Lower stops it sooner; too low can stop a heavy, slow turret that is only following.", new AcceptableValueRange<float>(0.5f, 15f)));
+            TurretObstacleRetry = Config.Bind("TurretAim", "ObstacleRetrySeconds", 4f,
+                new ConfigDescription("How long a blocked rotator waits before it tries to turn further again (it also tries again at once if it backs off 2 degrees).", new AcceptableValueRange<float>(0.5f, 30f)));
+            TurretFireKey = Config.Bind("TurretAim", "FireKey",UnityEngine.InputSystem.Key.Space,
+                "In mouse aim, the key that fires the cannons of the turret group that are set to fire by key in the designer (Pointer > Fire by key). 'None' disables it.");
+            TurretSightKey = Config.Bind("TurretAim", "SightKey", UnityEngine.InputSystem.Key.LeftShift,
+                "Press it to switch to the pointer cannon's sight camera (picked in the designer: Pointer > Pick sight camera) and back. 'None' disables it.");
+            TurretSightZoom = Config.Bind("TurretAim", "SightZoom", 6f,
+                new ConfigDescription("How many times the right mouse button zooms in through the sight, on top of the zoom set with the mouse wheel.",
+                    new AcceptableValueRange<float>(1.5f, 30f)));
+            TurretSightSensitivity = Config.Bind("TurretAim", "SightSensitivity", 0.06f,
+                new ConfigDescription("Degrees the aim turns for each mouse count through the sight (less when zoomed in).",
+                    new AcceptableValueRange<float>(0.005f, 0.5f)));
+            TurretCrosshairFlipY = Config.Bind("TurretAim", "CrosshairFlipY", false,
+                "Only if the circle and the marker show mirrored up and down (they move the wrong way when the aim moves up or down): turn it on.");
+            TurretDamping = Config.Bind("TurretAim", "DampingSeconds", 0.12f,
+                new ConfigDescription("The turret aims from where the gun will be this many seconds from now (its own speed times this), so it does not overshoot " +
+                    "and swing around the circle. 0 = off. Raise it if the gun still swings; too much makes it sluggish.",
+                    new AcceptableValueRange<float>(0f, 0.4f)));
+            TurretDerivative = Config.Bind("TurretAim", "BrakingSeconds", 0.15f,
+                new ConfigDescription("The turret brakes in proportion to how fast the gun is moving in the world (the derivative of a PID): this many seconds of its " +
+                    "own speed are taken off the gap it is closing. It stops a ship's turrets from shaking the hull and swinging together, and from overshooting a " +
+                    "big move. 0 = off. Raise it if the turrets still swing; too much makes them slow to arrive.",
+                    new AcceptableValueRange<float>(0f, 0.6f)));
+            TurretResponse = Config.Bind("TurretAim", "ResponseSeconds", 0.12f,
+                new ConfigDescription("How quickly the turret closes on the cursor, in seconds (the time the gap takes to shrink to a third). " +
+                    "Smaller is snappier; if the gun swings back and forth around the cursor, raise it.",
+                    new AcceptableValueRange<float>(0.03f, 1f)));
             ImpactCameraSwitchTargets = Config.Bind("ImpactCamera", "SwitchTargets", true,
                 "If true, hitting another vehicle while the camera is open moves it to that vehicle. If false it stays on the first one until it closes.");
             ShellLeadIn = Config.Bind("ImpactCamera", "LeadInDistance", 10f,

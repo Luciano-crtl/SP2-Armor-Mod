@@ -45,6 +45,9 @@ namespace ArmorFragments
             public Craft Craft;
             public AmmoRound Round;    // the round of the cannons that draw from it (the biggest, if they differ)
             public bool HasRound;
+            public string KindText;    // AP, HE, APHE ("AP/HE" if the cannons that draw from it differ), for the flight screen
+            public string HudName;     // "50mm AP"
+            public int Initial;        // the most rounds it has held (what 100% is on the flight screen)
             public bool Mixed;         // those cannons fire rounds of different sizes
             public int Cannons;        // how many cannons draw from it
             public RackGrid Grid;
@@ -283,6 +286,16 @@ namespace ArmorFragments
                 AmmoRound round;
                 if (cannon == null || !AmmoRound.TryFromPart(part, out round)) continue;
 
+                bool explosive = false;
+                foreach (PartModifierData modifier in pair.Key.Modifiers)
+                {
+                    CannonData data = modifier as CannonData;
+                    if (data == null) continue;
+                    explosive = data.AmmoType == CannonData.ProjectileType.Explosive;
+                    break;
+                }
+                string kind = Ammunition.NameOf(Ammunition.KindOf(explosive, pair.Value.Cannon));
+
                 Feed feed = new Feed
                 {
                     Cannon = cannon,
@@ -308,6 +321,8 @@ namespace ArmorFragments
 
                 foreach (Rack rack in feed.Racks)
                 {
+                    if (rack.KindText == null) rack.KindText = kind;
+                    else if (("/" + rack.KindText + "/").IndexOf("/" + kind + "/", StringComparison.Ordinal) < 0) rack.KindText += "/" + kind;
                     rack.Cannons++;
                     if (!rack.HasRound)
                     {
@@ -323,7 +338,12 @@ namespace ArmorFragments
                 craft.Feeds.Add(feed);
             }
 
-            foreach (Rack rack in craft.Racks) RackOf[rack.Part] = rack;
+            foreach (Rack rack in craft.Racks)
+            {
+                RackOf[rack.Part] = rack;
+                if (rack.HasRound)
+                    rack.HudName = rack.Round.CaliberMm.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "mm " + (rack.KindText ?? "AP");
+            }
             foreach (Feed feed in craft.Feeds) FeedOf[feed.Cannon] = feed;
             return craft;
         }
@@ -393,6 +413,7 @@ namespace ArmorFragments
         private static void Update(Rack rack)
         {
             if (rack.Grid == null) return;
+            if (rack.Grid.Remaining > rack.Initial) rack.Initial = rack.Grid.Remaining;
             UpdateMass(rack);
             if (rack.Exploded) return;
 
@@ -554,6 +575,35 @@ namespace ArmorFragments
             if (!Crew.CanLoad(cannon)) return false;
             if (!feed.Craft.Measured) return true;
             return feed.Available > 0;
+        }
+
+        // What the flight screen shows for a rack (see AmmoHud): the round it holds, the rounds it has left and what it started with.
+        internal struct RackHud
+        {
+            public int Id;            // the rack part's id
+            public string Name;       // "50mm AP"
+            public int Rounds;
+            public int Start;
+            public bool Warning;      // burning, exploded or broken off the vehicle
+        }
+
+        internal static void HudRacks(AircraftScript aircraft, List<RackHud> into)
+        {
+            into.Clear();
+            Craft craft;
+            if (aircraft == null || !Crafts.TryGetValue(aircraft, out craft) || !craft.Measured) return;
+            foreach (Rack rack in craft.Racks)
+            {
+                if (!rack.HasRound || rack.Grid == null || rack.Grid.Problem != null || rack.Initial <= 0 || rack.HudName == null) continue;
+                into.Add(new RackHud
+                {
+                    Id = rack.PartId,
+                    Name = rack.HudName,
+                    Rounds = rack.Exploded ? 0 : rack.Grid.Remaining,
+                    Start = rack.Initial,
+                    Warning = rack.Burning || rack.Exploded || rack.BrokenOff,
+                });
+            }
         }
 
         public static bool IsRackFed(CannonScript cannon)

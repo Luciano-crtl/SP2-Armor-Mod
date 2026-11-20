@@ -56,6 +56,25 @@ namespace ArmorFragments.UI
             return control;
         }
 
+        // A paragraph: the text rows are one line high, so a long text is broken into lines of about `width` characters, one row each (the label
+        // on the first). One long row would spill over the rows around it.
+        public void Note(string label, string text, int width = 44)
+        {
+            string line = "";
+            bool first = true;
+            foreach (string word in text.Split(' '))
+            {
+                if (line.Length > 0 && line.Length + 1 + word.Length > width)
+                {
+                    Text(first ? label : "", line);
+                    first = false;
+                    line = word;
+                }
+                else line = line.Length == 0 ? word : line + " " + word;
+            }
+            if (line.Length > 0) Text(first ? label : "", line);
+        }
+
         public ToggleControl Toggle(string label, string tooltip, bool value, Action<bool> changed)
         {
             ToggleControl control = new ToggleControl(Template("control-toggle", label, tooltip));
@@ -63,6 +82,31 @@ namespace ArmorFragments.UI
             control.IsOn = value;   // set before listening, so it doesn't count as a change
             control.ValueChanged += (bool x) => Run(() => changed(x));
             return control;
+        }
+
+        // A row with a label and a box where text can be typed (the game's own "control-spinner-input-label" with a plain text box). changed runs
+        // when the typing is finished (Enter, or the box loses the focus), with the text as typed.
+        public TMPro.TMP_InputField TextInput(string label, string tooltip, string value, int maxLength, Action<string> changed)
+        {
+            List<XAttribute> attributes = new List<XAttribute>
+            {
+                new XAttribute("label", label),
+                new XAttribute("contentType", "Standard"),
+                new XAttribute("placeholderText", "Enter a name..."),
+            };
+            if (!string.IsNullOrEmpty(tooltip)) attributes.Add(new XAttribute("tooltip", tooltip));
+            Widget row = Parent.Context.CreateWidgetFromTemplate("control-spinner-input-label", Parent, attributes);
+            TMPro.TMP_InputField field = row != null ? row.GetComponentInChildren<TMPro.TMP_InputField>(true) : null;
+            if (field == null) return null;
+            field.text = value ?? "";
+            field.characterLimit = maxLength;
+            string typedFrom = field.text;
+            field.onSelect.AddListener(text => typedFrom = field.text);
+            field.onEndEdit.AddListener(text =>
+            {
+                if (text != typedFrom) Run(() => changed(text));
+            });
+            return field;
         }
 
         // The game's slider with a box beside it where the value can be typed in (as on its fuselage shape panel).

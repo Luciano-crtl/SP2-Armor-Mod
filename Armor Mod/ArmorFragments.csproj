@@ -43,6 +43,16 @@
 			<HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
+		<!-- The turret aim's circle and marker are drawn in OnGUI, over everything (inverting what is behind them) -->
+		<Reference Include="UnityEngine.IMGUIModule">
+			<HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<!-- The wheel zoom of the orbit camera (the game reads the raw wheel the same way) -->
+		<Reference Include="UnityEngine.InputLegacyModule">
+			<HintPath>$(ManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
 		<Reference Include="UnityEngine.ParticleSystemModule">
 			<HintPath>$(ManagedDir)\UnityEngine.ParticleSystemModule.dll</HintPath>
 			<Private>False</Private>
