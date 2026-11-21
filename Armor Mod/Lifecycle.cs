@@ -96,6 +96,7 @@ namespace ArmorFragments
             Step("marks on other parts", PartDecals.Shutdown);
             Step("rack view", RackVisualizer.Shutdown);
             Step("face highlight", FaceHighlight.Shutdown);
+            Step("armor view", ArmorView.Shutdown);
 
             // Damage maps: plates back as the game made them, threads stopped.
             Step("damage maps", PlateDamageMaps.Shutdown);

@@ -494,7 +494,7 @@ namespace ArmorFragments
             // The game's own list of the part's renderers (includes ones that are switched off
             // because the part is drawn as part of a combined mesh).
             foreach (MeshRenderer renderer in MappedRenderers(part))
-                if (seen.Add(renderer)) yield return renderer;
+                if (!FaceHighlight.IsDecal(renderer) && seen.Add(renderer)) yield return renderer;
 
             // Any other mesh that is currently visible (propeller blades, for example).
             foreach (MeshRenderer renderer in part.GetComponentsInChildren<MeshRenderer>())
@@ -502,6 +502,7 @@ namespace ArmorFragments
                 if (renderer.name == "ArmorXRayGhost" || renderer.name == "AmmoRackRounds" || renderer.name == "AmmoRackGhost" ||
                     renderer.name == DamageOverlay.ObjectName) continue;
                 if (renderer.shadowCastingMode == ShadowCastingMode.ShadowsOnly) continue;
+                if (FaceHighlight.IsDecal(renderer)) continue;   // a decal or text on the part, not its shape
                 if (renderer.enabled && seen.Add(renderer)) yield return renderer;
             }
         }

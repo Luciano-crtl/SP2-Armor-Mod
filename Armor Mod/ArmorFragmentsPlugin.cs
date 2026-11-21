@@ -201,7 +201,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> CrewSwitchSeconds;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.12.0";
+        public const string Version = "0.12.1";
 
         private float attachMenuAt = -1f;
 
@@ -239,6 +239,7 @@ namespace ArmorFragments
             if (DamageMapsShareMarks.Value) MarksSync.Tick(); PerfMonitor.Lap("MarksSync");
             RackVisualizer.Tick(); PerfMonitor.Lap("RackVisualizer");
             FaceHighlight.Tick(); PerfMonitor.Lap("FaceHighlight");
+            ArmorView.Tick(); PerfMonitor.Lap("ArmorView");
             ArmorMass.Tick(); PerfMonitor.Lap("ArmorMass");
             AmmoRackXRay.Tick(); PerfMonitor.Lap("AmmoRackXRay");
             ImpactCamera.Tick(); PerfMonitor.Lap("ImpactCamera");
@@ -254,6 +255,7 @@ namespace ArmorFragments
         private void OnGUI()
         {
             TurretAim.OnGui();
+            ArmorView.OnGui();
         }
 
         private void Awake()

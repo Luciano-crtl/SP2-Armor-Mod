@@ -140,18 +140,20 @@ namespace ArmorFragments.UI
             return control;
         }
 
-        // A row of buttons side by side.
-        public void Buttons(IList<KeyValuePair<string, Action>> buttons)
+        // A row of buttons side by side. The one at `selected` (if any) is drawn as picked, in the game's blue
+        // "btn-primary" style (as its own view buttons show the view in use).
+        public void Buttons(IList<KeyValuePair<string, Action>> buttons, int selected = -1)
         {
             XElement row = new XElement("Row",
                 new XAttribute("height", "48"),
                 new XAttribute("spacing", "16"));
             int span = Math.Max(1, 12 / Math.Max(1, buttons.Count));
 
-            foreach (KeyValuePair<string, Action> button in buttons)
+            for (int b = 0; b < buttons.Count; b++)
             {
+                KeyValuePair<string, Action> button = buttons[b];
                 row.Add(new XElement("Button",
-                    new XAttribute("class", "btn btn-default"),
+                    new XAttribute("class", b == selected ? "btn btn-primary" : "btn btn-default"),
                     new XAttribute("colSpan", span),
                     new XElement("Text", new XAttribute("text", button.Key))));
             }
