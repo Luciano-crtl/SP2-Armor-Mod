@@ -75,6 +75,9 @@ namespace ArmorFragments.UI
             get
             {
                 if (part == null || part.Part == null || container == null || !container.Visible) return null;
+                // Only while the block is still the one selected in the designer: nothing selected, no tint.
+                Assets.Scripts.Design.Designer designer = Assets.Scripts.Design.Designer.Instance;
+                if (designer == null || designer.SelectedPart != part) return null;
                 return ArmorFaces.IsPerFace(part) ? part : null;
             }
         }
@@ -107,9 +110,45 @@ namespace ArmorFragments.UI
         }
 
 
+        // A value dragged or typed whose last step (its undo step, the craft's new weight) has not come yet, because the
+        // slider or box was not let go of or left: finished before the panel changes.
+        private static PartTags openEdit;
+
+        // switching: another part is being selected (the value is already in the name; the undo step covers the craft).
+        private static void FinishEdit(bool switching)
+        {
+            PartTags tags = openEdit;
+            openEdit = null;
+            if (tags == null || part == null || part.Part == null) return;
+            try
+            {
+                if (!switching)
+                {
+                    Commit(tags, true);
+                    return;
+                }
+                Assets.Scripts.Design.Designer designer = Assets.Scripts.Design.Designer.Instance;
+                if (designer == null) return;
+                designer.SetAircraftStructureChanged();
+                designer.CreateUndoStep("Armor tags", "armor-tags-" + part.Part.Id);
+            }
+            catch (Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("Couldn't finish the edited value: " + e.Message);
+            }
+        }
+
+        // The left mouse button is down, or was let go this frame: a click is still being made.
+        private static bool MouseBusy()
+        {
+            UnityEngine.InputSystem.Mouse mouse = UnityEngine.InputSystem.Mouse.current;
+            return mouse != null && (mouse.leftButton.isPressed || mouse.leftButton.wasReleasedThisFrame);
+        }
+
         public static void OnPartSelected(PartPropertiesPanelScript properties, PartScript selected)
         {
             if (properties != panel) return;
+            FinishEdit(true);
             part = selected;
             rebuildPending = true;
         }
@@ -132,6 +171,10 @@ namespace ArmorFragments.UI
                 PollCutter();
                 return;
             }
+            // Not while a click is being made: the rebuild would destroy the control under it (a face button, say),
+            // and the click would be lost.
+            if (MouseBusy()) return;
+            FinishEdit(false);
             rebuildPending = false;
             try
             {
@@ -976,6 +1019,7 @@ namespace ArmorFragments.UI
             foreach (CrewTrade[] row in TradeRows)
             {
                 List<KeyValuePair<string, Action>> buttons = new List<KeyValuePair<string, Action>>();
+                int chosen = Array.IndexOf(row, tags.Crew.Trade);   // the seat's own trade: blue
                 foreach (CrewTrade trade in row)
                 {
                     CrewTrade picked = trade;
@@ -983,7 +1027,6 @@ namespace ArmorFragments.UI
                     bool taken = trade != tags.Crew.Trade &&
                                  ((CrewModel.Unique(trade) && seats.Exists(s => s.Data != part.Part && s.Trade == trade)) ||
                                   (trade == CrewTrade.Driver && driveTaken));
-                    if (trade == tags.Crew.Trade) text = "[" + text + "]";
                     if (taken)
                     {
                         anyTaken = true;
@@ -996,7 +1039,7 @@ namespace ArmorFragments.UI
                         tags.Crew.Jobs &= ~CrewModel.OwnJob(picked);   // his own job now: not an extra
                     })));
                 }
-                builder.Buttons(buttons);
+                builder.Buttons(buttons, chosen);
             }
             if (anyTaken) builder.Text("*", "another seat has it");
 
@@ -1420,8 +1463,8 @@ namespace ArmorFragments.UI
         }
 
         // Armor thickness, as the game edits corners: by default one "Thickness" for every face at once. With
-        // "Per face" on, two rows of face buttons (the one being edited in brackets, each with its thickness) and
-        // the thickness of the picked face. Edited faces are tinted orange on the block, other armored ones blue.
+        // "Per face" on, two rows of face buttons (the one being edited blue, each with its thickness) and
+        // the thickness of the picked face. Edited faces are tinted purple on the block, other armored ones blue.
         private static void FaceRows(PanelBuilder builder, PartTags tags)
         {
             float[] faces = tags.Armor.Faces;
@@ -1453,7 +1496,7 @@ namespace ArmorFragments.UI
             if (picked == AllFaces)
             {
                 Slider(builder, tags, "Thickness",
-                    "Thickness of every face of the block (orange on the block). 0 mm = open. Turn on \"Per face\" to set faces on their own.",
+                    "Thickness of every face of the block (purple on the block). 0 mm = open. Turn on \"Per face\" to set faces on their own.",
                     0f, 500f, 1f, faces[0], " mm", v =>
                     {
                         for (int i = 0; i < ArmorFaces.Count; i++) tags.Armor.Faces[i] = v;
@@ -1468,14 +1511,13 @@ namespace ArmorFragments.UI
                 {
                     int face = i;
                     string text = ArmorFaces.Names[face] + " " + Mm(faces[face]);
-                    if (face == picked) text = "[" + text + "]";
                     buttons.Add(new KeyValuePair<string, Action>(text, () => Pick(face)));
                 }
-                builder.Buttons(buttons);
+                builder.Buttons(buttons, picked - row * 3);
             }
 
             Slider(builder, tags, ArmorFaces.Names[picked] + " face",
-                "Thickness of the picked face (orange on the block). 0 mm = open: shells and fragments pass it as empty space.",
+                "Thickness of the picked face (purple on the block). 0 mm = open: shells and fragments pass it as empty space.",
                 0f, 500f, 1f, faces[picked], " mm", v => tags.Armor.Faces[picked] = v, true);
         }
 
@@ -1544,9 +1586,11 @@ namespace ArmorFragments.UI
                 {
                     assign(Mathf.Clamp(Mathf.Round(x / step) * step, min, max));
                     Commit(tags, false);       // while dragging: update the name, no undo step yet
+                    openEdit = tags;
                 },
                 x =>
                 {
+                    openEdit = null;
                     Commit(tags, true);        // on release: one undo step
                     if (rebuildOnRelease) rebuildPending = true;   // rows that show the value elsewhere
                 });

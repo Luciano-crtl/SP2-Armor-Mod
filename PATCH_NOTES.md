@@ -65,7 +65,7 @@ A fuselage used as armor is a hollow shell whose six faces are plates of their o
 Setting up
 - Turn on "Armor" on a fuselage: every face is open (0 mm).
 - With "Per face" off, one "Thickness" sets every face at once. With "Per face" on, face buttons (Front, Back, Left, Right, Top, Bottom) appear and the slider sets the picked face on its own. Turning "Per face" off sets every face to the thickest one. "Per face" stays as you left it when you select another block (a duplicate opens the way its original was being edited); a block whose faces differ always opens with it on.
-- Thickness is 0 to 500 mm, by slider or typed into the box beside it. The face being set is tinted orange on the block and the other armored faces blue; with "Per face" off, every armored face is orange.
+- Thickness is 0 to 500 mm, by slider or typed into the box beside it. The face being set is tinted purple on the block and the other armored faces blue; with "Per face" off, every armored face is purple.
 - In the name: `[ARM h=100 b=50 fr=80 lt=20 rt=20]` (`fr bk lt rt tp bm`, millimeters; a face not listed is open).
 - Symmetry: a block copied by mirror symmetry gets its armor mirrored, Left and Right swapped, so the outer face of one side is the outer face of the other. While symmetry is on, changing a block's armor (or a cutter's hole wall armor) changes its symmetry partners too, mirrored ones with Left and Right swapped, radial ones the same; one undo reverts them all. With symmetry off, only the selected part changes.
 - Armor is always per face. A block with whole-block armor (`t=`) becomes every face at that thickness when it is selected in the designer; until then it keeps working as one solid plate.
@@ -107,6 +107,16 @@ Weight
 - The face tint is drawn only over the block in the designer, never during a flight.
 - When the game itself kills a vehicle (fewer than 70% of its parts or wing area still connected to the cockpit), the log says so, with the numbers and the parts no longer connected.
 - Fix: an explosive (HE or APHE) shell the mod has resolved is removed without the game's own explosion. That explosion went off where the shell stopped, often inside the hit vehicle, and its blast could cut the vehicle's parts loose and get it killed.
+
+0.12.1
+- Armor view: a shield button at the bottom right of the designer, beside the XML overload button, turns it on and off (grey off, blue on; off each time the designer opens). While it is on, every armored face of the craft is colored by its thickness: the thicknesses on the craft are ranked, the thinnest light green, through yellow and orange, to the thickest dark red, whatever and however many they are. Open faces and parts without armor get no color; armored hole walls get their thickness's color; a part armored as a whole is colored all over. The colors are solid (paint, decals and text under them do not show), also in the game's X-ray view. At each point only the armored surface nearest the camera is colored: faces hidden behind other parts are not. An armored face is colored on both sides, so it shows from inside the block too (on a hollow block, on its inner wall); so is an armored hole wall: to see armor inside the craft, move the camera inside. The face tint while editing works the same way (in the X-ray view without the armor view, outer sides only).
+- The armor view lists the craft's thicknesses at the top left with their colors, thinnest first (with more than 16, an even pick of them including the thinnest and the thickest). A menu open on the left side of the designer pushes the list to its right.
+- The face being set is tinted dark purple, a color not on the armor view's thickness scale. With the armor view off, the other armored faces of the block being edited are blue. With it on, that block is colored by thickness like the rest, and with "Per face" on the face being set is drawn over it in purple.
+- The face being set is shown by its button turning blue (the game's own selected style); so is a crew seat's trade.
+- The face tint shows only while its block is selected: clicking empty space clears it.
+- A thickness typed in the box or set with the slider is kept without pressing Enter: clicking a face button, another part or anywhere else takes it, with its undo step and the craft's new weight. A face button works on the first click right after typing or dragging.
+- The face tint follows the game's own hidden flag for the block, so it stays on when the game draws the block as part of a combined mesh, and it rebuilds its colors if they were lost. When it is not drawn for a selected per-face block, the log says why (`[TINT]`).
+- Text and decals laid on a part are not taken for its shape: ammo rack capacity, the flight X-ray views, the rack view and the armor view read only the part's own meshes.
 
 # Ammo racks
 

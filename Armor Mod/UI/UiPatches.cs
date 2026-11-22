@@ -44,6 +44,19 @@ namespace ArmorFragments.UI
             }
             return true;                                         // not ours: run the original
         }
+
+        // The game's own layouts: the designer's gets the armor view button.
+        private static void Postfix(string path, XElement __result)
+        {
+            try
+            {
+                ArmorView.AddToLayout(path, __result);
+            }
+            catch (System.Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("Armor view: couldn't add the button to the designer: " + e.Message);
+            }
+        }
     }
 
     // 3) The layout names our script class. The game only searches its own assembly,
