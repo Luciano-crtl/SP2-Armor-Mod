@@ -39,6 +39,8 @@ namespace ArmorFragments
     {
         public static bool Enabled = true;
         public static int MaxActive = 4;               // simulations running at once
+        public static bool ShowSolid;                  // debugging view: paint what the smoke treats as solid (the parts of vehicles, the ground)
+        public static void ToggleShowSolid() { ShowSolid = !ShowSolid; }
         public static float MinInterval = 0.1f;        // seconds between the shots one cannon adds
         public static float Lifetime = 9f;             // seconds, for a 75 mm gun (scaled by the gun's time scale)
         public static float MaxLifetime = 16f;
@@ -359,6 +361,8 @@ namespace ArmorFragments
                     m.SetTexture("_Grid", c.sim.Scalars);
                     m.SetTexture("_PhiA", c.sim.PhiA);
                     m.SetTexture("_PhiB", c.sim.PhiB);
+                    m.SetTexture("_Solid", c.sim.Solid);
+                    m.SetFloat("_ShowSolid", ShowSolid ? 1f : 0f);
                     Vector2 w = c.sim.PhiWeights;
                     m.SetVector("_PhiWeights", new Vector4(w.x, w.y, 0f, 0f));
                     m.SetFloat("_Fade", Mathf.Clamp01((c.end - c.age) / (FadeSeconds * c.timeScale)));

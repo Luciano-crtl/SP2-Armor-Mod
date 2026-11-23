@@ -112,6 +112,7 @@ namespace ArmorFragments.Fluid
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
         public RenderTexture Velocity { get { return velA; } }
+        public RenderTexture Solid { get { return levels[0].solid; } }      // 1 where a solid fills the cell (it changes each time obstacles are set)
         public float Time { get; private set; }
 
         // Texture coordinates (metres from the box corner) carried by the flow, in two sets that restart in turn: the renderer carves

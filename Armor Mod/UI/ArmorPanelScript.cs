@@ -661,6 +661,7 @@ namespace ArmorFragments.UI
             {
                 new KeyValuePair<string, Action>("On / off", FluidSmoke.Toggle),
                 new KeyValuePair<string, Action>("Quality", FluidSmoke.CycleQuality),
+                new KeyValuePair<string, Action>("Show solids (red)", FluidSmoke.ToggleShowSolid),
             });
         }
         // RELEASE-STRIP-END
