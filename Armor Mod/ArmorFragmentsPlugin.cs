@@ -65,6 +65,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeHeatCooling;        // local: how fast the residual heat is lost (per second)
         internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
         internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
+        internal static ConfigEntry<bool> SmokeOverflow;            // local: smoke that reaches the edge of its box goes on into a bigger box
         internal static ConfigEntry<bool> SmokeFastDrawing;         // local: skip empty blocks and look up the sun and shadow less often
         internal static ConfigEntry<bool> SmokeFastSolids;          // local: measure the solids every second frame when nothing moves
         internal static ConfigEntry<bool> SmokeHalfPrecision;       // local: high and medium keep their fields in 16 bits
@@ -359,6 +360,8 @@ namespace ArmorFragments
             SmokeTurbulence = Config.Bind("Smoke", "Turbulence", 0.2f,
                 new ConfigDescription("Cannon smoke: a weak, endless swirling of the air in the whole box (m/s^2), so the smoke keeps rolling and billowing in calm weather instead of freezing. 0 = perfectly still air.",
                     new AcceptableValueRange<float>(0f, 1f)));
+            SmokeOverflow = Config.Bind("Smoke", "Overflow", true,
+                "Cannon smoke: smoke that reaches the edge of its box goes on into a second, bigger box with coarser cells made beyond that face (at most two at a time), instead of being cut off at a flat edge.");
             SmokeFastDrawing = Config.Bind("Smoke", "FastDrawing", true,
                 "Cannon smoke: draw it faster: blocks with no smoke are skipped, and the light of the sun and the game's shadows are looked up on every second sample of smoke instead of every one. Measured about a third faster to draw; the picture hardly changes.");
             SmokeFastSolids = Config.Bind("Smoke", "FastSolids", true,

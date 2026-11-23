@@ -89,6 +89,8 @@ namespace ArmorFragments
         private static int autoLevel = AutoBest;       // what the automatic mode currently allows
         private const float BaseCell = 0.125f;
         public static readonly int[] CellBudget = { 1500000, 900000, 450000 };   // most cells a cloud of each quality may have
+        // How far up the box the muzzle sits: the ground is 2 m or so below it, and the heat of the smoke takes it up, so most of the box is above.
+        private const float MuzzleHeightFraction = 0.3f;
         private static readonly Vector3 BaseExtent = new Vector3(18f, 9f, 9f);  // metres, for a 75 mm gun
 
         // How big a cloud for this gun is: the box, its cells, and how quickly things happen.
@@ -145,6 +147,13 @@ namespace ArmorFragments
             public FluidSim sim;
             public GameObject box;
             public MeshRenderer boxRenderer;
+            public bool isOverflow;          // a bigger, coarser box made beyond a face of another cloud (Overflow.cs)
+            public Cloud parent;
+            public int faceAxis, faceSign;   // which face of the parent it was made beyond
+            public int faceMask;             // faces of this cloud that smoke has reached (bit 0 -x, 1 +x, 2 -y, 3 +y, 4 -z, 5 +z)
+            public int children;             // faces that already have an overflow box
+            public float probeAt;
+            public bool probing;
             public bool isTail;              // smoke the bubble left behind: an ordinary cloud that stays where it was released
             public float lastPeakSpeed;      // the fastest part speed the last time the solids were measured
             public int solidFrame;
@@ -249,7 +258,9 @@ namespace ArmorFragments
                     }
                 }
 
-                if (Active.Count - (bubble != null ? 1 : 0) >= MaxActive) return;
+                int shotClouds = 0;
+                foreach (Cloud existing in Active) if (!existing.isBubble && !existing.isOverflow && !existing.isTail) shotClouds++;
+                if (shotClouds >= MaxActive) return;
                 LastShot[id] = now;
 
                 int level = LevelFor(distance);
@@ -268,7 +279,7 @@ namespace ArmorFragments
                 Vector3 extent = size.extent;
                 // The muzzle sits a third of the way along the box, so the front of the vehicle (the turret and the hull below the gun)
                 // is inside it, not only the gas ahead.
-                Vector3 muzzleLocal = new Vector3(extent.x * 0.32f, extent.y * 0.5f, extent.z * 0.5f);
+                Vector3 muzzleLocal = new Vector3(extent.x * 0.32f, extent.y * MuzzleHeightFraction, extent.z * 0.5f);
                 Vector3 origin = tip - rot * muzzleLocal;
 
                 Stack<FluidSim> pool;
@@ -349,6 +360,8 @@ namespace ArmorFragments
             WindQueryManager wind = WindQueryManager.Instance;
             Camera cam = Camera.main;
             Watch.Restart();
+            try { UpdateOverflow(frame); }
+            catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] smoke overflow failed and is off: " + e); if (ArmorFragmentsPlugin.SmokeOverflow != null) ArmorFragmentsPlugin.SmokeOverflow.Value = false; }
             try { UpdateBubble(frame); }
             catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] player bubble failed and is off: " + e); if (ArmorFragmentsPlugin.SmokePlayerBubble != null) ArmorFragmentsPlugin.SmokePlayerBubble.Value = false; DropBubble("it failed"); }
             for (int i = Active.Count - 1; i >= 0; i--)
@@ -652,6 +665,7 @@ namespace ArmorFragments
         private static void Retire(Cloud c)
         {
             if (c == bubble) bubble = null;
+            foreach (Cloud other in Active) if (other.parent == c) other.parent = null;
             if (c.box != null) Object.Destroy(c.box);
             if (c.material != null) Object.Destroy(c.material);
             if (c.sim != null) ReturnToPool(c.sim);

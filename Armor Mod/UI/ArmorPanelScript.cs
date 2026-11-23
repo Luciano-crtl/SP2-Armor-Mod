@@ -677,6 +677,8 @@ namespace ArmorFragments.UI
                 "How hot the propellant smoke is after the flame (0 to 0.35). Applies to the next shot.", 0.025f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeTurbulence, "Background turbulence",
                 "A weak endless swirling of the air so the smoke keeps billowing in calm weather. 0 = still air.", 0.025f, " m/s2");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeOverflow, "Smoke goes on past the box",
+                "Smoke that reaches the edge of its box goes on into a second, bigger box with coarser cells (at most two at a time), instead of being cut off.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeFastDrawing, "Faster drawing of the smoke",
                 "Skips blocks with no smoke and looks up the sun and the shadows on every second sample. About a third faster to draw, the picture hardly changes.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeFastSolids, "Measure solids less often when nothing moves",
