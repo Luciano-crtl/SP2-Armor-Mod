@@ -19,8 +19,8 @@ FRAMES = 64
 TILES = 8
 FRAME_PX = 256
 DURATION = 4.5
-EXTINCTION = 3.0        # per metre per unit density: how fast smoke blocks the view
-LIGHT_EXTINCTION = 2.2  # the same toward the light (a little softer: smoke scatters light forward)
+EXTINCTION = 5.0        # per metre per unit density: how fast smoke blocks the view
+LIGHT_EXTINCTION = 3.5  # the same toward the light (a little softer: smoke scatters light forward)
 DETAIL_ERODE = 0.55     # how much the noise carves the upsampled density
 RHO_REF = 0.6           # the density that counts as "full"
 Z_DETAIL = 0.75         # fraction of the picture's resolution used along the viewing direction
@@ -29,6 +29,7 @@ NOISE_PERIOD = 20.0     # sim cells of the reference resolution (12.5 cm) per no
 NOISE_PERIOD_M = 2.5
 
 RENDER = r"""
+#define LIGHT_FLOOR 0.06f   // light that always leaks in (multiple scattering): how dark the deepest shadow is
 inline float reflect_to(float v, float hi)
 {
     float p = 2.0f * hi;
@@ -147,13 +148,13 @@ __kernel void z_lights(__global const float* soft, __global const float* w, __gl
     float sf = 0.0f, f = 0.0f;
     for (int k = HZ - 1; k >= 0; k--) {
         int idx = (k * HY + j) * HX + i;
-        f += w[idx] * (0.12f + 0.88f * exp(-sf * lext_dz));
+        f += w[idx] * (LIGHT_FLOOR + (1.0f - LIGHT_FLOOR) * exp(-sf * lext_dz));
         sf += soft[idx];
     }
     float sb = 0.0f, b = 0.0f;
     for (int k = 0; k < HZ; k++) {
         int idx = (k * HY + j) * HX + i;
-        b += w[idx] * (0.12f + 0.88f * exp(-sb * lext_dz));
+        b += w[idx] * (LIGHT_FLOOR + (1.0f - LIGHT_FLOOR) * exp(-sb * lext_dz));
         sb += soft[idx];
     }
     front[j * HX + i] = ws > 1e-4f ? f / ws : 0.5f;
@@ -168,7 +169,7 @@ __kernel void scan_x(__global const float* soft, __global float* T, int dir, int
     for (int t = 0; t < HX; t++) {
         int i = dir ? HX - 1 - t : t;
         int idx = (k * HY + j) * HX + i;
-        T[idx] = 0.12f + 0.88f * exp(-s * lext_dx);
+        T[idx] = LIGHT_FLOOR + (1.0f - LIGHT_FLOOR) * exp(-s * lext_dx);
         s += soft[idx];
     }
 }
@@ -180,7 +181,7 @@ __kernel void scan_y(__global const float* soft, __global float* T, int dir, int
     for (int t = 0; t < HY; t++) {
         int j = dir ? HY - 1 - t : t;
         int idx = (k * HY + j) * HX + i;
-        T[idx] = 0.12f + 0.88f * exp(-s * lext_dy);
+        T[idx] = LIGHT_FLOOR + (1.0f - LIGHT_FLOOR) * exp(-s * lext_dy);
         s += soft[idx];
     }
 }
@@ -284,6 +285,17 @@ class GpuBaker:
         planes = [get(right), get(left), get(top), get(alpha), get(bottom), get(back), get(front), hv]
         # Rows: the top of the picture is high y.
         out = np.stack([p[::-1] for p in planes])
+        # Whatever reaches the sides or the top of the picture fades out, so the sprite never shows a hard rectangle edge
+        # (the bottom is the ground and stays as it is).
+        h, w = out.shape[1], out.shape[2]
+        def smooth(t):
+            t = np.clip(t, 0.0, 1.0)
+            return t * t * (3 - 2 * t)
+        xs = np.arange(w, dtype=np.float32)
+        fx = smooth(xs / (0.14 * w)) * smooth((w - 1 - xs) / (0.14 * w))
+        ys = np.arange(h, dtype=np.float32)
+        fy = smooth(ys / (0.12 * h))                       # row 0 is the top
+        out[3] *= fy[:, None] * fx[None, :]
         return (np.clip(out, 0, 1) * 255 + 0.5).astype(np.uint8)
 
 
@@ -321,7 +333,7 @@ def preview(atlas_a, atlas_b, out_path, sun=(0.5, 0.6, 0.62), picks=None):
         lz = b[..., 2] if sun[2] > 0 else b[..., 1]
         lit = w[0] * lx + w[1] * ly + w[2] * lz
         avg = (a[..., 0] + a[..., 1] + a[..., 2] + b[..., 0] + b[..., 1] + b[..., 2]) / 6.0
-        body = np.array([0.66, 0.55, 0.42])[None, None, :] * (1.5 * lit + 0.55 * avg)[..., None]
+        body = np.array([0.55, 0.46, 0.36])[None, None, :] * (1.0 * lit + 0.45 * avg)[..., None]
         glow = np.clip((b[..., 3] - 0.3) * 2.2, 0, 1)[..., None] * np.array([1.0, 0.55, 0.15])[None, None, :] * 1.6
         alpha = a[..., 3]
         rgb = body * alpha[..., None] + glow * alpha[..., None]

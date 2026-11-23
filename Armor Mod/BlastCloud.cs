@@ -19,7 +19,7 @@ namespace ArmorFragments
         public static int MaxLive = 6;                 // heavy clouds alive at once
         public static float MinInterval = 0.6f;        // seconds between the clouds of one cannon
         public static float MaxGroundDistance = 10f;   // metres: the muzzle must be this close to the ground, else there is no dust
-        public static float CaliberForFullSize = 150f; // the picture is shown at its full size for this caliber (mm)
+        public static float CaliberForFullSize = 100f; // the picture is shown at its full size for this caliber (mm)
         public static float AheadMeters = 2.5f;        // the dust is thrown up this far in front of the muzzle
 
         private static readonly List<GameObject> Live = new List<GameObject>();
@@ -54,7 +54,7 @@ namespace ArmorFragments
                 LastShot[id] = now;
 
                 float caliber = MuzzleSmoke.CaliberMillimeters(cannon);
-                float scale = Mathf.Clamp(caliber / CaliberForFullSize, 0.25f, 1.4f);
+                float scale = Mathf.Clamp(caliber / CaliberForFullSize, 0.45f, 1.4f);
                 GameObject go = Spawn(ground, scale, Vector3.zero);
                 if (go == null) return;
                 Live.Add(go);
@@ -102,9 +102,9 @@ namespace ArmorFragments
             GameObject prefab = VfxBundleTest.Prefab("blastcloud");
             if (prefab == null) return null;
 
-            // The picture's bottom edge is the ground, so the sprite's centre is half its height up.
+            // The picture's bottom edge is the ground, so the sprite's centre is half its height up (minus a little, so it sinks into the ground).
             float size = FrameMeters * scale;
-            GameObject go = Object.Instantiate(prefab, ground + Vector3.up * (size * 0.5f), Quaternion.identity);
+            GameObject go = Object.Instantiate(prefab, ground + Vector3.up * (size * 0.5f - size * 0.04f), Quaternion.identity);   // sunk a little: the ground cuts it
             go.name = "ArmorFragments blast cloud";
             VfxBundleTest.SetLayer(go, ImpactCamera.EffectsLayer);
 

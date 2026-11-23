@@ -488,9 +488,9 @@ class ClSmoke:
 # The knobs of the blast, so a bake can be tuned from the command line (key=value).
 PARAMS = {
     "fire_radius": 0.35, "fire_rho": 0.5, "fire_temp": 1.0, "fire_radial": 2.0, "fire_time": 0.10, "fire_height": 0.45,
-    "dust_blobs": 16, "dust_disc": 1.6, "dust_blob_r": 0.3, "dust_up": 2.5, "dust_out": 5.0, "dust_squash": 1.0, "dust_vdir": 1.0,
-    "dust_rho": 0.6, "dust_radial": 15.0, "dust_vy": 2.0, "dust_time": 0.35, "dust_r1": 2.2, "dust_r2": 3.6,
-    "buoyancy": 0.1, "vorticity": 0.8, "cool": 1.7, "dissipate": 0.25, "drag": 0.15, "swirl": 5.0,
+    "dust_blobs": 9, "dust_disc": 1.6, "dust_blob_r": 0.5, "dust_up": 3.0, "dust_out": 4.0, "dust_squash": 1.0, "dust_vdir": 1.0,
+    "dust_rho": 1.0, "dust_radial": 15.0, "dust_vy": 2.0, "dust_time": 0.35, "dust_r1": 2.2, "dust_r2": 3.6,
+    "buoyancy": 0.1, "vorticity": 1.0, "cool": 1.7, "dissipate": 0.25, "drag": 0.15, "swirl": 9.0,
 }
 
 
