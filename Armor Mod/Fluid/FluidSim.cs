@@ -103,6 +103,9 @@ namespace ArmorFragments.Fluid
             }
         }
         public Settings Params = Settings.Default;
+        // For the half-precision experiment: 16-bit floats for the speed, smoke, heat and their helper textures / the texture coordinates of
+        // the detail noise / the pressure of the multigrid. Read when a simulation is built.
+        public static bool HalfFields, HalfPhi, HalfPressure;
         public int CoarseSweeps = 10;      // red-black sweeps on the smallest multigrid level
 
         private readonly ComputeShader cs;
@@ -156,12 +159,14 @@ namespace ArmorFragments.Fluid
             kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kDisplace = cs.FindKernel("Displace"); kWind = cs.FindKernel("ApplyWind");
             kShift = cs.FindKernel("Shift"); kShiftSolid = cs.FindKernel("ShiftSolid"); kCapPhi = cs.FindKernel("CapturePhi"); kCapture = cs.FindKernel("Capture"); kCut = cs.FindKernel("Cut");
 
-            velA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
-            scalA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); scalB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
-            hat = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); tilde = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
-            vort = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
-            phiA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); phiB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
-            phiTmp = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+            velA = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat);
+            RenderTextureFormat fieldFormat = HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat;
+            RenderTextureFormat phiFormat = HalfPhi ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat;
+            scalA = Make(nx, ny, nz, fieldFormat); scalB = Make(nx, ny, nz, fieldFormat);
+            hat = Make(nx, ny, nz, fieldFormat); tilde = Make(nx, ny, nz, fieldFormat);
+            vort = Make(nx, ny, nz, fieldFormat);
+            phiA = Make(nx, ny, nz, phiFormat); phiB = Make(nx, ny, nz, phiFormat);
+            phiTmp = Make(nx, ny, nz, phiFormat);
             solidVel = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             solidPrev = Make(nx, ny, nz, RenderTextureFormat.RFloat);
 
@@ -173,9 +178,9 @@ namespace ArmorFragments.Fluid
                 Level L = new Level
                 {
                     dims = d, h = h,
-                    p = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
-                    rhs = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
-                    res = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
+                    p = Make(d.x, d.y, d.z, HalfPressure ? RenderTextureFormat.RHalf : RenderTextureFormat.RFloat),
+                    rhs = Make(d.x, d.y, d.z, HalfPressure ? RenderTextureFormat.RHalf : RenderTextureFormat.RFloat),
+                    res = Make(d.x, d.y, d.z, HalfPressure ? RenderTextureFormat.RHalf : RenderTextureFormat.RFloat),
                     solid = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
                 };
                 levels.Add(L);
