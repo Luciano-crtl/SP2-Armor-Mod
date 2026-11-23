@@ -72,15 +72,15 @@ namespace ArmorFragments
         public struct QualityLevel { public int nx, ny, nz; public float cellMultiplier; public int steps; public int cycles; public string name; }
         public static readonly QualityLevel[] Levels =
         {
-            new QualityLevel { nx = 96, ny = 56, nz = 56, cellMultiplier = 1.000f, steps = 32, cycles = 2, name = "high" },
-            new QualityLevel { nx = 72, ny = 42, nz = 42, cellMultiplier = 1.333f, steps = 24, cycles = 2, name = "medium" },
-            new QualityLevel { nx = 48, ny = 28, nz = 28, cellMultiplier = 2.000f, steps = 16, cycles = 1, name = "low" },
+            new QualityLevel { nx = 128, ny = 72, nz = 72, cellMultiplier = 0.800f, steps = 40, cycles = 2, name = "high" },
+            new QualityLevel { nx = 96, ny = 56, nz = 56, cellMultiplier = 1.000f, steps = 32, cycles = 2, name = "medium" },
+            new QualityLevel { nx = 72, ny = 42, nz = 42, cellMultiplier = 1.333f, steps = 24, cycles = 2, name = "low" },
         };
         public static int Chosen = 0;
         public static bool Auto = true;
         private static int autoLevel;                  // what the automatic mode currently allows
         private const float BaseCell = 0.125f;
-        public static readonly int[] CellBudget = { 450000, 200000, 70000 };   // most cells a cloud of each quality may have
+        public static readonly int[] CellBudget = { 900000, 450000, 200000 };   // most cells a cloud of each quality may have
         private static readonly Vector3 BaseExtent = new Vector3(18f, 9f, 9f);  // metres, for a 75 mm gun
 
         // How big a cloud for this gun is: the box, its cells, and how quickly things happen.
