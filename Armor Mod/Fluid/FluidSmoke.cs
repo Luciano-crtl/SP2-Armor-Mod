@@ -569,9 +569,10 @@ namespace ArmorFragments
 
         // ---- the world around the cloud -----------------------------------------------------------------------------------------
 
-        private static readonly Collider[] Overlaps = new Collider[256];
+        private static readonly Collider[] Overlaps = new Collider[768];
         private static readonly List<FluidSim.Shape> ShapeBuffer = new List<FluidSim.Shape>(32);
-        private const int MaxShapes = 64;
+        private static readonly List<KeyValuePair<float, int>> Candidates = new List<KeyValuePair<float, int>>(256);
+        private const int MaxShapes = 128;
 
         // The solid things inside the box: the parts of vehicles (the shooter's own too, except its cannon) and the ground. Each is a box,
         // an ellipsoid or a half-space in the box's own space (see Fluid.compute).
@@ -595,7 +596,11 @@ namespace ArmorFragments
 
             int count = Physics.OverlapBoxNonAlloc(center, c.extent * 0.5f, Overlaps, c.rotation, ~0, QueryTriggerInteraction.Ignore);
             c.overlapsSeen = count; c.partsSeen = 0;
-            for (int i = 0; i < count && ShapeBuffer.Count < MaxShapes; i++)
+
+            // A vehicle has more colliders than the solver takes, so the ones nearest the muzzle go first (the gas is thickest there).
+            Vector3 near = c.shots.Count > 0 ? c.shots[0].muzzleWorld : center;
+            Candidates.Clear();
+            for (int i = 0; i < count; i++)
             {
                 Collider col = Overlaps[i];
                 if (col == null) continue;
@@ -604,8 +609,14 @@ namespace ArmorFragments
                 c.partsSeen++;
                 if (part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
                 if (col.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                Candidates.Add(new KeyValuePair<float, int>((col.bounds.center - near).sqrMagnitude, i));
+            }
+            Candidates.Sort((a, b) => a.Key.CompareTo(b.Key));
+            for (int k = 0; k < Candidates.Count && ShapeBuffer.Count < MaxShapes; k++)
+            {
+                Collider col = Overlaps[Candidates[k].Value];
                 FluidSim.Shape shape;
-                if (ShapeOf(col, part, c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
+                if (ShapeOf(col, col.GetComponentInParent<PartScript>(), c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
             }
             c.shapesSent = ShapeBuffer.Count;
             return ShapeBuffer;
