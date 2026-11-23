@@ -692,7 +692,7 @@ namespace ArmorFragments
                     Vector3 hullCenterWorld = m.GetColumn(3);
                     Vector3 hullVelocity = -c.drift, hullSpin = Vector3.zero;
                     Assets.Scripts.Craft.IRigidBody hullBody = part.Body != null ? part.Body.RigidBody : null;
-                    if (hullBody != null && !hullBody.IsDead) { hullVelocity += SafeVelocity(part, hullBody.GetPointVelocity(hullCenterWorld)); hullSpin = SafeSpin(part, hullBody.angularVelocity); }
+                    if (hullBody != null && !hullBody.IsDead) { hullVelocity += SafeVelocity(part, hullBody.GetPointVelocity(hullCenterWorld)); hullSpin = SafeSpin(part, hullBody.angularVelocity, col.bounds.extents.magnitude); }
                     int first = PlaneBuffer.Count;
                     // The planes are measured from the middle of the mesh's box, which is where the shape's own space starts.
                     for (int i = 0; i < planes.Length; i++)
@@ -716,7 +716,7 @@ namespace ArmorFragments
             if (body != null && !body.IsDead)
             {
                 velocity += SafeVelocity(part, body.GetPointVelocity(centerWorld));
-                spin = SafeSpin(part, body.angularVelocity);
+                spin = SafeSpin(part, body.angularVelocity, col.bounds.extents.magnitude);
             }
             shape = FluidSim.Shape.Make(m.inverse * gridToWorld, half, kind, toGrid * velocity, toGrid * spin, toGrid * (centerWorld - c.origin));
             return true;
@@ -736,11 +736,25 @@ namespace ArmorFragments
             return Vector3.zero;
         }
 
-        private static Vector3 SafeSpin(PartScript part, Vector3 w)
+        // The spin of a part moves every point of it by spin x distance from its centre: a big part turning at 40 rad/s has points
+        // moving at hundreds of metres a second. So what is limited is the speed of the part's surface, not only the spin.
+        private const float MaxSurfaceSpeed = 30f;       // m/s
+        private static int slowedSpins;
+
+        private static Vector3 SafeSpin(PartScript part, Vector3 w, float radius)
         {
-            if (!float.IsNaN(w.x) && !float.IsNaN(w.y) && !float.IsNaN(w.z) && w.sqrMagnitude <= MaxSolidSpin * MaxSolidSpin) return w;
-            Reject(part, "spin", w);
-            return Vector3.zero;
+            if (float.IsNaN(w.x) || float.IsNaN(w.y) || float.IsNaN(w.z) || w.sqrMagnitude > MaxSolidSpin * MaxSolidSpin)
+            {
+                Reject(part, "spin", w);
+                return Vector3.zero;
+            }
+            float surface = w.magnitude * Mathf.Max(radius, 0.01f);
+            if (surface <= MaxSurfaceSpeed) { peakSpeed = Mathf.Max(peakSpeed, surface); return w; }
+            if (++slowedSpins <= 6)
+                ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke: part '" + (part != null && part.Part != null ? part.Part.Name : "?") + "' turns at " + w.magnitude.ToString("F1")
+                                                 + " rad/s and is " + radius.ToString("F1") + " m across (its surface moves at " + surface.ToString("F0") + " m/s): the smoke sees it slowed down");
+            peakSpeed = Mathf.Max(peakSpeed, MaxSurfaceSpeed);
+            return w * (MaxSurfaceSpeed / surface);
         }
 
         private static void Reject(PartScript part, string what, Vector3 value)
