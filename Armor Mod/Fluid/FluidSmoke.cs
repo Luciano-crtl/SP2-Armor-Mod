@@ -1,5 +1,6 @@
 // RELEASE-STRIP-BEGIN
 using System.Collections.Generic;
+using System.Diagnostics;
 using ArmorFragments.Fluid;
 using Assets.Scripts.Environment.Wind;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
@@ -9,41 +10,66 @@ namespace ArmorFragments
 {
     // The smoke of a cannon shot as a real fluid: every shot starts a small GPU simulation of the hot gas bursting out of the barrel
     // (FluidSim, the compute shader Fluid.compute in the effect bundle). It is drawn by the ray-marching shader (SmokeVolume) on a box
-    // that lies along the barrel. The simulation lives about 4 seconds, then its memory goes back to a pool.
+    // that lies along the barrel. A cloud lives about 4 seconds, then its memory goes back to a pool.
     //
     // The box is fixed to the world where the shot happened (the vehicle drives away from the smoke) and drifts with the wind there.
+    // A second shot from the same place while the cloud is young adds to the same cloud (rapid fire makes one dense cloud, not many).
+    //
+    // Cost control: three quality levels (cell count and ray steps), chosen by distance and, in the automatic mode, by the frame time.
     internal static class FluidSmoke
     {
         public static bool Enabled = true;
-        public static int MaxActive = 3;               // simulations running at once (each costs about a millisecond a frame)
-        public static float MinInterval = 0.5f;        // seconds between the clouds of one cannon
+        public static int MaxActive = 3;               // simulations running at once
+        public static float MinInterval = 0.1f;        // seconds between the shots one cannon adds
         public static float Lifetime = 4f;
+        public static float MaxLifetime = 8f;
         public static float FadeSeconds = 0.8f;
         public static float MaxCameraDistance = 400f;  // farther than this: no cloud
+        public static float MergeSeconds = 1.2f;       // a shot this soon after a cloud began, inside its box, joins it
 
-        // The box: 96 x 56 x 56 cells; the barrel's axis is its +x, "up" its +y.
-        private const int Nx = 96, Ny = 56, Nz = 56;
+        // Quality: 0 = high, 1 = medium, 2 = low. `Chosen` is the best level the player allows; Auto lets the frame time lower it.
+        public struct QualityLevel { public int nx, ny, nz; public float cellMultiplier; public int steps; public int cycles; public string name; }
+        public static readonly QualityLevel[] Levels =
+        {
+            new QualityLevel { nx = 96, ny = 56, nz = 56, cellMultiplier = 1.000f, steps = 32, cycles = 2, name = "high" },
+            new QualityLevel { nx = 72, ny = 42, nz = 42, cellMultiplier = 1.333f, steps = 24, cycles = 2, name = "medium" },
+            new QualityLevel { nx = 48, ny = 28, nz = 28, cellMultiplier = 2.000f, steps = 16, cycles = 1, name = "low" },
+        };
+        public static int Chosen = 0;
+        public static bool Auto = true;
+        private static int autoLevel;                  // what the automatic mode currently allows
         private const float BaseCell = 0.125f;
+
+        private struct Shot { public Vector3 muzzle; public float start; }
 
         private sealed class Cloud
         {
+            public int level;
             public FluidSim sim;
             public GameObject box;
             public Material material;
             public Vector3 origin;          // world position of the box corner
             public Quaternion rotation;     // box axes -> world
             public Vector3 extent;
-            public Vector3 muzzle;          // inside the box
             public float scale;
             public float age;
+            public float end;
+            public readonly List<Shot> shots = new List<Shot>();
         }
 
         private static readonly List<Cloud> Active = new List<Cloud>();
-        private static readonly Stack<FluidSim> Pool = new Stack<FluidSim>();
+        private static readonly Stack<FluidSim>[] Pools = { new Stack<FluidSim>(), new Stack<FluidSim>(), new Stack<FluidSim>() };
         private static readonly Dictionary<int, float> LastShot = new Dictionary<int, float>();
         private static Mesh boxMesh;
         private static Driver driver;
         private static bool loggedFirst;
+
+        // Frame-time watching (for the automatic quality and for the log).
+        private static float frameEma, baselineEma, slowTimer, goodTimer, logTimer, cpuMsSum;
+        private static int cpuMsCount;
+        private static readonly Stopwatch Watch = new Stopwatch();
+
+        public static string QualityName { get { return Auto ? "auto (now " + Levels[autoLevel].name + ")" : Levels[Chosen].name; } }
 
         public static void Toggle()
         {
@@ -51,12 +77,29 @@ namespace ArmorFragments
             ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid muzzle smoke " + (Enabled ? "on" : "off"));
         }
 
+        // auto -> high -> medium -> low -> auto
+        public static void CycleQuality()
+        {
+            if (Auto) { Auto = false; Chosen = 0; }
+            else if (Chosen < Levels.Length - 1) Chosen++;
+            else { Auto = true; Chosen = 0; }
+            autoLevel = Chosen;
+            ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke quality: " + QualityName);
+        }
+
+        private static int LevelFor(float distance)
+        {
+            int level = Auto ? autoLevel : Chosen;
+            if (distance > 300f) level = Mathf.Max(level, 2);
+            else if (distance > 150f) level = Mathf.Max(level, 1);
+            return level;
+        }
+
         public static void OnShot(CannonScript cannon)
         {
             if (!Enabled || cannon == null) return;
             try
             {
-                if (Active.Count >= MaxActive) return;
                 int id = cannon.GetInstanceID();
                 float now = Time.time, last;
                 if (LastShot.TryGetValue(id, out last) && now - last < MinInterval) return;
@@ -66,37 +109,63 @@ namespace ArmorFragments
                 if (cs == null || template == null || !SystemInfo.supportsComputeShaders) return;
                 Camera cam = Camera.main;
                 Vector3 tip = cannon.TipPosition;
-                if (cam != null && (cam.transform.position - tip).sqrMagnitude > MaxCameraDistance * MaxCameraDistance) return;
+                float distance = cam != null ? (cam.transform.position - tip).magnitude : 0f;
+                if (distance > MaxCameraDistance) return;
+
+                Vector3 ex = cannon.transform.forward.normalized;
+
+                // A young cloud right here takes the shot as one more blast.
+                foreach (Cloud c in Active)
+                {
+                    if (c.age > MergeSeconds) continue;
+                    Vector3 local = Quaternion.Inverse(c.rotation) * (tip - c.origin);
+                    float margin = 1.2f * c.scale;
+                    bool inside = local.x > margin && local.y > margin && local.z > margin
+                                  && local.x < c.extent.x - margin && local.y < c.extent.y - margin && local.z < c.extent.z - margin;
+                    if (inside && Vector3.Dot(ex, c.rotation * Vector3.right) > 0.8f)
+                    {
+                        c.shots.Add(new Shot { muzzle = local, start = c.age });
+                        c.end = Mathf.Min(c.age + Lifetime, MaxLifetime);
+                        LastShot[id] = now;
+                        return;
+                    }
+                }
+
+                if (Active.Count >= MaxActive) return;
                 LastShot[id] = now;
 
+                int level = LevelFor(distance);
+                QualityLevel q = Levels[level];
                 float caliber = MuzzleSmoke.CaliberMillimeters(cannon);
                 float scale = Mathf.Clamp(caliber / 75f, 0.5f, 2f);
-                float cell = BaseCell * scale;
+                float cell = BaseCell * scale * q.cellMultiplier;
 
                 // The box's axes: x along the barrel, y as close to "up" as it can be, z across.
-                Vector3 ex = cannon.transform.forward.normalized;
                 Vector3 ey = Vector3.up - Vector3.Dot(Vector3.up, ex) * ex;
                 if (ey.sqrMagnitude < 1e-4f) ey = Vector3.forward - Vector3.Dot(Vector3.forward, ex) * ex;
                 ey.Normalize();
                 Vector3 ez = Vector3.Cross(ex, ey);
                 Quaternion rot = Quaternion.LookRotation(ez, ey);
 
-                Vector3 extent = new Vector3(Nx, Ny, Nz) * cell;
+                Vector3 extent = new Vector3(q.nx, q.ny, q.nz) * cell;
                 Vector3 muzzleLocal = new Vector3(1.6f * scale, extent.y * 0.5f, extent.z * 0.5f);
                 Vector3 origin = tip - rot * muzzleLocal;
 
-                FluidSim sim = Pool.Count > 0 ? Pool.Pop() : new FluidSim(cs, Nx, Ny, Nz, cell);
-                if (Mathf.Abs(sim.Cell - cell) > 1e-5f) { sim.Dispose(); sim = new FluidSim(cs, Nx, Ny, Nz, cell); }
-                else sim.Clear();
+                FluidSim sim = Pools[level].Count > 0 ? Pools[level].Pop() : new FluidSim(cs, q.nx, q.ny, q.nz, cell);
+                sim.Cell = cell;
+                sim.Clear();
+                sim.Params.cycles = q.cycles;
+                sim.CoarseSweeps = 10;
 
-                Cloud cloud = new Cloud { sim = sim, origin = origin, rotation = rot, extent = extent, muzzle = muzzleLocal, scale = scale };
+                Cloud cloud = new Cloud { level = level, sim = sim, origin = origin, rotation = rot, extent = extent, scale = scale, end = Lifetime };
+                cloud.shots.Add(new Shot { muzzle = muzzleLocal, start = 0f });
                 cloud.material = new Material(template) { name = "ArmorFragments fluid smoke" };
                 cloud.material.SetFloat("_UseDepth", SmokeVolume.DepthTextureAvailable() ? 1f : 0f);
                 cloud.material.SetFloat("_Extinction", 8f);
-                cloud.material.SetFloat("_Erosion", 0.5f);
-                cloud.material.SetFloat("_NoiseScale", 0.9f / scale);
+                cloud.material.SetFloat("_Erosion", 0.55f);
+                cloud.material.SetFloat("_NoiseScale", 1.1f / scale);
+                cloud.material.SetFloat("_UsePhi", 1f);
                 cloud.material.SetVector("_GridExtent", new Vector4(extent.x, extent.y, extent.z, 0f));
-                cloud.material.SetVector("_NoiseOffset", Vector4.zero);
 
                 if (boxMesh == null) boxMesh = MakeBox();
                 cloud.box = new GameObject("ArmorFragments fluid smoke");
@@ -114,9 +183,9 @@ namespace ArmorFragments
                 if (!loggedFirst)
                 {
                     loggedFirst = true;
-                    ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] first fluid smoke: caliber " + caliber.ToString("F0") + " mm, box "
+                    ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] first fluid smoke: caliber " + caliber.ToString("F0") + " mm, quality " + q.name + ", box "
                         + extent.x.ToString("F1") + " x " + extent.y.ToString("F1") + " x " + extent.z.ToString("F1") + " m, cells of "
-                        + (cell * 100f).ToString("F1") + " cm, " + (Nx * Ny * Nz) + " cells");
+                        + (cell * 100f).ToString("F1") + " cm, " + (q.nx * q.ny * q.nz) + " cells");
                 }
             }
             catch (System.Exception e)
@@ -137,26 +206,32 @@ namespace ArmorFragments
         // Called every frame while a cloud lives.
         private static void Tick()
         {
+            float unscaled = Time.unscaledDeltaTime;
+            Monitor(unscaled);
+
             float frame = Mathf.Min(Time.deltaTime, 0.03f);
             WindQueryManager wind = WindQueryManager.Instance;
+            Camera cam = Camera.main;
+            Watch.Restart();
             for (int i = Active.Count - 1; i >= 0; i--)
             {
                 Cloud c = Active[i];
                 try
                 {
-                    if (c.age >= Lifetime || c.box == null) { Retire(c); Active.RemoveAt(i); continue; }
+                    if (c.age >= c.end || c.box == null) { Retire(c); Active.RemoveAt(i); continue; }
                     if (frame > 0f)
                     {
                         // Gravity in the box's axes; the blast slows fast, then the smoke drifts.
-                        Quaternion inverse = Quaternion.Inverse(c.rotation);
-                        c.sim.Params.buoyDir = inverse * Vector3.up;
+                        c.sim.Params.buoyDir = Quaternion.Inverse(c.rotation) * Vector3.up;
                         c.sim.Params.drag = c.age < 0.3f ? 7f : 1.5f;
 
-                        int substeps = c.age < 0.3f ? Mathf.Clamp(Mathf.CeilToInt(frame / 0.006f), 1, 3) : 1;
+                        bool violent = RecentShot(c);
+                        int substeps = violent ? Mathf.Clamp(Mathf.CeilToInt(frame / 0.006f), 1, 3) : 1;
                         float dt = frame / substeps;
                         for (int s = 0; s < substeps; s++)
                         {
-                            c.sim.AddBlobs(Blobs(c, c.age + dt * s));
+                            List<FluidSim.Blob> blobs = Blobs(c, c.age + dt * s);
+                            if (blobs.Count > 0) c.sim.AddBlobs(blobs);
                             c.sim.Step(dt);
                         }
                         c.age += frame;
@@ -169,9 +244,17 @@ namespace ArmorFragments
                             Place(c);
                         }
                     }
-                    c.material.SetTexture("_Grid", c.sim.Scalars);
-                    float fade = Mathf.Clamp01((Lifetime - c.age) / FadeSeconds);
-                    c.material.SetFloat("_Fade", fade);
+
+                    Material m = c.material;
+                    m.SetTexture("_Grid", c.sim.Scalars);
+                    m.SetTexture("_PhiA", c.sim.PhiA);
+                    m.SetTexture("_PhiB", c.sim.PhiB);
+                    Vector2 w = c.sim.PhiWeights;
+                    m.SetVector("_PhiWeights", new Vector4(w.x, w.y, 0f, 0f));
+                    m.SetFloat("_Fade", Mathf.Clamp01((c.end - c.age) / FadeSeconds));
+                    // Fewer ray steps for far clouds.
+                    float distance = cam != null ? (cam.transform.position - c.box.transform.position).magnitude : 0f;
+                    m.SetFloat("_Steps", Levels[c.level].steps * (distance > 120f ? 0.75f : 1f));
                 }
                 catch (System.Exception e)
                 {
@@ -181,34 +264,95 @@ namespace ArmorFragments
                     Active.RemoveAt(i);
                 }
             }
+            Watch.Stop();
+            if (Active.Count > 0) { cpuMsSum += (float)Watch.Elapsed.TotalMilliseconds; cpuMsCount++; }
         }
 
-        // The sources, in the box's axes: a hot fireball bursting forward, then the smoke that keeps coming out of the barrel.
-        private static List<FluidSim.Blob> Blobs(Cloud c, float t)
+        private static bool RecentShot(Cloud c)
+        {
+            foreach (Shot s in c.shots) if (c.age - s.start < 0.3f) return true;
+            return false;
+        }
+
+        // The sources, in the box's axes, for every shot of the cloud: a hot fireball bursting forward, then the smoke that keeps coming out.
+        private static List<FluidSim.Blob> Blobs(Cloud c, float now)
         {
             List<FluidSim.Blob> list = new List<FluidSim.Blob>();
             float s = c.scale;
-            if (t < 0.12f)
+            foreach (Shot shot in c.shots)
             {
-                float fade = 1f - t / 0.12f;
-                for (int k = 0; k < 4; k++)
-                    list.Add(new FluidSim.Blob { center = c.muzzle + new Vector3((0.7f + 0.9f * k) * s, 0, 0), radius = (0.9f + 0.25f * k) * s, rho = 0.9f, temp = 1f,
-                                                 vel = new Vector3(14f * fade, 0, 0), radial = 10f * fade, noise = 0.15f, falloff = 1.3f });
-            }
-            if (t < 0.8f)
-            {
-                float fade = 1f - t / 0.8f;
-                list.Add(new FluidSim.Blob { center = c.muzzle + new Vector3(0.9f * s, 0, 0), radius = 1.3f * s, rho = 1.0f * fade, temp = 0.3f * fade,
-                                             vel = new Vector3(4f * fade, 0, 0), radial = 1.0f, noise = 0.15f, falloff = 1.1f });
+                float t = now - shot.start;
+                if (t < 0f) continue;
+                if (t < 0.12f)
+                {
+                    float fade = 1f - t / 0.12f;
+                    for (int k = 0; k < 4; k++)
+                        list.Add(new FluidSim.Blob { center = shot.muzzle + new Vector3((0.7f + 0.9f * k) * s, 0, 0), radius = (0.9f + 0.25f * k) * s, rho = 0.9f, temp = 1f,
+                                                     vel = new Vector3(14f * fade, 0, 0), radial = 10f * fade, noise = 0.15f, falloff = 1.3f,
+                                                     swirl = 6f * fade, swirlFreq = 0.9f / s });
+                }
+                if (t < 0.8f)
+                {
+                    float fade = 1f - t / 0.8f;
+                    list.Add(new FluidSim.Blob { center = shot.muzzle + new Vector3(0.9f * s, 0, 0), radius = 1.3f * s, rho = 1.0f * fade, temp = 0.3f * fade,
+                                                 vel = new Vector3(4f * fade, 0, 0), radial = 1.0f, noise = 0.15f, falloff = 1.1f,
+                                                 swirl = 3f * fade, swirlFreq = 0.7f / s });
+                }
             }
             return list;
+        }
+
+        // Frame time with and without clouds. In the automatic mode, a slow frame while clouds run lowers the quality of the NEXT clouds;
+        // a long stretch of fast frames raises it again. Every ten seconds of activity a line goes to the log.
+        private static void Monitor(float seconds)
+        {
+            float ms = seconds * 1000f;
+            if (ms <= 0f || ms > 500f) return;
+            frameEma = frameEma <= 0f ? ms : Mathf.Lerp(frameEma, ms, 0.05f);
+            if (Active.Count == 0)
+            {
+                baselineEma = baselineEma <= 0f ? ms : Mathf.Lerp(baselineEma, ms, 0.02f);
+                slowTimer = 0f;
+                return;
+            }
+
+            if (Auto)
+            {
+                bool slow = frameEma > 25f && frameEma - baselineEma > 2.5f;      // under 40 fps, and clearly the clouds' doing
+                bool fine = frameEma < 18f;
+                slowTimer = slow ? slowTimer + seconds : 0f;
+                goodTimer = fine ? goodTimer + seconds : 0f;
+                if (slowTimer > 1f && autoLevel < Levels.Length - 1)
+                {
+                    autoLevel++;
+                    slowTimer = 0f; goodTimer = 0f;
+                    ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke: frames are slow (" + frameEma.ToString("F1") + " ms, normally " + baselineEma.ToString("F1")
+                                                     + " ms): quality of new clouds is now " + Levels[autoLevel].name);
+                }
+                else if (goodTimer > 12f && autoLevel > Chosen)
+                {
+                    autoLevel--;
+                    goodTimer = 0f;
+                    ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke: frames are fast again: quality of new clouds is now " + Levels[autoLevel].name);
+                }
+            }
+
+            logTimer += seconds;
+            if (logTimer > 10f)
+            {
+                logTimer = 0f;
+                ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke: " + Active.Count + " cloud(s), frame " + frameEma.ToString("F1") + " ms (without clouds "
+                    + baselineEma.ToString("F1") + " ms), the simulations cost " + (cpuMsCount > 0 ? (cpuMsSum / cpuMsCount).ToString("F2") : "0") + " ms of CPU time per frame, quality "
+                    + QualityName);
+                cpuMsSum = 0f; cpuMsCount = 0;
+            }
         }
 
         private static void Retire(Cloud c)
         {
             if (c.box != null) Object.Destroy(c.box);
             if (c.material != null) Object.Destroy(c.material);
-            if (c.sim != null) Pool.Push(c.sim);
+            if (c.sim != null) Pools[c.level].Push(c.sim);
             c.sim = null;
         }
 
@@ -221,11 +365,13 @@ namespace ArmorFragments
                 if (c.sim != null) c.sim.Dispose();
             }
             Active.Clear();
-            while (Pool.Count > 0) Pool.Pop().Dispose();
+            foreach (Stack<FluidSim> pool in Pools) while (pool.Count > 0) pool.Pop().Dispose();
             LastShot.Clear();
             if (driver != null) Object.Destroy(driver.gameObject);
             driver = null;
             loggedFirst = false;
+            frameEma = baselineEma = slowTimer = goodTimer = logTimer = cpuMsSum = 0f;
+            cpuMsCount = 0;
         }
 
         private static void EnsureDriver()

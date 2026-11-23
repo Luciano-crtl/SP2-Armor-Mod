@@ -23,7 +23,9 @@ namespace ArmorFragments.Fluid
             public float radial;
             public float noise;
             public float falloff;
-            public const int Stride = 12 * 4;
+            public float swirl;        // m/s of random swirling inside the ball
+            public float swirlFreq;    // 1/m: how fine the swirling is
+            public const int Stride = 14 * 4;
         }
 
         public struct Settings
@@ -55,24 +57,38 @@ namespace ArmorFragments.Fluid
         }
 
         public readonly Vector3Int Dims;
-        public readonly float Cell;
+        public float Cell;        // metres; it may be changed between steps (a bigger box for a bigger gun) without reallocating
         public Settings Params = Settings.Default;
         public int CoarseSweeps = 10;      // red-black sweeps on the smallest multigrid level
 
         private readonly ComputeShader cs;
         private readonly List<Level> levels = new List<Level>();
-        private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort;
+        private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp;
         private ComputeBuffer blobBuffer;
         private int blobCapacity;
         private int seed = 1;
         private bool disposed;
 
-        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP;
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi;
 
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
         public RenderTexture Velocity { get { return velA; } }
         public float Time { get; private set; }
+
+        // Texture coordinates (metres from the box corner) carried by the flow, in two sets that restart in turn: the renderer carves
+        // its detail noise with them. PhiWeights = how much each set counts now (they always add up to 1).
+        public RenderTexture PhiA { get { return phiA; } }
+        public RenderTexture PhiB { get { return phiB; } }
+        public float PhiCycle = 0.6f;
+        public Vector2 PhiWeights
+        {
+            get
+            {
+                float a = (Time / PhiCycle) % 1f, b = (Time / PhiCycle + 0.5f) % 1f;
+                return new Vector2(1f - Mathf.Abs(2f * a - 1f), 1f - Mathf.Abs(2f * b - 1f));
+            }
+        }
 
         public FluidSim(ComputeShader shader, int nx, int ny, int nz, float cell)
         {
@@ -83,12 +99,14 @@ namespace ArmorFragments.Fluid
             kDivergence = cs.FindKernel("Divergence"); kSmooth = cs.FindKernel("Smooth"); kResidual = cs.FindKernel("Residual");
             kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
             kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
-            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP");
+            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi");
 
             velA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             scalA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); scalB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             hat = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); tilde = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             vort = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+            phiA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); phiB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+            phiTmp = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
 
             // Multigrid levels: halve every dimension while they stay even and at least 8 cells.
             Vector3Int d = Dims;
@@ -131,7 +149,7 @@ namespace ArmorFragments.Fluid
         {
             if (disposed) return;
             disposed = true;
-            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort })
+            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp })
                 if (rt != null) rt.Release();
             foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); }
             if (blobBuffer != null) blobBuffer.Release();
@@ -156,7 +174,15 @@ namespace ArmorFragments.Fluid
             cs.SetTexture(kClear, "ScalOut", scalB);
             Dispatch(kClear, Dims);
             foreach (Level L in levels) ClearPressure(L);
+            ResetPhi(phiA); ResetPhi(phiB);
             Time = 0f;
+        }
+
+        private void ResetPhi(RenderTexture target)
+        {
+            cs.SetFloat("Hh", Cell);
+            cs.SetTexture(kInitPhi, "Dst", target);
+            Dispatch(kInitPhi, Dims);
         }
 
         // ---- sources -----------------------------------------------------------------------------------------------------------
@@ -212,6 +238,8 @@ namespace ArmorFragments.Fluid
             cs.SetFloat("DtDx", dtdx);
             Advect(velA, velB);
             Advect(scalA, scalB);
+            AdvectPlain(ref phiA);
+            AdvectPlain(ref phiB);
             Swap(ref velA, ref velB);
             Swap(ref scalA, ref scalB);
 
@@ -226,7 +254,10 @@ namespace ArmorFragments.Fluid
             Dispatch(kDamp, Dims);
             Swap(ref velA, ref velB); Swap(ref scalA, ref scalB);
 
+            float before = Time;
             Time += dt;
+            if (Mathf.FloorToInt(Time / PhiCycle) != Mathf.FloorToInt(before / PhiCycle)) ResetPhi(phiA);
+            if (Mathf.FloorToInt(Time / PhiCycle + 0.5f) != Mathf.FloorToInt(before / PhiCycle + 0.5f)) ResetPhi(phiB);
         }
 
         // MacCormack: trace back (hat), trace forward from that (tilde), then correct and limit. The result goes to `dst`; the field
@@ -241,6 +272,15 @@ namespace ArmorFragments.Fluid
             cs.SetTexture(kMac, "VelIn", velA); cs.SetTexture(kMac, "Src", src);
             cs.SetTexture(kMac, "HatIn", hat); cs.SetTexture(kMac, "TildeIn", tilde); cs.SetTexture(kMac, "Dst", dst);
             Dispatch(kMac, Dims);
+        }
+
+        // Plain semi-Lagrangian: the texture coordinates only need to follow the flow.
+        private void AdvectPlain(ref RenderTexture field)
+        {
+            cs.SetTexture(kAdv, "VelIn", velA);
+            cs.SetTexture(kAdv, "Src", field); cs.SetTexture(kAdv, "Dst", phiTmp); cs.SetFloat("TraceSign", 1f);
+            Dispatch(kAdv, Dims);
+            Swap(ref field, ref phiTmp);
         }
 
         // ---- pressure projection --------------------------------------------------------------------------------------------
