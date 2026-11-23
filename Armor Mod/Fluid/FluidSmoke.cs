@@ -62,6 +62,7 @@ namespace ArmorFragments
         public static float SizeCooling { get { return ArmorFragmentsPlugin.SmokeSizeCooling != null ? ArmorFragmentsPlugin.SmokeSizeCooling.Value : 0.8f; } }
         public static float CaliberAmount(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.05f), SizeThinning), 0.1f, 1.4f); }
         public static float CaliberLoss(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.2f), -SizeCooling), 0.6f, 5f); }
+        public static string LastProfileText = "no shot yet";      // how the last new cloud's cannon shaped its smoke (shown in the panel)
         public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
         public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.8f; } }
         private static void ReadBlastSettings()
@@ -150,6 +151,7 @@ namespace ArmorFragments
             public Color groundColor;
             public float amount = 1f;        // how much smoke, heat and dust this shot makes compared with a 75 mm gun's (see CaliberAmount)
             public float push = 1f;          // how hard its jets push the air: less for each shot of a burst that is still going on
+            public float size = 1f, shock = 1f, brake = 1f;     // from the cannon's own settings (CannonProfile.cs)
         }
 
         private sealed class Cloud
@@ -266,8 +268,10 @@ namespace ArmorFragments
                         Shot added = MakeShot(tip, c.age, ex, c.scale, cannon);
                         int burst = 0;
                         foreach (Shot earlier in c.shots) if (c.age - earlier.start < 0.5f) burst++;
-                        added.push = 1f / (1f + 0.25f * burst);
-                        added.amount = CaliberAmount(c.scale) * Mathf.Sqrt(added.push);
+                        CannonProfile profile = CannonProfile.Of(cannon, c.scale);
+                        added.push = profile.push / (1f + 0.25f * burst);
+                        added.amount = CaliberAmount(c.scale) * profile.amount * Mathf.Sqrt(1f / (1f + 0.25f * burst));
+                        added.size = profile.size; added.shock = profile.shock; added.brake = profile.brake;
                         c.shots.Add(added);
                         MuzzleFlash.Spawn(tip + ex * (1.2f * c.scale), c.scale, c.timeScale);
                         c.end = Mathf.Min(c.age + Lifetime * c.timeScale, MaxLifetime);
@@ -315,7 +319,11 @@ namespace ArmorFragments
 
                 Cloud cloud = new Cloud { level = level, sim = sim, origin = origin, rotation = rot, extent = extent, scale = scale, timeScale = size.timeScale, end = Lifetime * size.timeScale };
                 Shot first = MakeShot(tip, 0f, ex, scale, cannon);
-                first.amount = CaliberAmount(scale);
+                CannonProfile firstProfile = CannonProfile.Of(cannon, scale);
+                first.amount = CaliberAmount(scale) * firstProfile.amount;
+                first.push = firstProfile.push;
+                first.size = firstProfile.size; first.shock = firstProfile.shock; first.brake = firstProfile.brake;
+                LastProfileText = firstProfile.text;
                 cloud.shots.Add(first);
                 MuzzleFlash.Spawn(tip + ex * (1.2f * scale), scale, size.timeScale);
                 cloud.cannonPart = cannon.PartScript;
@@ -556,7 +564,7 @@ namespace ArmorFragments
                         BlastGround.amounts[i] = shot.dustAmount[i];
                     }
                 }
-                SmokeBlast.Build(list, t, s, T, muzzle, BlastGround, shot.amount, shot.push);
+                SmokeBlast.Build(list, t, s * shot.size, T, muzzle, BlastGround, shot.amount, shot.push, shot.shock, shot.brake);
             }
             return list;
         }

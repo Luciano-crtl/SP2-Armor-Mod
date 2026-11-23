@@ -65,6 +65,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeHeatCooling;        // local: how fast the residual heat is lost (per second)
         internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
         internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
+        internal static ConfigEntry<float> SmokeCannonProfile;      // local: how much the cannon's own settings shape its smoke
         internal static ConfigEntry<float> SmokeSizeThinning;       // local: how much thinner a small gun's smoke is (exponent of calibre / 75 mm)
         internal static ConfigEntry<float> SmokeSizeCooling;        // local: how much faster a small gun's smoke loses its heat and thins out
         internal static ConfigEntry<float> SmokeShockWave;          // local: the ring of dust and the push of the blast around the muzzle
@@ -367,6 +368,9 @@ namespace ArmorFragments
             SmokeTurbulence = Config.Bind("Smoke", "Turbulence", 0.2f,
                 new ConfigDescription("Cannon smoke: a weak, endless swirling of the air in the whole box (m/s^2), so the smoke keeps rolling and billowing in calm weather instead of freezing. 0 = perfectly still air.",
                     new AcceptableValueRange<float>(0f, 1f)));
+            SmokeCannonProfile = Config.Bind("Smoke", "CannonProfile", 1f,
+                new ConfigDescription("Cannon smoke: how much the cannon's own settings shape its smoke on top of its calibre: the energy at the muzzle (projectile mass and velocity: more smoke, harder jets, a bigger fireball), the length of the barrel in calibres (a short barrel has a bigger flash and a stronger blast), the muzzle brake (plumes to the sides, a weaker jet ahead) and the flash scale. 0 = only the calibre counts, 1 = normal, 2 = twice as strong. Applies to the next shot.",
+                    new AcceptableValueRange<float>(0f, 2f)));
             SmokeSizeThinning = Config.Bind("Smoke", "SizeThinning", 0.45f,
                 new ConfigDescription("Cannon smoke: how much thinner and cooler the smoke of a small gun is. The amount of smoke, heat and dust of a shot is (calibre / 75 mm) to this power: 0 makes every gun's smoke as dense as a 75 mm's, 1 makes it proportional to the calibre. A .50 (12.7 mm, scale 0.2 at most) gives about 48% at 0.45. Applies to the next shot.",
                     new AcceptableValueRange<float>(0f, 1.5f)));

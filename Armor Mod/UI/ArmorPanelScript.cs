@@ -657,6 +657,8 @@ namespace ArmorFragments.UI
             builder.Header("Cannon smoke (fluid)", collapsed: true);
             TextControl status = builder.Text("Now", "");
             refreshers.Add(() => status.ValueText.Text = (FluidSmoke.Enabled ? "on" : "off") + ", quality " + FluidSmoke.QualityName);
+            TextControl profileText = builder.Text("Last cannon", "");
+            refreshers.Add(() => profileText.ValueText.Text = FluidSmoke.LastProfileText);
             builder.Buttons(new List<KeyValuePair<string, Action>>
             {
                 new KeyValuePair<string, Action>("On / off", FluidSmoke.Toggle),
@@ -677,6 +679,8 @@ namespace ArmorFragments.UI
                 "How hot the propellant smoke is after the flame (0 to 0.35). Applies to the next shot.", 0.025f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeTurbulence, "Background turbulence",
                 "A weak endless swirling of the air so the smoke keeps billowing in calm weather. 0 = still air.", 0.025f, " m/s2");
+            FloatSetting(ArmorFragmentsPlugin.SmokeCannonProfile, "Cannon settings shape the smoke",
+                "How much the cannon's own settings (energy at the muzzle, barrel length, muzzle brake, flash scale) shape its smoke on top of its calibre. 0 = only the calibre, 1 = normal, 2 = twice as strong. Applies to the next shot.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeSizeThinning, "Small guns: thinner smoke",
                 "The amount of smoke, heat and dust of a shot is (calibre / 75 mm) to this power. 0 = every gun as dense as a 75 mm, 1 = proportional to the calibre. Applies to the next shot.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeSizeCooling, "Small guns: smoke fades faster",

@@ -30,9 +30,9 @@ namespace ArmorFragments.Fluid
         // Adds to `list` the sources of a shot `t` seconds after it was fired. `s` is the size of the blast (calibre / 75 mm), `T` its time scale,
         // `muzzle` the end of the barrel. `amount` (0..1.4) is how much smoke, heat and dust this shot makes compared with a 75 mm gun's (a
         // small gun's puff is thin and cool), `push` how hard its jets push the air (less for each shot of a burst).
-        public static void Build(List<FluidSim.Blob> list, float t, float s, float T, Vector3 muzzle, Ground ground, float amount = 1f, float push = 1f)
+        public static void Build(List<FluidSim.Blob> list, float t, float s, float T, Vector3 muzzle, Ground ground, float amount = 1f, float push = 1f, float shock = 1f, float brakeScale = 1f)
         {
-            float focus = Mathf.Clamp01(Focus), brake = Mathf.Clamp01(MuzzleBrake);
+            float focus = Mathf.Clamp01(Focus), brake = Mathf.Clamp01(MuzzleBrake * brakeScale);
             float fire = 0.12f * T, smoke = 1.2f * T, dust = 0.35f * T;
 
             // The fireball: a chain of balls along the barrel. Focused, the balls are narrower, fly faster and push the air forward more than
@@ -76,7 +76,8 @@ namespace ArmorFragments.Fluid
 
             // The pressure wave in the air: for a moment a ring around the barrel, at the muzzle, pushes the air outward (no smoke in it: only
             // the speed), so the fireball and the smoke flare out sideways.
-            if (ShockWave > 0.01f && t < 0.07f * T)
+            float shockWave = ShockWave * shock;
+            if (shockWave > 0.01f && t < 0.07f * T)
             {
                 float fade = 1f - t / (0.07f * T);
                 for (int k = 0; k < 8; k++)
@@ -87,7 +88,7 @@ namespace ArmorFragments.Fluid
                     {
                         center = muzzle + new Vector3(0.5f * s, 0f, 0f) + around * (1.1f * s),
                         radius = 0.6f * s,
-                        vel = (new Vector3(3f * T * fade, 0f, 0f) + around * (16f * T * fade * ShockWave)) * push,
+                        vel = (new Vector3(3f * T * fade, 0f, 0f) + around * (16f * T * fade * shockWave)) * push,
                         falloff = 1.0f,
                     });
                 }
@@ -143,7 +144,7 @@ namespace ArmorFragments.Fluid
                 }
 
                 float low = Mathf.Clamp01(1f - ground.height / (5f * s));
-                if (low > 0.02f && ShockWave > 0.01f)
+                if (low > 0.02f && shockWave > 0.01f)
                 {
                     // The pressure wave runs out over the ground in a ring all around the muzzle, thicker in front of the barrel.
                     float travel = Mathf.Min(10f * s, 12f * T * t + 0.8f * s);       // how far the front of the ring has run
@@ -156,7 +157,7 @@ namespace ArmorFragments.Fluid
                         {
                             center = ground.foot + direction * travel + up * (0.25f * s),
                             radius = 0.9f * s + 0.1f * travel,
-                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * ShockWave * amount * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
+                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * shockWave * amount * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
                             vel = direction * (6f * T * fade) + up * (1.5f * T * fade),
                             radial = 0f, noise = 0.3f, falloff = 1.2f,
                             swirl = 2f * T * fade, swirlFreq = 0.8f / s,
