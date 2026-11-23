@@ -128,7 +128,7 @@ namespace ArmorFragments.Fluid
         private int seed = 1;
         private bool disposed;
 
-        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace, kShift, kShiftSolid, kCapPhi, kCapture, kCut, kOccupancy;
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace, kShift, kShiftSolid, kCapPhi, kCapture, kCut, kOccupancy, kBfeccPre, kTestInit;
 
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
@@ -160,7 +160,7 @@ namespace ArmorFragments.Fluid
             kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
             kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
             kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kDisplace = cs.FindKernel("Displace"); kWind = cs.FindKernel("ApplyWind");
-            kShift = cs.FindKernel("Shift"); kShiftSolid = cs.FindKernel("ShiftSolid"); kCapPhi = cs.FindKernel("CapturePhi"); kCapture = cs.FindKernel("Capture"); kCut = cs.FindKernel("Cut"); kOccupancy = cs.FindKernel("Occupancy");
+            kShift = cs.FindKernel("Shift"); kShiftSolid = cs.FindKernel("ShiftSolid"); kCapPhi = cs.FindKernel("CapturePhi"); kCapture = cs.FindKernel("Capture"); kCut = cs.FindKernel("Cut"); kOccupancy = cs.FindKernel("Occupancy"); kBfeccPre = cs.FindKernel("BfeccPre"); kTestInit = cs.FindKernel("TestInit");
 
             IsHalf = HalfFields;
             velA = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat);
@@ -572,6 +572,9 @@ namespace ArmorFragments.Fluid
         // 16 smoke advection, 32 texture-coordinate advection, 64 damping). 0 = the whole step.
         public int SkipParts;
 
+        // Advection of the speed and the smoke: false = MacCormack (the default), true = BFECC (three back-traces and a limiter instead of two).
+        public bool UseBfecc;
+
         public void Step(float dt)
         {
             Settings s = Params;
@@ -652,9 +655,51 @@ namespace ArmorFragments.Fluid
             Dispatch(kAdv, Dims);
             cs.SetTexture(kAdv, "Src", hat); cs.SetTexture(kAdv, "Dst", tilde); cs.SetFloat("TraceSign", -1f);
             Dispatch(kAdv, Dims);
+            if (UseBfecc)
+            {
+                // BFECC: the error (src - tilde) / 2 is added to the field before the last advection, whose result is then kept within the
+                // range of the values it read (MacLimit with the original field as 'tilde' adds no correction of its own).
+                cs.SetTexture(kBfeccPre, "Src", src); cs.SetTexture(kBfeccPre, "TildeIn", tilde); cs.SetTexture(kBfeccPre, "Dst", hat);
+                Dispatch(kBfeccPre, Dims);
+                cs.SetTexture(kAdv, "Src", hat); cs.SetTexture(kAdv, "Dst", tilde); cs.SetFloat("TraceSign", 1f);
+                Dispatch(kAdv, Dims);
+                cs.SetTexture(kMac, "VelIn", velA); cs.SetTexture(kMac, "Src", src);
+                cs.SetTexture(kMac, "HatIn", tilde); cs.SetTexture(kMac, "TildeIn", src); cs.SetTexture(kMac, "Dst", dst);
+                Dispatch(kMac, Dims);
+                return;
+            }
             cs.SetTexture(kMac, "VelIn", velA); cs.SetTexture(kMac, "Src", src);
             cs.SetTexture(kMac, "HatIn", hat); cs.SetTexture(kMac, "TildeIn", tilde); cs.SetTexture(kMac, "Dst", dst);
             Dispatch(kMac, Dims);
+        }
+
+        // For the study of the advection schemes: a slotted sphere turned about the z axis through the middle of the box by a solid-body speed of
+        // `omega` radians per step (cells of 1, steps of 1), advected `steps` times by 0 = semi-Lagrangian, 1 = MacCormack, 2 = BFECC. The field is
+        // left in Scalars (x); the speed field is not changed by the advection.
+        public void AdvectTest(int scheme, int steps, float omega)
+        {
+            cs.SetFloat("Hh", 1f); cs.SetFloat("DtDx", 1f); cs.SetFloat("TestOmega", omega);
+            cs.SetTexture(kTestInit, "VelOut", velA); cs.SetTexture(kTestInit, "ScalOut", scalA);
+            Dispatch(kTestInit, Dims);
+            cs.SetTexture(kAdv, "Solid", levels[0].solid); cs.SetTexture(kMac, "Solid", levels[0].solid);
+            cs.SetFloat("MaskAdv", 0f); cs.SetFloat("MaskLim", 0f);
+            bool saved = UseBfecc;
+            for (int i = 0; i < steps; i++)
+            {
+                if (scheme == 0)
+                {
+                    cs.SetTexture(kAdv, "VelIn", velA);
+                    cs.SetTexture(kAdv, "Src", scalA); cs.SetTexture(kAdv, "Dst", scalB); cs.SetFloat("TraceSign", 1f);
+                    Dispatch(kAdv, Dims);
+                }
+                else
+                {
+                    UseBfecc = scheme == 2;
+                    Advect(scalA, scalB);
+                }
+                Swap(ref scalA, ref scalB);
+            }
+            UseBfecc = saved;
         }
 
         // Plain semi-Lagrangian: the texture coordinates only need to follow the flow.

@@ -63,6 +63,9 @@ namespace ArmorFragments
         public static float CaliberAmount(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.05f), SizeThinning), 0.1f, 1.4f); }
         public static float CaliberLoss(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.2f), -SizeCooling), 0.6f, 5f); }
         public static string LastProfileText = "no shot yet";      // how the last new cloud's cannon shaped its smoke (shown in the panel)
+        public static float MuzzleSparksStrength { get { return ArmorFragmentsPlugin.SmokeMuzzleSparks != null ? ArmorFragmentsPlugin.SmokeMuzzleSparks.Value : 1f; } }
+        public static float HeatHazeStrength { get { return ArmorFragmentsPlugin.SmokeHeatHaze != null ? ArmorFragmentsPlugin.SmokeHeatHaze.Value : 1f; } }
+        public static bool BfeccAdvection { get { return ArmorFragmentsPlugin.SmokeBfecc != null && ArmorFragmentsPlugin.SmokeBfecc.Value; } }
         public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
         public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.8f; } }
         private static void ReadBlastSettings()
@@ -273,6 +276,7 @@ namespace ArmorFragments
                         added.amount = CaliberAmount(c.scale) * profile.amount * Mathf.Sqrt(1f / (1f + 0.25f * burst));
                         added.size = profile.size; added.shock = profile.shock; added.brake = profile.brake;
                         c.shots.Add(added);
+                        EmitMuzzleBlast(cannon, tip, ex, c.scale, added.amount);
                         MuzzleFlash.Spawn(tip + ex * (1.2f * c.scale), c.scale, c.timeScale);
                         c.end = Mathf.Min(c.age + Lifetime * c.timeScale, MaxLifetime);
                         LastShot[id] = now;
@@ -325,6 +329,7 @@ namespace ArmorFragments
                 first.size = firstProfile.size; first.shock = firstProfile.shock; first.brake = firstProfile.brake;
                 LastProfileText = firstProfile.text;
                 cloud.shots.Add(first);
+                EmitMuzzleBlast(cannon, tip, ex, scale, first.amount);
                 MuzzleFlash.Spawn(tip + ex * (1.2f * scale), scale, size.timeScale);
                 cloud.cannonPart = cannon.PartScript;
                 RaycastHit ground;
@@ -371,6 +376,23 @@ namespace ArmorFragments
                 Enabled = false;
                 ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] fluid smoke failed and is now off: " + e);
             }
+        }
+
+        private static void EmitMuzzleBlast(CannonScript cannon, Vector3 tip, Vector3 forward, float scale, float amount)
+        {
+            try
+            {
+                Vector3 vehicle = cannon.PartScript != null && cannon.PartScript.Aircraft != null ? cannon.PartScript.Aircraft.Velocity : Vector3.zero;
+                bool brake = true;
+                if (cannon.PartScript != null)
+                    foreach (PartModifierData modifier in cannon.PartScript.Part.Modifiers)
+                    {
+                        CannonData data = modifier as CannonData;
+                        if (data != null) { brake = data.MuzzleBrake; break; }
+                    }
+                ImpactEffects.MuzzleBlast(tip + forward * (0.2f * scale), forward, vehicle, scale, amount, MuzzleSparksStrength, brake);
+            }
+            catch (System.Exception) { }
         }
 
         // Puts the box, and the matrix that takes world points into the box's own space, where the cloud is.
@@ -492,6 +514,11 @@ namespace ArmorFragments
                         m.SetVector("_OccDim", new Vector4(od.x, od.y, od.z, 0f));
                     }
                     m.SetFloat("_UseOcc", fast ? 1f : 0f);
+                    float haze = HeatHazeStrength;
+                    m.SetFloat("_Distort", haze > 0.01f && OpaqueTextureAvailable() ? haze : 0f);
+                    m.SetFloat("_SoftContact", ArmorFragmentsPlugin.SmokeSoftContact != null ? ArmorFragmentsPlugin.SmokeSoftContact.Value : 0.35f);
+                    m.SetFloat("_FogOn", ArmorFragmentsPlugin.SmokeFog == null || ArmorFragmentsPlugin.SmokeFog.Value ? 1f : 0f);
+                    c.sim.UseBfecc = BfeccAdvection;
                     m.SetFloat("_MultiScatter", ArmorFragmentsPlugin.SmokeMultiScatter != null ? ArmorFragmentsPlugin.SmokeMultiScatter.Value : 0.6f);
                     m.SetFloat("_LightEvery", fast ? 2f : 1f);
                     m.SetFloat("_ShowSolid", ShowSolid ? 1f : 0f);
@@ -527,8 +554,56 @@ namespace ArmorFragments
                     Active.RemoveAt(i);
                 }
             }
+            SortBoxes(cam);
             Watch.Stop();
             if (Active.Count > 0) { cpuMsSum += (float)Watch.Elapsed.TotalMilliseconds; cpuMsCount++; }
+        }
+
+        // Overlapping boxes (a cloud and its overflow, the bubble) are drawn from the farthest to the nearest: the order Unity picks by itself
+        // is by the distance of each box's middle, which is wrong for a small box inside a big one.
+        private static readonly List<KeyValuePair<float, Cloud>> SortList = new List<KeyValuePair<float, Cloud>>();
+        private static void SortBoxes(Camera cam)
+        {
+            if (cam == null || Active.Count < 2) return;
+            SortList.Clear();
+            foreach (Cloud c in Active)
+            {
+                if (c.boxRenderer == null) continue;
+                // the distance to the nearest point of the box, so that a big box that holds a small one is drawn first
+                Vector3 local = Quaternion.Inverse(c.rotation) * (cam.transform.position - c.origin);
+                Vector3 nearest = new Vector3(Mathf.Clamp(local.x, 0f, c.extent.x), Mathf.Clamp(local.y, 0f, c.extent.y), Mathf.Clamp(local.z, 0f, c.extent.z));
+                SortList.Add(new KeyValuePair<float, Cloud>((local - nearest).sqrMagnitude + 1e-3f * (c.extent.x + c.extent.y + c.extent.z), c));
+            }
+            SortList.Sort((a, b) => b.Key.CompareTo(a.Key));
+            for (int i = 0; i < SortList.Count; i++) SortList[i].Value.boxRenderer.sortingOrder = i;
+        }
+
+        // The scene's colour texture (made after the solid things are drawn), which the heat haze looks through. If the render pipeline does
+        // not make it, it is switched on while the haze is wanted and put back at the end.
+        private static bool opaqueChecked, opaqueAvailable, opaqueWasOff;
+        internal static bool OpaqueTextureAvailable()
+        {
+            if (opaqueChecked) return opaqueAvailable;
+            opaqueChecked = true;
+            try
+            {
+                UniversalRenderPipelineAsset asset = UniversalRenderPipeline.asset;
+                if (asset != null)
+                {
+                    if (!asset.supportsCameraOpaqueTexture)
+                    {
+                        asset.supportsCameraOpaqueTexture = true;
+                        opaqueWasOff = true;
+                        ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] the render pipeline does not make a colour texture; switched it on for the heat haze (put back when the mod unloads)");
+                    }
+                    opaqueAvailable = true;
+                }
+            }
+            catch (System.Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("[VFXBUNDLE] could not get the scene's colour texture for the heat haze: " + e.Message);
+            }
+            return opaqueAvailable;
         }
 
         private static bool RecentShot(Cloud c)
@@ -721,6 +796,13 @@ namespace ArmorFragments
             }
             Active.Clear();
             bubble = null;
+            try
+            {
+                UniversalRenderPipelineAsset asset = UniversalRenderPipeline.asset;
+                if (opaqueWasOff && asset != null) asset.supportsCameraOpaqueTexture = false;
+            }
+            catch (System.Exception) { }
+            opaqueChecked = false; opaqueAvailable = false; opaqueWasOff = false;
             ShutdownTerrain();
             MuzzleFlash.Shutdown();
             Wash.Shutdown();

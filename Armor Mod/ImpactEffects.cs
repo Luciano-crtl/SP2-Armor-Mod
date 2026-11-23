@@ -190,6 +190,64 @@ namespace ArmorFragments
 
         // ---- The pieces -------------------------------------------------------------------------------
 
+        // The fine matter of a muzzle blast: sparks and burning grains that fly forward (and out to the sides through a muzzle brake), slower
+        // embers that hang and drift, and dark flecks of soot. `size` is the calibre / 75 mm, `amount` how much this shot burns (0..1.4), `strength`
+        // the Smoke/MuzzleSparks setting; `vehicle` is the speed of the vehicle that fired.
+        public static void MuzzleBlast(Vector3 muzzle, Vector3 forward, Vector3 vehicle, float size, float amount, float strength, bool brake)
+        {
+            if (strength <= 0.01f || !EnsureSystems()) return;
+            float fine = Mathf.Clamp(0.5f + 0.5f * size, 0.5f, 2f);
+            int sparkCount = Mathf.Clamp(Mathf.RoundToInt((10f + 26f * Mathf.Sqrt(size)) * amount * strength), 0, 90);
+            ParticleSystemRenderer renderer = sparks.GetComponent<ParticleSystemRenderer>();
+            renderer.lengthScale = 2.2f;
+            Vector3 side = Vector3.Cross(forward, Vector3.up);
+            if (side.sqrMagnitude < 1e-3f) side = Vector3.right;
+            side.Normalize();
+            for (int i = 0; i < sparkCount; i++)
+            {
+                bool sideways = brake && Random.value < 0.3f;
+                Vector3 axis = sideways ? side * (Random.value < 0.5f ? 1f : -1f) + forward * 0.25f : forward;
+                Vector3 d = Scatter(axis.normalized, sideways ? 22f : 24f);
+                ParticleSystem.EmitParams e = new ParticleSystem.EmitParams
+                {
+                    position = muzzle + forward * 0.1f,
+                    velocity = vehicle + d * Random.Range(8f, 26f) * Mathf.Sqrt(fine),
+                    startSize = Random.Range(0.012f, 0.03f) * fine,
+                    startLifetime = Random.Range(0.25f, 0.8f),
+                    startColor = Color.Lerp(new Color(1f, 0.95f, 0.7f, 1f), new Color(1f, 0.55f, 0.15f, 1f), Random.value),
+                };
+                sparks.Emit(e, 1);
+            }
+            int emberCount = Mathf.Clamp(Mathf.RoundToInt((3f + 9f * Mathf.Sqrt(size)) * amount * strength), 0, 40);
+            for (int i = 0; i < emberCount; i++)
+            {
+                Vector3 d = Scatter(forward, 40f);
+                ParticleSystem.EmitParams e = new ParticleSystem.EmitParams
+                {
+                    position = muzzle + forward * Random.Range(0.1f, 0.6f * fine),
+                    velocity = vehicle + d * Random.Range(2f, 9f) * Mathf.Sqrt(fine),
+                    startSize = Random.Range(0.03f, 0.075f) * fine,
+                    startLifetime = Random.Range(0.7f, 2.0f),
+                    startColor = Color.Lerp(new Color(1f, 0.8f, 0.35f, 1f), new Color(1f, 0.45f, 0.12f, 1f), Random.value),
+                };
+                embers.Emit(e, 1);
+            }
+            int fleckCount = Mathf.Clamp(Mathf.RoundToInt((4f + 12f * Mathf.Sqrt(size)) * amount * strength), 0, 50);
+            for (int i = 0; i < fleckCount; i++)
+            {
+                Vector3 d = Scatter(forward, 50f);
+                ParticleSystem.EmitParams e = new ParticleSystem.EmitParams
+                {
+                    position = muzzle + forward * Random.Range(0.1f, 0.5f * fine),
+                    velocity = vehicle + d * Random.Range(3f, 14f) * Mathf.Sqrt(fine),
+                    startSize = Random.Range(0.03f, 0.09f) * fine,
+                    startLifetime = Random.Range(0.8f, 2.2f),
+                    startColor = new Color(0.06f, 0.055f, 0.05f, Random.Range(0.35f, 0.7f)),
+                };
+                smoke.Emit(e, 1);
+            }
+        }
+
         private static Vector3 Scatter(Vector3 axis, float coneDegrees)
         {
             Vector3 random = Random.onUnitSphere;

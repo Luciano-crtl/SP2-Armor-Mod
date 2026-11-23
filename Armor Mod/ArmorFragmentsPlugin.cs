@@ -65,6 +65,11 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeHeatCooling;        // local: how fast the residual heat is lost (per second)
         internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
         internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
+        internal static ConfigEntry<float> SmokeMuzzleSparks;       // local: sparks, embers and flecks of soot at the muzzle
+        internal static ConfigEntry<float> SmokeHeatHaze;           // local: the shimmer of hot air
+        internal static ConfigEntry<float> SmokeSoftContact;        // local: smoke fades out near surfaces (m)
+        internal static ConfigEntry<bool> SmokeFog;                 // local: the scene's fog hides the smoke too
+        internal static ConfigEntry<bool> SmokeBfecc;               // local: BFECC advection instead of MacCormack
         internal static ConfigEntry<float> SmokeCannonProfile;      // local: how much the cannon's own settings shape its smoke
         internal static ConfigEntry<float> SmokeSizeThinning;       // local: how much thinner a small gun's smoke is (exponent of calibre / 75 mm)
         internal static ConfigEntry<float> SmokeSizeCooling;        // local: how much faster a small gun's smoke loses its heat and thins out
@@ -368,6 +373,19 @@ namespace ArmorFragments
             SmokeTurbulence = Config.Bind("Smoke", "Turbulence", 0.2f,
                 new ConfigDescription("Cannon smoke: a weak, endless swirling of the air in the whole box (m/s^2), so the smoke keeps rolling and billowing in calm weather instead of freezing. 0 = perfectly still air.",
                     new AcceptableValueRange<float>(0f, 1f)));
+            SmokeMuzzleSparks = Config.Bind("Smoke", "MuzzleSparks", 1f,
+                new ConfigDescription("Cannon smoke: sparks and burning grains thrown out of the muzzle, slower embers that drift, and dark flecks of soot. 0 for none, 2 for twice as many. Applies to the next shot.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            SmokeHeatHaze = Config.Bind("Smoke", "HeatHaze", 1f,
+                new ConfigDescription("Cannon smoke: the shimmer of hot air behind the muzzle, which bends the picture of what is behind it. 0 for none. It needs the game's colour texture; the mod switches it on if it is off (the log says so).",
+                    new AcceptableValueRange<float>(0f, 3f)));
+            SmokeSoftContact = Config.Bind("Smoke", "SoftContact", 0.35f,
+                new ConfigDescription("Cannon smoke: the distance (m) over which smoke fades out before it meets the ground or a wall, instead of ending in a hard line. 0 for a hard edge.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            SmokeFog = Config.Bind("Smoke", "Fog", true,
+                "Cannon smoke: the scene's fog (if it has any) hides distant smoke as it does everything else.");
+            SmokeBfecc = Config.Bind("Smoke", "BfeccAdvection", false,
+                "Cannon smoke: BFECC advection instead of MacCormack. In the lab: 12 to 30% less error in a standard test and a slightly softer picture, for 10% more time per step (the two advections cost 40% more).");
             SmokeCannonProfile = Config.Bind("Smoke", "CannonProfile", 1f,
                 new ConfigDescription("Cannon smoke: how much the cannon's own settings shape its smoke on top of its calibre: the energy at the muzzle (projectile mass and velocity: more smoke, harder jets, a bigger fireball), the length of the barrel in calibres (a short barrel has a bigger flash and a stronger blast), the muzzle brake (plumes to the sides, a weaker jet ahead) and the flash scale. 0 = only the calibre counts, 1 = normal, 2 = twice as strong. Applies to the next shot.",
                     new AcceptableValueRange<float>(0f, 2f)));

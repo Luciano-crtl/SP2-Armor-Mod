@@ -679,6 +679,16 @@ namespace ArmorFragments.UI
                 "How hot the propellant smoke is after the flame (0 to 0.35). Applies to the next shot.", 0.025f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeTurbulence, "Background turbulence",
                 "A weak endless swirling of the air so the smoke keeps billowing in calm weather. 0 = still air.", 0.025f, " m/s2");
+            FloatSetting(ArmorFragmentsPlugin.SmokeMuzzleSparks, "Sparks, embers and soot flecks",
+                "Sparks and burning grains out of the muzzle, slower embers and dark flecks of soot. 0 for none. Applies to the next shot.", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.SmokeHeatHaze, "Heat haze",
+                "The shimmer of hot air behind the muzzle. 0 for none. Uses the game's colour texture (switched on by the mod if needed).", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.SmokeSoftContact, "Soft contact",
+                "The distance over which smoke fades out before it meets a surface.", 0.05f, " m");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeFog, "Scene fog hides the smoke",
+                "The scene's own fog also hides distant smoke.");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeBfecc, "BFECC advection (experimental)",
+                "BFECC instead of MacCormack for the movement of smoke and air: a little more accurate and softer, about 10% more time per step.");
             FloatSetting(ArmorFragmentsPlugin.SmokeCannonProfile, "Cannon settings shape the smoke",
                 "How much the cannon's own settings (energy at the muzzle, barrel length, muzzle brake, flash scale) shape its smoke on top of its calibre. 0 = only the calibre, 1 = normal, 2 = twice as strong. Applies to the next shot.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeSizeThinning, "Small guns: thinner smoke",
