@@ -93,7 +93,7 @@ namespace ArmorFragments.Fluid
         private readonly ComputeShader cs;
         private readonly List<Level> levels = new List<Level>();
         private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel, solidPrev;
-        public static int DisplacePasses = 8;        // how far (in cells) the smoke of a covered cell can be handed on in one frame
+        public static int DisplacePasses = 5;        // how far (in cells) the smoke of a covered cell can be handed on in one frame
         public static bool DisplaceSmoke = true;     // the smoke a solid moves into is pushed aside, not deleted
         public static int MaskMode = 0;     // 1 = leave solid cells out of the advection read, 2 = and out of the limiter (experiments)
         private ComputeBuffer blobBuffer, shapeBuffer, planeBuffer;

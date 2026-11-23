@@ -61,8 +61,8 @@ namespace ArmorFragments
         public static bool Auto = true;
         private static int autoLevel;                  // what the automatic mode currently allows
         private const float BaseCell = 0.125f;
-        public static readonly int[] CellBudget = { 400000, 170000, 60000 };   // most cells a cloud of each quality may have
-        private static readonly Vector3 BaseExtent = new Vector3(12f, 7f, 7f);  // metres, for a 75 mm gun
+        public static readonly int[] CellBudget = { 450000, 200000, 70000 };   // most cells a cloud of each quality may have
+        private static readonly Vector3 BaseExtent = new Vector3(18f, 9f, 9f);  // metres, for a 75 mm gun
 
         // How big a cloud for this gun is: the box, its cells, and how quickly things happen.
         private struct Sizing
@@ -580,7 +580,7 @@ namespace ArmorFragments
         private static readonly List<Vector4> PlaneBuffer = new List<Vector4>(1024);
         private static readonly Dictionary<Mesh, Vector4[]> HullPlanes = new Dictionary<Mesh, Vector4[]>();      // null value = not a usable convex hull
         private const int MaxPlanesPerShape = 64;
-        private const int MaxShapes = 128;
+        private const int MaxShapes = 256;
 
         // The solid things inside the box: the parts of vehicles (the shooter's own too, except its cannon) and the ground. Each is a box,
         // an ellipsoid or a half-space in the box's own space (see Fluid.compute).
@@ -618,7 +618,12 @@ namespace ArmorFragments
                 c.partsSeen++;
                 if (part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
                 if (col.GetComponentInParent<CannonProjectileScript>() != null) continue;
-                Candidates.Add(new KeyValuePair<float, int>((col.bounds.center - near).sqrMagnitude, i));
+                // The parts that matter most come first: big ones and ones near the muzzle (the distance from the surface of the part's box,
+                // less half its size). Specks smaller than a cell of the box do not matter to the gas at all.
+                Bounds bb = col.bounds;
+                float size = bb.size.magnitude;
+                if (size < c.sim.Cell) continue;
+                Candidates.Add(new KeyValuePair<float, int>(Mathf.Sqrt(bb.SqrDistance(near)) - 0.5f * size, i));
             }
             Candidates.Sort((a, b) => a.Key.CompareTo(b.Key));
             for (int k = 0; k < Candidates.Count && ShapeBuffer.Count < MaxShapes; k++)
