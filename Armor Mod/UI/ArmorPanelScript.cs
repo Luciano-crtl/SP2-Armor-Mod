@@ -643,6 +643,7 @@ namespace ArmorFragments.UI
                 new KeyValuePair<string, Action>("Clear rays", ClearRays),
                 // RELEASE-STRIP-BEGIN
                 new KeyValuePair<string, Action>("Camera diagnostic", CameraDiagnostic.Run),
+                new KeyValuePair<string, Action>("Test: effect bundle", VfxBundleTest.Spawn),
                 // RELEASE-STRIP-END
             });
         }

@@ -57,6 +57,10 @@
 			<HintPath>$(ManagedDir)\UnityEngine.ParticleSystemModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
+		<Reference Include="UnityEngine.AssetBundleModule">
+			<HintPath>$(ManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
 		<!-- Fuselage section sizes (per-face armor) -->
 		<Reference Include="Unity.Mathematics">
 			<HintPath>$(ManagedDir)\Unity.Mathematics.dll</HintPath>
