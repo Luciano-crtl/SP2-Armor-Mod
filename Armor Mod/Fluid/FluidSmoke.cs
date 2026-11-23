@@ -7,6 +7,8 @@ using Assets.Scripts.Craft.Parts.Modifiers;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
 using Assets.Scripts.Environment.Wind;
 using HarmonyLib;
+using Unity.Collections;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 
@@ -24,20 +26,24 @@ namespace ArmorFragments
 
     // The smoke of a cannon shot as a real fluid: every shot starts a small GPU simulation of the hot gas bursting out of the barrel
     // (FluidSim, the compute shader Fluid.compute in the effect bundle). It is drawn by the ray-marching shader (SmokeVolume) on a box
-    // that lies along the barrel. A cloud lives about 4 seconds, then its memory goes back to a pool.
+    // that lies along the barrel. A cloud lives about 9 seconds (a little more for big guns), then its memory goes back to a pool.
     //
-    // The box is fixed to the world where the shot happened (the vehicle drives away from the smoke) and drifts with the wind there.
+    // The box fits the gun: its size, the size of its cells and the time scale follow the calibre (a small gun gets a small, fine, cheap box).
+    // The box stays where the shot happened. The wind of the game acts on the gas inside it (a different wind in every part of the box, gusts
+    // and the shelter of vehicles included, see FluidSim.SetWind); once the shot is over the box also drifts with most of the mean wind so
+    // the smoke does not simply leave it.
     // A second shot from the same place while the cloud is young adds to the same cloud (rapid fire makes one dense cloud, not many).
     //
     // Cost control: three quality levels (cell count and ray steps), chosen by distance and, in the automatic mode, by the frame time.
     internal static class FluidSmoke
     {
         public static bool Enabled = true;
-        public static int MaxActive = 3;               // simulations running at once
+        public static int MaxActive = 4;               // simulations running at once
         public static float MinInterval = 0.1f;        // seconds between the shots one cannon adds
-        public static float Lifetime = 4f;
-        public static float MaxLifetime = 8f;
-        public static float FadeSeconds = 0.8f;
+        public static float Lifetime = 9f;             // seconds, for a 75 mm gun (scaled by the gun's time scale)
+        public static float MaxLifetime = 16f;
+        public static float FadeSeconds = 2.2f;
+        public static float DriftShare = 0.7f;         // how much of the mean wind the box drifts with once the shot is over
         public static float MaxCameraDistance = 400f;  // farther than this: no cloud
         public static float MergeSeconds = 1.2f;       // a shot this soon after a cloud began, inside its box, joins it
 
@@ -53,10 +59,44 @@ namespace ArmorFragments
         public static bool Auto = true;
         private static int autoLevel;                  // what the automatic mode currently allows
         private const float BaseCell = 0.125f;
+        public static readonly int[] CellBudget = { 400000, 170000, 60000 };   // most cells a cloud of each quality may have
+        private static readonly Vector3 BaseExtent = new Vector3(12f, 7f, 7f);  // metres, for a 75 mm gun
+
+        // How big a cloud for this gun is: the box, its cells, and how quickly things happen.
+        private struct Sizing
+        {
+            public float scale;             // caliber / 75 mm (clamped): the size of the blast
+            public float timeScale;         // scale^0.3: bigger blasts last a little longer and move a little faster
+            public Vector3Int dims;
+            public float cell;
+            public Vector3 extent;
+        }
+
+        private static Sizing SizeFor(float caliberMm, int level)
+        {
+            Sizing z = new Sizing();
+            z.scale = Mathf.Clamp(caliberMm / 75f, 0.2f, 3.5f);
+            z.timeScale = Mathf.Pow(z.scale, 0.3f);
+            Vector3 target = BaseExtent * z.scale;
+            float h = BaseCell * Mathf.Sqrt(z.scale) * Levels[level].cellMultiplier;
+            Vector3Int d;
+            while (true)
+            {
+                d = new Vector3Int(RoundUp8(target.x / h), RoundUp8(target.y / h), RoundUp8(target.z / h));
+                if ((long)d.x * d.y * d.z <= CellBudget[level]) break;
+                h *= 1.06f;
+            }
+            z.dims = d;
+            z.cell = h;
+            z.extent = new Vector3(d.x, d.y, d.z) * h;
+            return z;
+        }
+
+        private static int RoundUp8(float cells) { return Mathf.Max(24, Mathf.CeilToInt(cells / 8f) * 8); }
 
         private struct Shot
         {
-            public Vector3 muzzle;           // in the box's space
+            public Vector3 muzzleWorld;      // where the muzzle was: the sources stay there while the box may drift
             public float start;
             public bool hasDust;
             public Vector3 dustWorld;        // where the blast meets the ground
@@ -72,18 +112,22 @@ namespace ArmorFragments
             public Vector3 origin;          // world position of the box corner
             public Quaternion rotation;     // box axes -> world
             public Vector3 extent;
-            public float scale;
+            public float scale, timeScale;
             public float age;
             public float end;
+            public Vector3 drift;            // world velocity of the box
+            public float accumulated;        // time not simulated yet (old clouds step every other frame)
+            public int frameCounter;
             public readonly List<Shot> shots = new List<Shot>();
             public PartScript cannonPart;    // its own colliders do not block its smoke
             public bool hasGround;
-            public Vector3 gridVelocity;     // the wind that carries the box (world m/s): things that stand still move against it
             public Vector3 groundPoint, groundNormal;
         }
 
         private static readonly List<Cloud> Active = new List<Cloud>();
-        private static readonly Stack<FluidSim>[] Pools = { new Stack<FluidSim>(), new Stack<FluidSim>(), new Stack<FluidSim>() };
+        private static readonly Dictionary<Vector3Int, Stack<FluidSim>> Pools = new Dictionary<Vector3Int, Stack<FluidSim>>();
+        private static NativeArray<float3> windPositions, windResults;
+        private static readonly Vector3[] AmbientBuffer = new Vector3[64];
         private static readonly Dictionary<int, float> LastShot = new Dictionary<int, float>();
         private static Mesh boxMesh;
         private static Driver driver;
@@ -149,8 +193,8 @@ namespace ArmorFragments
                                   && local.x < c.extent.x - margin && local.y < c.extent.y - margin && local.z < c.extent.z - margin;
                     if (inside && Vector3.Dot(ex, c.rotation * Vector3.right) > 0.8f)
                     {
-                        c.shots.Add(MakeShot(local, c.age, tip, ex, c.scale, cannon));
-                        c.end = Mathf.Min(c.age + Lifetime, MaxLifetime);
+                        c.shots.Add(MakeShot(tip, c.age, ex, c.scale, cannon));
+                        c.end = Mathf.Min(c.age + Lifetime * c.timeScale, MaxLifetime);
                         LastShot[id] = now;
                         return;
                     }
@@ -162,8 +206,8 @@ namespace ArmorFragments
                 int level = LevelFor(distance);
                 QualityLevel q = Levels[level];
                 float caliber = CaliberMillimeters(cannon);
-                float scale = Mathf.Clamp(caliber / 75f, 0.5f, 2f);
-                float cell = BaseCell * scale * q.cellMultiplier;
+                Sizing size = SizeFor(caliber, level);
+                float scale = size.scale, cell = size.cell;
 
                 // The box's axes: x along the barrel, y as close to "up" as it can be, z across.
                 Vector3 ey = Vector3.up - Vector3.Dot(Vector3.up, ex) * ex;
@@ -172,18 +216,20 @@ namespace ArmorFragments
                 Vector3 ez = Vector3.Cross(ex, ey);
                 Quaternion rot = Quaternion.LookRotation(ez, ey);
 
-                Vector3 extent = new Vector3(q.nx, q.ny, q.nz) * cell;
+                Vector3 extent = size.extent;
                 Vector3 muzzleLocal = new Vector3(1.6f * scale, extent.y * 0.5f, extent.z * 0.5f);
                 Vector3 origin = tip - rot * muzzleLocal;
 
-                FluidSim sim = Pools[level].Count > 0 ? Pools[level].Pop() : new FluidSim(cs, q.nx, q.ny, q.nz, cell);
+                Stack<FluidSim> pool;
+                FluidSim sim = Pools.TryGetValue(size.dims, out pool) && pool.Count > 0 ? pool.Pop() : new FluidSim(cs, size.dims.x, size.dims.y, size.dims.z, cell);
                 sim.Cell = cell;
                 sim.Clear();
                 sim.Params.cycles = q.cycles;
+                sim.Params.edgeMeters = Mathf.Clamp(0.9f * scale, 0.4f, 2.5f);
                 sim.CoarseSweeps = 10;
 
-                Cloud cloud = new Cloud { level = level, sim = sim, origin = origin, rotation = rot, extent = extent, scale = scale, end = Lifetime };
-                cloud.shots.Add(MakeShot(muzzleLocal, 0f, tip, ex, scale, cannon));
+                Cloud cloud = new Cloud { level = level, sim = sim, origin = origin, rotation = rot, extent = extent, scale = scale, timeScale = size.timeScale, end = Lifetime * size.timeScale };
+                cloud.shots.Add(MakeShot(tip, 0f, ex, scale, cannon));
                 cloud.cannonPart = cannon.PartScript;
                 RaycastHit ground;
                 if (FindGround(tip + ex * 1.5f * scale, cannon.PartScript, out ground))
@@ -219,7 +265,8 @@ namespace ArmorFragments
                     loggedFirst = true;
                     ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] first fluid smoke: caliber " + caliber.ToString("F0") + " mm, quality " + q.name + ", box "
                         + extent.x.ToString("F1") + " x " + extent.y.ToString("F1") + " x " + extent.z.ToString("F1") + " m, cells of "
-                        + (cell * 100f).ToString("F1") + " cm, " + (q.nx * q.ny * q.nz) + " cells");
+                        + (cell * 100f).ToString("F1") + " cm, " + size.dims.x + " x " + size.dims.y + " x " + size.dims.z + " = " + (size.dims.x * size.dims.y * size.dims.z)
+                        + " cells, lives " + cloud.end.ToString("F1") + " s");
                 }
             }
             catch (System.Exception e)
@@ -257,25 +304,39 @@ namespace ArmorFragments
                     {
                         // Gravity in the box's axes; the blast slows fast, then the smoke drifts.
                         c.sim.Params.buoyDir = Quaternion.Inverse(c.rotation) * Vector3.up;
-                        c.sim.Params.drag = c.age < 0.3f ? 7f : 1.5f;
-                        if (wind != null) c.gridVelocity = wind.QueryWindVelocity(c.origin + c.rotation * (c.extent * 0.5f));
+                        c.sim.Params.drag = c.age < 0.3f * c.timeScale ? 7f / c.timeScale : 1.5f;
+                        UpdateWind(c, wind, frame);
                         c.sim.SetObstacles(Obstacles(c));
 
-                        bool violent = RecentShot(c);
-                        int substeps = violent ? Mathf.Clamp(Mathf.CeilToInt(frame / 0.006f), 1, 3) : 1;
-                        float dt = frame / substeps;
-                        for (int s = 0; s < substeps; s++)
+                        // A cloud past the middle of its life changes slowly: it is stepped every other frame, twice as long.
+                        float step = frame;
+                        bool run = true;
+                        if (c.age > 0.45f * c.end)
                         {
-                            List<FluidSim.Blob> blobs = Blobs(c, c.age + dt * s);
-                            if (blobs.Count > 0) c.sim.AddBlobs(blobs);
-                            c.sim.Step(dt);
+                            c.accumulated += frame;
+                            c.frameCounter++;
+                            run = (c.frameCounter & 1) == 0;
+                            step = c.accumulated;
+                            if (run) c.accumulated = 0f;
+                        }
+                        if (run)
+                        {
+                            bool violent = RecentShot(c);
+                            int substeps = violent ? Mathf.Clamp(Mathf.CeilToInt(step / 0.006f), 1, 3) : 1;
+                            float dt = step / substeps;
+                            for (int sub = 0; sub < substeps; sub++)
+                            {
+                                List<FluidSim.Blob> blobs = Blobs(c, c.age + dt * sub);
+                                if (blobs.Count > 0) c.sim.AddBlobs(blobs);
+                                c.sim.Step(dt);
+                            }
                         }
                         c.age += frame;
 
-                        // The wind carries the whole box.
-                        if (wind != null)
+                        // Once the shot is over the box drifts with the wind (the smoke inside it moves with the box).
+                        if (wind != null && c.drift.sqrMagnitude > 1e-6f)
                         {
-                            c.origin += c.gridVelocity * frame;
+                            c.origin += c.drift * frame;
                             Place(c);
                         }
                     }
@@ -286,7 +347,7 @@ namespace ArmorFragments
                     m.SetTexture("_PhiB", c.sim.PhiB);
                     Vector2 w = c.sim.PhiWeights;
                     m.SetVector("_PhiWeights", new Vector4(w.x, w.y, 0f, 0f));
-                    m.SetFloat("_Fade", Mathf.Clamp01((c.end - c.age) / FadeSeconds));
+                    m.SetFloat("_Fade", Mathf.Clamp01((c.end - c.age) / (FadeSeconds * c.timeScale)));
                     // Fewer ray steps for far clouds.
                     float distance = cam != null ? (cam.transform.position - c.box.transform.position).magnitude : 0f;
                     m.SetFloat("_Steps", Levels[c.level].steps * (distance > 120f ? 0.75f : 1f));
@@ -310,43 +371,80 @@ namespace ArmorFragments
         }
 
         // The sources, in the box's axes, for every shot of the cloud: a hot fireball bursting forward, then the smoke that keeps coming out.
+        // The muzzle stays where it was in the world; the box may drift away from it.
         private static List<FluidSim.Blob> Blobs(Cloud c, float now)
         {
             List<FluidSim.Blob> list = new List<FluidSim.Blob>();
-            float s = c.scale;
+            float s = c.scale, T = c.timeScale;
+            Quaternion inverse = Quaternion.Inverse(c.rotation);
             foreach (Shot shot in c.shots)
             {
                 float t = now - shot.start;
                 if (t < 0f) continue;
-                if (t < 0.12f)
+                Vector3 muzzle = inverse * (shot.muzzleWorld - c.origin);
+                float fire = 0.12f * T, smoke = 1.2f * T, dust = 0.35f * T;
+                if (t < fire)
                 {
-                    float fade = 1f - t / 0.12f;
+                    float fade = 1f - t / fire;
                     for (int k = 0; k < 4; k++)
-                        list.Add(new FluidSim.Blob { center = shot.muzzle + new Vector3((0.7f + 0.9f * k) * s, 0, 0), radius = (0.9f + 0.25f * k) * s, rho = 0.9f, temp = 1f,
-                                                     vel = new Vector3(14f * fade, 0, 0), radial = 10f * fade, noise = 0.15f, falloff = 1.3f,
-                                                     swirl = 6f * fade, swirlFreq = 0.9f / s });
+                        list.Add(new FluidSim.Blob { center = muzzle + new Vector3((0.7f + 0.9f * k) * s, 0, 0), radius = (0.9f + 0.25f * k) * s, rho = 0.9f, temp = 1f,
+                                                     vel = new Vector3(14f * T * fade, 0, 0), radial = 10f * T * fade, noise = 0.15f, falloff = 1.3f,
+                                                     swirl = 6f * T * fade, swirlFreq = 0.9f / s });
                 }
-                if (t < 0.8f)
+                if (t < smoke)
                 {
-                    float fade = 1f - t / 0.8f;
-                    list.Add(new FluidSim.Blob { center = shot.muzzle + new Vector3(0.9f * s, 0, 0), radius = 1.3f * s, rho = 1.0f * fade, temp = 0.3f * fade,
-                                                 vel = new Vector3(4f * fade, 0, 0), radial = 1.0f, noise = 0.15f, falloff = 1.1f,
-                                                 swirl = 3f * fade, swirlFreq = 0.7f / s });
+                    // The propellant smoke keeps coming out for a while: dense, so that it stays opaque as it spreads.
+                    float fade = 1f - t / smoke;
+                    list.Add(new FluidSim.Blob { center = muzzle + new Vector3(0.9f * s, 0, 0), radius = 1.3f * s, rho = 1.7f * fade, temp = 0.3f * fade,
+                                                 vel = new Vector3(4f * T * fade, 0, 0), radial = 1.0f * T, noise = 0.15f, falloff = 1.1f,
+                                                 swirl = 3f * T * fade, swirlFreq = 0.7f / s });
                 }
-                // The blast throws dust up where it meets the ground (the point is kept in the world, the box moves with the wind).
-                if (shot.hasDust && t < 0.35f)
+                // The blast throws dust up where it meets the ground (the point is kept in the world).
+                if (shot.hasDust && t < dust)
                 {
-                    float fade = 1f - t / 0.35f;
-                    Quaternion inverse = Quaternion.Inverse(c.rotation);
+                    float fade = 1f - t / dust;
                     Vector3 foot = inverse * (shot.dustWorld - c.origin);
                     Vector3 up = inverse * c.groundNormal;
                     Vector3 along = new Vector3(1f, 0f, 0f);
                     list.Add(new FluidSim.Blob { center = foot + up * (0.3f * s), radius = 1.7f * s, rho = 0f, temp = 0.05f, dust = shot.dustAmount,
-                                                 vel = (up * 3f + along * 2f) * fade, radial = 7f * fade, noise = 0.25f, falloff = 1.1f,
-                                                 swirl = 5f * fade, swirlFreq = 0.9f / s });
+                                                 vel = (up * 3f + along * 2f) * T * fade, radial = 7f * T * fade, noise = 0.25f, falloff = 1.1f,
+                                                 swirl = 5f * T * fade, swirlFreq = 0.9f / s });
                 }
             }
             return list;
+        }
+
+        // The wind of the game over the box, as the air the gas is pulled toward. It is asked on a 4 x 4 x 4 lattice (so it can differ from
+        // one end of the box to the other: gusts, turbulence, thermals, the lee of a hill) and given to the solver in the box's space,
+        // minus the velocity the box itself drifts at. The drift starts when the shot is over and follows most of the mean wind.
+        private static void UpdateWind(Cloud c, WindQueryManager wind, float frame)
+        {
+            if (wind == null) { c.sim.NoWind(); return; }
+            if (!windPositions.IsCreated)
+            {
+                windPositions = new NativeArray<float3>(64, Allocator.Persistent);
+                windResults = new NativeArray<float3>(64, Allocator.Persistent);
+            }
+            for (int i = 0; i < 64; i++)
+            {
+                Vector3 fraction = new Vector3(((i & 3) + 0.5f) / 4f, (((i >> 2) & 3) + 0.5f) / 4f, ((i >> 4) + 0.5f) / 4f);
+                Vector3 world = c.origin + c.rotation * Vector3.Scale(c.extent, fraction);
+                windPositions[i] = world;
+            }
+            wind.QueryWindVelocity(windPositions, windResults);
+
+            Vector3 mean = Vector3.zero;
+            for (int i = 0; i < 64; i++) mean += new Vector3(windResults[i].x, windResults[i].y, windResults[i].z);
+            mean /= 64f;
+
+            float ramp = Mathf.SmoothStep(0f, 1f, (c.age - 1.0f * c.timeScale) / (0.8f * c.timeScale));
+            Vector3 target = mean * (DriftShare * ramp);
+            c.drift = Vector3.Lerp(c.drift, target, 1f - Mathf.Exp(-frame / 0.4f));
+
+            Quaternion toGrid = Quaternion.Inverse(c.rotation);
+            for (int i = 0; i < 64; i++)
+                AmbientBuffer[i] = toGrid * (new Vector3(windResults[i].x, windResults[i].y, windResults[i].z) - c.drift);
+            c.sim.SetWind(AmbientBuffer);
         }
 
         // Frame time with and without clouds. In the automatic mode, a slow frame while clouds run lowers the quality of the NEXT clouds;
@@ -395,11 +493,28 @@ namespace ArmorFragments
             }
         }
 
+        // A finished simulation waits for the next shot of the same size; only a few are kept, so memory does not pile up.
+        private const int MaxPooled = 5;
+        private static void ReturnToPool(FluidSim sim)
+        {
+            Stack<FluidSim> pool;
+            if (!Pools.TryGetValue(sim.Dims, out pool)) Pools[sim.Dims] = pool = new Stack<FluidSim>();
+            pool.Push(sim);
+            int total = 0;
+            foreach (Stack<FluidSim> p in Pools.Values) total += p.Count;
+            if (total > MaxPooled)
+            {
+                // Throw away one of another size, or an extra of this one.
+                foreach (KeyValuePair<Vector3Int, Stack<FluidSim>> pair in Pools)
+                    if (pair.Value.Count > 0 && (pair.Key != sim.Dims || pair.Value.Count > 1)) { pair.Value.Pop().Dispose(); break; }
+            }
+        }
+
         private static void Retire(Cloud c)
         {
             if (c.box != null) Object.Destroy(c.box);
             if (c.material != null) Object.Destroy(c.material);
-            if (c.sim != null) Pools[c.level].Push(c.sim);
+            if (c.sim != null) ReturnToPool(c.sim);
             c.sim = null;
         }
 
@@ -412,7 +527,10 @@ namespace ArmorFragments
                 if (c.sim != null) c.sim.Dispose();
             }
             Active.Clear();
-            foreach (Stack<FluidSim> pool in Pools) while (pool.Count > 0) pool.Pop().Dispose();
+            foreach (Stack<FluidSim> pool in Pools.Values) while (pool.Count > 0) pool.Pop().Dispose();
+            Pools.Clear();
+            if (windPositions.IsCreated) windPositions.Dispose();
+            if (windResults.IsCreated) windResults.Dispose();
             LastShot.Clear();
             if (driver != null) Object.Destroy(driver.gameObject);
             driver = null;
@@ -455,7 +573,7 @@ namespace ArmorFragments
                 {
                     Matrix4x4 plane = Matrix4x4.TRS(c.groundPoint, Quaternion.FromToRotation(Vector3.up, c.groundNormal), Vector3.one);
                     // The ground stands still in the world, so it slides under the box at the wind's speed.
-                    ShapeBuffer.Add(FluidSim.Shape.Make(plane.inverse * gridToWorld, Vector3.one, 2, toGrid * (-c.gridVelocity), Vector3.zero, Vector3.zero));
+                    ShapeBuffer.Add(FluidSim.Shape.Make(plane.inverse * gridToWorld, Vector3.one, 2, toGrid * (-c.drift), Vector3.zero, Vector3.zero));
                 }
             }
 
@@ -516,7 +634,7 @@ namespace ArmorFragments
             // How the part moves: its velocity at the middle of the shape and its spin, in the box's space, relative to the box (which drifts
             // with the wind). The tank driving toward the gas pushes it; one standing still makes the wind blow around it.
             Vector3 centerWorld = m.GetColumn(3);
-            Vector3 velocity = -c.gridVelocity, spin = Vector3.zero;
+            Vector3 velocity = -c.drift, spin = Vector3.zero;
             Assets.Scripts.Craft.IRigidBody body = part.Body != null ? part.Body.RigidBody : null;
             if (body != null && !body.IsDead)
             {
@@ -544,9 +662,9 @@ namespace ArmorFragments
         }
 
         // One shot: its muzzle in the box's space, and where its blast meets the ground (if the ground is close).
-        private static Shot MakeShot(Vector3 muzzleLocal, float start, Vector3 tip, Vector3 forward, float scale, CannonScript cannon)
+        private static Shot MakeShot(Vector3 tip, float start, Vector3 forward, float scale, CannonScript cannon)
         {
-            Shot shot = new Shot { muzzle = muzzleLocal, start = start };
+            Shot shot = new Shot { muzzleWorld = tip, start = start };
             RaycastHit hit;
             // The blast reaches the ground just ahead of and below the muzzle.
             Vector3 aim = tip + forward * 2.6f * scale;

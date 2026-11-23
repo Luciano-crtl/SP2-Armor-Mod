@@ -59,12 +59,13 @@ namespace ArmorFragments.Fluid
             public float drag;             // per second
             public float edgeMeters;       // thickness of the absorbing edge
             public int cycles;             // multigrid cycles per step
+            public float windFollow;       // per second: how fast the gas is pulled toward the ambient wind (0 = no wind)
             public static Settings Default
             {
                 get
                 {
                     return new Settings { buoyDir = Vector3.up, buoyancy = 0.6f, weight = 0f, vorticity = 1.2f, cool = 1.7f,
-                                          dissipate = 0.08f, drag = 0.15f, edgeMeters = 1.0f, cycles = 2 };
+                                          dissipate = 0.04f, drag = 0.15f, edgeMeters = 1.0f, cycles = 2, windFollow = 1.2f };
                 }
             }
         }
@@ -85,13 +86,16 @@ namespace ArmorFragments.Fluid
         private readonly List<Level> levels = new List<Level>();
         private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel;
         private ComputeBuffer blobBuffer, shapeBuffer;
+        private Texture3D windTexture;      // 4 x 4 x 4 ambient velocities over the box
+        private readonly Color[] windColors = new Color[64];
+        private bool windSet;
         private int shapeCapacity;
         private bool hadShapes;
         private int blobCapacity;
         private int seed = 1;
         private bool disposed;
 
-        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict;
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind;
 
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
@@ -121,7 +125,7 @@ namespace ArmorFragments.Fluid
             kDivergence = cs.FindKernel("Divergence"); kSmooth = cs.FindKernel("Smooth"); kResidual = cs.FindKernel("Residual");
             kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
             kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
-            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict");
+            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kWind = cs.FindKernel("ApplyWind");
 
             velA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             scalA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); scalB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
@@ -177,6 +181,7 @@ namespace ArmorFragments.Fluid
                 if (rt != null) rt.Release();
             foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); L.solid.Release(); }
             if (shapeBuffer != null) shapeBuffer.Release();
+            if (windTexture != null) { if (Application.isPlaying) UnityEngine.Object.Destroy(windTexture); else UnityEngine.Object.DestroyImmediate(windTexture); }
             if (blobBuffer != null) blobBuffer.Release();
         }
 
@@ -242,6 +247,25 @@ namespace ArmorFragments.Fluid
             }
         }
 
+        // The ambient wind over the box: 64 velocities (m/s) on a 4 x 4 x 4 lattice, x fastest, in the box's space. Call every frame (the wind
+        // changes); the gas is pulled toward it by Params.windFollow.
+        public void SetWind(Vector3[] ambient)
+        {
+            if (windTexture == null)
+            {
+                windTexture = new Texture3D(4, 4, 4, TextureFormat.RGBAFloat, false)
+                {
+                    wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear, hideFlags = HideFlags.HideAndDontSave
+                };
+            }
+            for (int i = 0; i < 64; i++) windColors[i] = new Color(ambient[i].x, ambient[i].y, ambient[i].z, 0f);
+            windTexture.SetPixels(windColors);
+            windTexture.Apply(false);
+            windSet = true;
+        }
+
+        public void NoWind() { windSet = false; }
+
         private void ResetPhi(RenderTexture target)
         {
             cs.SetFloat("Hh", Cell);
@@ -288,6 +312,15 @@ namespace ArmorFragments.Fluid
             cs.SetTexture(kBuoyancy, "VelIn", velA); cs.SetTexture(kBuoyancy, "ScalIn", scalA); cs.SetTexture(kBuoyancy, "VelOut", velB);
             Dispatch(kBuoyancy, Dims);
             Swap(ref velA, ref velB);
+
+            if (windSet && s.windFollow > 0f)
+            {
+                cs.SetFloat("WindK", 1f - Mathf.Exp(-s.windFollow * dt));
+                cs.SetTexture(kWind, "WindIn", windTexture);
+                cs.SetTexture(kWind, "VelIn", velA); cs.SetTexture(kWind, "VelOut", velB);
+                Dispatch(kWind, Dims);
+                Swap(ref velA, ref velB);
+            }
 
             cs.SetTexture(kCurl, "VelIn", velA); cs.SetTexture(kCurl, "Vort", vort);
             Dispatch(kCurl, Dims);
