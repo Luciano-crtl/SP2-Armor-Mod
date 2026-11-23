@@ -14,7 +14,7 @@ namespace ArmorFragments
     [DefaultExecutionOrder(50)]   // after SmokeSim has moved the particles this frame
     internal sealed class SmokeVolume : MonoBehaviour
     {
-        public static bool Enabled = true;
+        public static bool Enabled = false;   // off by default: ray-marching every puff is heavy
         public static int GridSize = 40;           // cells along each side of the grid
         public static float BallRadius = 0.62f;    // radius of a particle's ball, as a fraction of its size
         public static float DetailPerSize = 0.5f;  // noise detail: one noise tile = this many puff sizes

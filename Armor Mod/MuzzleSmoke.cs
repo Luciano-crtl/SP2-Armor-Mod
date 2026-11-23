@@ -16,6 +16,7 @@ namespace ArmorFragments
         private static void Postfix(CannonScript __instance)
         {
             MuzzleSmoke.OnShot(__instance);
+            BlastCloud.OnShot(__instance);
         }
     }
 
@@ -79,7 +80,7 @@ namespace ArmorFragments
 
                 SmokeSim sim = go.AddComponent<SmokeSim>();
                 sim.StartKelvin = StartKelvin;
-                go.AddComponent<SmokeVolume>();
+                if (SmokeVolume.Enabled) go.AddComponent<SmokeVolume>();   // the heavy ray-marched look; off by default
                 sim.InitialVelocity = pointVelocity;
 
                 ps.Play();
@@ -108,7 +109,7 @@ namespace ArmorFragments
             loggedFirst = false;
         }
 
-        private static float CaliberMillimeters(CannonScript cannon)
+        internal static float CaliberMillimeters(CannonScript cannon)
         {
             if (cannon.PartScript != null)
             {

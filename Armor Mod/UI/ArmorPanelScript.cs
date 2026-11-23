@@ -74,6 +74,9 @@ namespace ArmorFragments.UI
                 BuildRicochet();
                 BuildRays();
                 BuildTools();
+                // RELEASE-STRIP-BEGIN
+                BuildSmokeTests();
+                // RELEASE-STRIP-END
                 BuildDamageMaps();
                 BuildLog();
             }
@@ -643,13 +646,31 @@ namespace ArmorFragments.UI
                 new KeyValuePair<string, Action>("Clear rays", ClearRays),
                 // RELEASE-STRIP-BEGIN
                 new KeyValuePair<string, Action>("Camera diagnostic", CameraDiagnostic.Run),
-                new KeyValuePair<string, Action>("Test: effect bundle", VfxBundleTest.Spawn),
-                new KeyValuePair<string, Action>("Test: muzzle smoke on/off", MuzzleSmoke.Toggle),
-                new KeyValuePair<string, Action>("Test: smoke volume on/off", SmokeVolume.Toggle),
-                new KeyValuePair<string, Action>("Test: blast cloud", BlastCloud.Test),
                 // RELEASE-STRIP-END
             });
         }
+
+        // RELEASE-STRIP-BEGIN
+        // The smoke experiments: a few short buttons per row (the row gives each button an equal share of the width).
+        private void BuildSmokeTests()
+        {
+            builder.Header("Smoke effects (test)", collapsed: true);
+            builder.Buttons(new List<KeyValuePair<string, Action>>
+            {
+                new KeyValuePair<string, Action>("Smoke column", VfxBundleTest.Spawn),
+                new KeyValuePair<string, Action>("Blast cloud", BlastCloud.Test),
+            });
+            builder.Buttons(new List<KeyValuePair<string, Action>>
+            {
+                new KeyValuePair<string, Action>("Muzzle puff on/off", MuzzleSmoke.Toggle),
+                new KeyValuePair<string, Action>("Ground blast on/off", BlastCloud.ToggleOnShots),
+            });
+            builder.Buttons(new List<KeyValuePair<string, Action>>
+            {
+                new KeyValuePair<string, Action>("Ray-marched smoke on/off", SmokeVolume.Toggle),
+            });
+        }
+        // RELEASE-STRIP-END
 
         private void BuildLog()
         {

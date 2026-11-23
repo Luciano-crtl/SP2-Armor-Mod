@@ -56,7 +56,7 @@ namespace ArmorFragments
                 {
                     SmokeSim sim = ps.gameObject.AddComponent<SmokeSim>();
                     sim.StartKelvin = 650f;   // warm, not glowing: it rises and swells a little
-                    ps.gameObject.AddComponent<SmokeVolume>();
+                    if (SmokeVolume.Enabled) ps.gameObject.AddComponent<SmokeVolume>();
                     ps.Play();
                 }
 
