@@ -65,6 +65,9 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeHeatCooling;        // local: how fast the residual heat is lost (per second)
         internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
         internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
+        internal static ConfigEntry<bool> SmokeBarrelHeat;          // local: barrels heat up with every shot and let go of smoke
+        internal static ConfigEntry<float> SmokeBarrelHeatScale;    // local: how much faster than real a barrel heats up
+        internal static ConfigEntry<float> SmokeBarrelSmoke;        // local: how much smoke a hot barrel lets go of
         internal static ConfigEntry<float> SmokeMuzzleSparks;       // local: sparks, embers and flecks of soot at the muzzle
         internal static ConfigEntry<float> SmokeHeatHaze;           // local: the shimmer of hot air
         internal static ConfigEntry<float> SmokeSoftContact;        // local: smoke fades out near surfaces (m)
@@ -373,6 +376,14 @@ namespace ArmorFragments
             SmokeTurbulence = Config.Bind("Smoke", "Turbulence", 0.2f,
                 new ConfigDescription("Cannon smoke: a weak, endless swirling of the air in the whole box (m/s^2), so the smoke keeps rolling and billowing in calm weather instead of freezing. 0 = perfectly still air.",
                     new AcceptableValueRange<float>(0f, 1f)));
+            SmokeBarrelHeat = Config.Bind("Smoke", "BarrelHeat", true,
+                "Cannon smoke: every shot heats the barrel (5% of the muzzle energy over the heat of the steel, from the game's own mass of the cannon) and it cools by itself (a time constant of 40 s for a .50, more for bigger guns). The gas left in the bore comes out as a puff after each shot and as a thread of thin smoke from the muzzle for as long as the barrel is hot, and a hot bore makes up to 40% more smoke on the next shot.");
+            SmokeBarrelHeatScale = Config.Bind("Smoke", "BarrelHeatScale", 6f,
+                new ConfigDescription("Cannon smoke: how many times faster than a real barrel the barrel heats up (real ones take hundreds of shots to get hot). 1 = real.",
+                    new AcceptableValueRange<float>(0.1f, 50f)));
+            SmokeBarrelSmoke = Config.Bind("Smoke", "BarrelSmoke", 1f,
+                new ConfigDescription("Cannon smoke: how much thin smoke the muzzle lets go of after the shot and while the barrel is hot. 0 for none.",
+                    new AcceptableValueRange<float>(0f, 3f)));
             SmokeMuzzleSparks = Config.Bind("Smoke", "MuzzleSparks", 1f,
                 new ConfigDescription("Cannon smoke: sparks and burning grains thrown out of the muzzle, slower embers that drift, and dark flecks of soot. 0 for none, 2 for twice as many. Applies to the next shot.",
                     new AcceptableValueRange<float>(0f, 2f)));

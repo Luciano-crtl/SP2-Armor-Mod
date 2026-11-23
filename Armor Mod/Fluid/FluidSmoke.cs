@@ -244,6 +244,9 @@ namespace ArmorFragments
             if (!Enabled || cannon == null) return;
             try
             {
+                float heatBefore = BarrelHeat.HeatOf(cannon);
+                BarrelHeat.OnShot(cannon);
+                float hotBore = 1f + 0.4f * Mathf.Min(heatBefore, 1f);
                 int id = cannon.GetInstanceID();
                 float now = Time.time, last;
                 if (LastShot.TryGetValue(id, out last) && now - last < MinInterval) return;
@@ -273,7 +276,7 @@ namespace ArmorFragments
                         foreach (Shot earlier in c.shots) if (c.age - earlier.start < 0.5f) burst++;
                         CannonProfile profile = CannonProfile.Of(cannon, c.scale);
                         added.push = profile.push / (1f + 0.25f * burst);
-                        added.amount = CaliberAmount(c.scale) * profile.amount * Mathf.Sqrt(1f / (1f + 0.25f * burst));
+                        added.amount = CaliberAmount(c.scale) * profile.amount * Mathf.Sqrt(1f / (1f + 0.25f * burst)) * hotBore;
                         added.size = profile.size; added.shock = profile.shock; added.brake = profile.brake;
                         c.shots.Add(added);
                         EmitMuzzleBlast(cannon, tip, ex, c.scale, added.amount);
@@ -324,7 +327,7 @@ namespace ArmorFragments
                 Cloud cloud = new Cloud { level = level, sim = sim, origin = origin, rotation = rot, extent = extent, scale = scale, timeScale = size.timeScale, end = Lifetime * size.timeScale };
                 Shot first = MakeShot(tip, 0f, ex, scale, cannon);
                 CannonProfile firstProfile = CannonProfile.Of(cannon, scale);
-                first.amount = CaliberAmount(scale) * firstProfile.amount;
+                first.amount = CaliberAmount(scale) * firstProfile.amount * hotBore;
                 first.push = firstProfile.push;
                 first.size = firstProfile.size; first.shock = firstProfile.shock; first.brake = firstProfile.brake;
                 LastProfileText = firstProfile.text;
@@ -408,6 +411,7 @@ namespace ArmorFragments
         {
             float unscaled = Time.unscaledDeltaTime;
             Monitor(unscaled);
+            BarrelHeat.Tick(Time.deltaTime);
 
             float frame = Mathf.Min(Time.deltaTime, 0.03f);
             ReadBlastSettings();
@@ -796,6 +800,7 @@ namespace ArmorFragments
             }
             Active.Clear();
             bubble = null;
+            BarrelHeat.Shutdown();
             try
             {
                 UniversalRenderPipelineAsset asset = UniversalRenderPipeline.asset;

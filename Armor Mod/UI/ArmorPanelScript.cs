@@ -657,6 +657,8 @@ namespace ArmorFragments.UI
             builder.Header("Cannon smoke (fluid)", collapsed: true);
             TextControl status = builder.Text("Now", "");
             refreshers.Add(() => status.ValueText.Text = (FluidSmoke.Enabled ? "on" : "off") + ", quality " + FluidSmoke.QualityName);
+            TextControl heatText = builder.Text("Barrel heat", "");
+            refreshers.Add(() => heatText.ValueText.Text = BarrelHeat.Status);
             TextControl profileText = builder.Text("Last cannon", "");
             refreshers.Add(() => profileText.ValueText.Text = FluidSmoke.LastProfileText);
             builder.Buttons(new List<KeyValuePair<string, Action>>
@@ -679,6 +681,12 @@ namespace ArmorFragments.UI
                 "How hot the propellant smoke is after the flame (0 to 0.35). Applies to the next shot.", 0.025f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeTurbulence, "Background turbulence",
                 "A weak endless swirling of the air so the smoke keeps billowing in calm weather. 0 = still air.", 0.025f, " m/s2");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeBarrelHeat, "Barrels heat up and smoke",
+                "Every shot heats the barrel, which cools by itself; gas left in the bore comes out after each shot and while the barrel is hot.");
+            FloatSetting(ArmorFragmentsPlugin.SmokeBarrelHeatScale, "Barrel heating speed",
+                "How many times faster than a real barrel it heats up (1 = real, which takes hundreds of shots).", 1f, "x");
+            FloatSetting(ArmorFragmentsPlugin.SmokeBarrelSmoke, "Barrel smoke",
+                "How much thin smoke the muzzle lets go of after a shot and while the barrel is hot.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeMuzzleSparks, "Sparks, embers and soot flecks",
                 "Sparks and burning grains out of the muzzle, slower embers and dark flecks of soot. 0 for none. Applies to the next shot.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeHeatHaze, "Heat haze",

@@ -190,6 +190,13 @@ namespace ArmorFragments
 
         // ---- The pieces -------------------------------------------------------------------------------
 
+        // One wisp of thin smoke (the smoke that comes out of a hot barrel): a particle of the smoke system, lit by the scene, rising slowly.
+        public static void Wisp(Vector3 position, Vector3 velocity, float size, float lifetime, Color color)
+        {
+            if (!EnsureSystems()) return;
+            smoke.Emit(new ParticleSystem.EmitParams { position = position, velocity = velocity, startSize = size, startLifetime = lifetime, startColor = color }, 1);
+        }
+
         // The fine matter of a muzzle blast: sparks and burning grains that fly forward (and out to the sides through a muzzle brake), slower
         // embers that hang and drift, and dark flecks of soot. `size` is the calibre / 75 mm, `amount` how much this shot burns (0..1.4), `strength`
         // the Smoke/MuzzleSparks setting; `vehicle` is the speed of the vehicle that fired.
