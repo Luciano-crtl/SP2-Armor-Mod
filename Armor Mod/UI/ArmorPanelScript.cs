@@ -685,6 +685,14 @@ namespace ArmorFragments.UI
                 "The smoke casts the sun's shadow on the ground and on vehicles (inside the game's shadow distance).");
             FloatSetting(ArmorFragmentsPlugin.SmokeShadowStrength, "Shadow darkness",
                 "How dark the shadow of dense smoke is.", 0.05f, "");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeWash, "Propellers, rotors and jets blow the smoke",
+                "Slipstream of propellers, downwash of helicopter rotors and exhaust of jet engines move the smoke (vehicles with a part in the smoke's box).");
+            FloatSetting(ArmorFragmentsPlugin.SmokeWashStrength, "Prop wash strength",
+                "How hard propellers and rotors blow. 1 is what their thrust gives.", 0.1f, "");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeWake, "Moving vehicles drag the air",
+                "A moving vehicle drags the air near it and behind it along, so the smoke is pulled after it.");
+            FloatSetting(ArmorFragmentsPlugin.SmokeWakeStrength, "Vehicle wake strength",
+                "The share of the vehicle's speed that the air next to it takes.", 0.05f, "");
         }
         // RELEASE-STRIP-END
 

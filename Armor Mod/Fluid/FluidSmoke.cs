@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using ArmorFragments.Fluid;
+using Assets.Scripts.Craft;
 using Assets.Scripts.Craft.Parts;
 using Assets.Scripts.Craft.Parts.Modifiers;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
@@ -133,6 +134,7 @@ namespace ArmorFragments
             public FluidSim sim;
             public GameObject box;
             public MeshRenderer boxRenderer;
+            public readonly Dictionary<AircraftScript, Bounds> crafts = new Dictionary<AircraftScript, Bounds>();     // vehicles with a part in the box, and where
             public Material material;
             public Vector3 origin;          // world position of the box corner
             public Quaternion rotation;     // box axes -> world
@@ -365,6 +367,7 @@ namespace ArmorFragments
                             for (int sub = 0; sub < substeps; sub++)
                             {
                                 List<FluidSim.Blob> blobs = Blobs(c, c.age + dt * sub);
+                                Wash.Build(blobs, c.origin, c.rotation, c.extent, c.drift, c.crafts, dt);
                                 if (blobs.Count > 0) c.sim.AddBlobs(blobs);
                                 c.sim.Step(dt);
                             }
@@ -592,6 +595,7 @@ namespace ArmorFragments
             }
             Active.Clear();
             MuzzleFlash.Shutdown();
+            Wash.Shutdown();
             GroundColor.Shutdown();
             foreach (Stack<FluidSim> pool in Pools.Values) while (pool.Count > 0) pool.Pop().Dispose();
             Pools.Clear();
@@ -652,6 +656,7 @@ namespace ArmorFragments
 
             int count = Physics.OverlapBoxNonAlloc(center, c.extent * 0.5f, Overlaps, c.rotation, ~0, QueryTriggerInteraction.Ignore);
             c.overlapsSeen = count; c.partsSeen = 0;
+            c.crafts.Clear();
 
             // A vehicle has more colliders than the solver takes, so the ones nearest the muzzle go first (the gas is thickest there).
             Vector3 near = c.shots.Count > 0 ? c.shots[0].muzzleWorld : center;
@@ -663,6 +668,13 @@ namespace ArmorFragments
                 PartScript part = col.GetComponentInParent<PartScript>();
                 if (part == null) continue;
                 c.partsSeen++;
+                AircraftScript owner = part.Aircraft;
+                if (owner != null)
+                {
+                    Bounds seen;
+                    if (c.crafts.TryGetValue(owner, out seen)) { seen.Encapsulate(col.bounds); c.crafts[owner] = seen; }
+                    else c.crafts[owner] = col.bounds;
+                }
                 if (part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
                 if (col.GetComponentInParent<CannonProjectileScript>() != null) continue;
                 // The parts that matter most come first: big ones and ones near the muzzle (the distance from the surface of the part's box,

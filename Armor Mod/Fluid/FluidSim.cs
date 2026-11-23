@@ -26,7 +26,8 @@ namespace ArmorFragments.Fluid
             public float swirl;        // m/s of random swirling inside the ball
             public float swirlFreq;    // 1/m: how fine the swirling is
             public float dust;         // dust density put into the ball
-            public const int Stride = 15 * 4;
+            public float pull;         // 0: `vel` is added (an impulse); > 0: the air in the ball is pulled toward `vel` by this share per call (a steady flow)
+            public const int Stride = 16 * 4;
         }
 
         // A solid thing, given by the matrix that takes a point of the box's space into the shape's own space.

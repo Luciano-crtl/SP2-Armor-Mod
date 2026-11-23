@@ -61,6 +61,10 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeBlastDust;          // local: how much dust the blast lifts
         internal static ConfigEntry<bool> SmokeShadows;             // local: the smoke casts shadows on the scene
         internal static ConfigEntry<float> SmokeShadowStrength;     // local: how dark those shadows are
+        internal static ConfigEntry<bool> SmokeWash;                // local: propellers, rotors and jets blow the smoke
+        internal static ConfigEntry<float> SmokeWashStrength;       // local: how hard they blow
+        internal static ConfigEntry<bool> SmokeWake;                // local: a moving vehicle drags the air near it
+        internal static ConfigEntry<float> SmokeWakeStrength;       // local: how much of its speed that air takes
         // RELEASE-STRIP-END
         internal static ConfigEntry<bool> ImpactCameraDamageView;   // local: the damage map drawn over the plates in the impact camera
         internal static ConfigEntry<int> DamageMapsRelief;           // local: 0 normal map, 1 bump (height) map, 2 both
@@ -332,6 +336,16 @@ namespace ArmorFragments
             SmokeShadowStrength = Config.Bind("Smoke", "ShadowStrength", 0.8f,
                 new ConfigDescription("Cannon smoke: how dark the shadow of dense smoke is (0 = none, 1 = as dark as any shadow).",
                     new AcceptableValueRange<float>(0f, 1f)));
+            SmokeWash = Config.Bind("Smoke", "PropWash", true,
+                "Cannon smoke: the slipstream of propellers, the downwash of helicopter rotors and the exhaust of jet engines blow the smoke (only for vehicles with a part in the smoke's box).");
+            SmokeWashStrength = Config.Bind("Smoke", "PropWashStrength", 1f,
+                new ConfigDescription("Cannon smoke: how hard propellers and rotors blow (1 = what their thrust gives by the theory of an actuator disc, about 20 m/s for a small plane's propeller).",
+                    new AcceptableValueRange<float>(0f, 3f)));
+            SmokeWake = Config.Bind("Smoke", "VehicleWake", true,
+                "Cannon smoke: a moving vehicle drags the air around and behind it along (the smoke is pulled after a fast tank, ship or plane).");
+            SmokeWakeStrength = Config.Bind("Smoke", "VehicleWakeStrength", 0.4f,
+                new ConfigDescription("Cannon smoke: the share of the vehicle's speed that the air next to it takes (at most 30 m/s).",
+                    new AcceptableValueRange<float>(0f, 1.5f)));
             // RELEASE-STRIP-END
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
