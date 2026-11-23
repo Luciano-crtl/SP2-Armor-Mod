@@ -78,6 +78,7 @@ namespace ArmorFragments
             public readonly List<Shot> shots = new List<Shot>();
             public PartScript cannonPart;    // its own colliders do not block its smoke
             public bool hasGround;
+            public Vector3 gridVelocity;     // the wind that carries the box (world m/s): things that stand still move against it
             public Vector3 groundPoint, groundNormal;
         }
 
@@ -257,6 +258,7 @@ namespace ArmorFragments
                         // Gravity in the box's axes; the blast slows fast, then the smoke drifts.
                         c.sim.Params.buoyDir = Quaternion.Inverse(c.rotation) * Vector3.up;
                         c.sim.Params.drag = c.age < 0.3f ? 7f : 1.5f;
+                        if (wind != null) c.gridVelocity = wind.QueryWindVelocity(c.origin + c.rotation * (c.extent * 0.5f));
                         c.sim.SetObstacles(Obstacles(c));
 
                         bool violent = RecentShot(c);
@@ -273,8 +275,7 @@ namespace ArmorFragments
                         // The wind carries the whole box.
                         if (wind != null)
                         {
-                            Vector3 center = c.origin + c.rotation * (c.extent * 0.5f);
-                            c.origin += wind.QueryWindVelocity(center) * frame;
+                            c.origin += c.gridVelocity * frame;
                             Place(c);
                         }
                     }
@@ -445,6 +446,7 @@ namespace ArmorFragments
             ShapeBuffer.Clear();
             Matrix4x4 gridToWorld = Matrix4x4.TRS(c.origin, c.rotation, Vector3.one);
             Vector3 center = c.origin + c.rotation * (c.extent * 0.5f);
+            Quaternion toGrid = Quaternion.Inverse(c.rotation);
 
             if (c.hasGround)
             {
@@ -452,7 +454,8 @@ namespace ArmorFragments
                 if (height < c.extent.magnitude * 0.5f)
                 {
                     Matrix4x4 plane = Matrix4x4.TRS(c.groundPoint, Quaternion.FromToRotation(Vector3.up, c.groundNormal), Vector3.one);
-                    ShapeBuffer.Add(new FluidSim.Shape { toLocal = plane.inverse * gridToWorld, half = Vector3.one, kind = 2 });
+                    // The ground stands still in the world, so it slides under the box at the wind's speed.
+                    ShapeBuffer.Add(FluidSim.Shape.Make(plane.inverse * gridToWorld, Vector3.one, 2, toGrid * (-c.gridVelocity), Vector3.zero, Vector3.zero));
                 }
             }
 
@@ -465,14 +468,15 @@ namespace ArmorFragments
                 if (part == null || part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
                 if (col.GetComponentInParent<CannonProjectileScript>() != null) continue;
                 FluidSim.Shape shape;
-                if (ShapeOf(col, gridToWorld, out shape)) ShapeBuffer.Add(shape);
+                if (ShapeOf(col, part, c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
             }
             return ShapeBuffer;
         }
 
-        private static bool ShapeOf(Collider col, Matrix4x4 gridToWorld, out FluidSim.Shape shape)
+        private static bool ShapeOf(Collider col, PartScript part, Cloud c, Matrix4x4 gridToWorld, Quaternion toGrid, out FluidSim.Shape shape)
         {
             shape = new FluidSim.Shape();
+            Vector3 half; int kind;
             Matrix4x4 ltw = col.transform.localToWorldMatrix;
             Matrix4x4 m;
             BoxCollider box = col as BoxCollider;
@@ -482,33 +486,44 @@ namespace ArmorFragments
             if (box != null)
             {
                 m = ltw * Matrix4x4.TRS(box.center, Quaternion.identity, Vector3.one);
-                shape.half = box.size * 0.5f; shape.kind = 0;
+                half = box.size * 0.5f; kind = 0;
             }
             else if (sphere != null)
             {
                 m = ltw * Matrix4x4.TRS(sphere.center, Quaternion.identity, Vector3.one);
-                shape.half = Vector3.one * sphere.radius; shape.kind = 1;
+                half = Vector3.one * sphere.radius; kind = 1;
             }
             else if (capsule != null)
             {
                 m = ltw * Matrix4x4.TRS(capsule.center, Quaternion.identity, Vector3.one);
                 float r = capsule.radius, h = Mathf.Max(capsule.height * 0.5f, r);
-                shape.half = capsule.direction == 0 ? new Vector3(h, r, r) : (capsule.direction == 1 ? new Vector3(r, h, r) : new Vector3(r, r, h));
-                shape.kind = 0;
+                half = capsule.direction == 0 ? new Vector3(h, r, r) : (capsule.direction == 1 ? new Vector3(r, h, r) : new Vector3(r, r, h));
+                kind = 0;
             }
             else if (mesh != null && mesh.sharedMesh != null)
             {
                 Bounds b = mesh.sharedMesh.bounds;      // the part's own box, turned with the part: tight enough for a part
                 m = ltw * Matrix4x4.TRS(b.center, Quaternion.identity, Vector3.one);
-                shape.half = b.extents; shape.kind = 0;
+                half = b.extents; kind = 0;
             }
             else
             {
                 Bounds b = col.bounds;
                 m = Matrix4x4.TRS(b.center, Quaternion.identity, Vector3.one);
-                shape.half = b.extents; shape.kind = 0;
+                half = b.extents; kind = 0;
             }
-            shape.toLocal = m.inverse * gridToWorld;
+
+            // How the part moves: its velocity at the middle of the shape and its spin, in the box's space, relative to the box (which drifts
+            // with the wind). The tank driving toward the gas pushes it; one standing still makes the wind blow around it.
+            Vector3 centerWorld = m.GetColumn(3);
+            Vector3 velocity = -c.gridVelocity, spin = Vector3.zero;
+            Assets.Scripts.Craft.IRigidBody body = part.Body != null ? part.Body.RigidBody : null;
+            if (body != null && !body.IsDead)
+            {
+                velocity += body.GetPointVelocity(centerWorld);
+                spin = body.angularVelocity;
+            }
+            shape = FluidSim.Shape.Make(m.inverse * gridToWorld, half, kind, toGrid * velocity, toGrid * spin, toGrid * (centerWorld - c.origin));
             return true;
         }
 

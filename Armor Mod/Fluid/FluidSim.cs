@@ -31,12 +31,21 @@ namespace ArmorFragments.Fluid
 
         // A solid thing, given by the matrix that takes a point of the box's space into the shape's own space.
         // kind 0: a box (|local| <= half); kind 1: an ellipsoid (|local / half.x| <= 1); kind 2: a half-space (local.y <= 0).
+        // It may move: `vel` is its velocity at `center` and `omega` its spin, both in the box's space (relative to the box, which itself
+        // drifts with the wind), so the gas next to it is pushed along with it.
         public struct Shape
         {
             public Matrix4x4 toLocal;
-            public Vector3 half;
-            public int kind;
-            public const int Stride = 20 * 4;
+            public Vector4 halfKind;   // xyz = half sizes, w = kind
+            public Vector4 vel;
+            public Vector4 omega;
+            public Vector4 center;
+            public const int Stride = 32 * 4;
+
+            public static Shape Make(Matrix4x4 toLocal, Vector3 half, int kind, Vector3 vel, Vector3 omega, Vector3 center)
+            {
+                return new Shape { toLocal = toLocal, halfKind = new Vector4(half.x, half.y, half.z, kind), vel = vel, omega = omega, center = center };
+            }
         }
 
         public struct Settings
@@ -74,7 +83,7 @@ namespace ArmorFragments.Fluid
 
         private readonly ComputeShader cs;
         private readonly List<Level> levels = new List<Level>();
-        private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp;
+        private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel;
         private ComputeBuffer blobBuffer, shapeBuffer;
         private int shapeCapacity;
         private bool hadShapes;
@@ -120,6 +129,7 @@ namespace ArmorFragments.Fluid
             vort = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             phiA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); phiB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             phiTmp = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+            solidVel = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
 
             // Multigrid levels: halve every dimension while they stay even and at least 8 cells.
             Vector3Int d = Dims;
@@ -163,7 +173,7 @@ namespace ArmorFragments.Fluid
         {
             if (disposed) return;
             disposed = true;
-            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp })
+            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel })
                 if (rt != null) rt.Release();
             foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); L.solid.Release(); }
             if (shapeBuffer != null) shapeBuffer.Release();
@@ -222,6 +232,7 @@ namespace ArmorFragments.Fluid
             cs.SetFloat("Hh", Cell);
             cs.SetInt("ShapeCount", count);
             cs.SetTexture(kObstacles, "SolidOut", levels[0].solid);
+            cs.SetTexture(kObstacles, "SolidVelOut", solidVel);
             Dispatch(kObstacles, Dims);
             for (int i = 1; i < levels.Count; i++)
             {
@@ -303,7 +314,7 @@ namespace ArmorFragments.Fluid
             cs.SetFloat("Cool", Mathf.Exp(-s.cool * dt));
             cs.SetFloat("Diss", Mathf.Exp(-s.dissipate * dt));
             cs.SetFloat("Drag", Mathf.Exp(-s.drag * dt));
-            cs.SetTexture(kDamp, "Solid", levels[0].solid);
+            cs.SetTexture(kDamp, "Solid", levels[0].solid); cs.SetTexture(kDamp, "SolidVel", solidVel);
             cs.SetTexture(kDamp, "VelIn", velA); cs.SetTexture(kDamp, "ScalIn", scalA);
             cs.SetTexture(kDamp, "VelOut", velB); cs.SetTexture(kDamp, "ScalOut", scalB);
             Dispatch(kDamp, Dims);
@@ -342,11 +353,11 @@ namespace ArmorFragments.Fluid
         private void Project(int cycles)
         {
             Level L0 = levels[0];
-            cs.SetTexture(kDivergence, "Solid", L0.solid);
+            cs.SetTexture(kDivergence, "Solid", L0.solid); cs.SetTexture(kDivergence, "SolidVel", solidVel);
             cs.SetTexture(kDivergence, "VelIn", velA); cs.SetTexture(kDivergence, "RhsOut", L0.rhs);
             Dispatch(kDivergence, Dims);
             for (int i = 0; i < cycles; i++) VCycle(0);
-            cs.SetTexture(kSubGrad, "Solid", L0.solid);
+            cs.SetTexture(kSubGrad, "Solid", L0.solid); cs.SetTexture(kSubGrad, "SolidVel", solidVel);
             cs.SetTexture(kSubGrad, "VelIn", velA); cs.SetTexture(kSubGrad, "PIn", L0.p); cs.SetTexture(kSubGrad, "VelOut", velB);
             Dispatch(kSubGrad, Dims);
             Swap(ref velA, ref velB);
