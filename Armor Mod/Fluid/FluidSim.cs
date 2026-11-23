@@ -122,7 +122,7 @@ namespace ArmorFragments.Fluid
         private int seed = 1;
         private bool disposed;
 
-        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace;
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace, kShift, kShiftSolid, kCapPhi, kCapture, kCut;
 
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
@@ -154,6 +154,7 @@ namespace ArmorFragments.Fluid
             kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
             kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
             kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kDisplace = cs.FindKernel("Displace"); kWind = cs.FindKernel("ApplyWind");
+            kShift = cs.FindKernel("Shift"); kShiftSolid = cs.FindKernel("ShiftSolid"); kCapPhi = cs.FindKernel("CapturePhi"); kCapture = cs.FindKernel("Capture"); kCut = cs.FindKernel("Cut");
 
             velA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             scalA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); scalB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
@@ -303,6 +304,75 @@ namespace ArmorFragments.Fluid
                 cs.SetTexture(kMaskRestrict, "SolidOut", levels[i].solid);
                 Dispatch(kMaskRestrict, levels[i].dims);
             }
+        }
+
+        // ---- a box that follows something, and boxes that hand smoke to each other ---------------------------------------------
+        // The window of this simulation moves by n cells (in the box's own axes): every field keeps its place in the world, the cells that
+        // come in are empty, what leaves is lost. Whole cells only, so nothing is resampled and nothing blurs.
+        public void ShiftBy(Vector3Int n)
+        {
+            if (n == Vector3Int.zero) return;
+            cs.SetFloat("Hh", Cell);
+            cs.SetInts("ShiftOff", n.x, n.y, n.z);
+            ShiftField(ref velA, ref velB, false);
+            ShiftField(ref scalA, ref scalB, false);
+            ShiftField(ref phiA, ref phiTmp, true);
+            ShiftField(ref phiB, ref phiTmp, true);
+            // Last step's map of solids (the next SetObstacles compares the new one with it) moves with the window too.
+            cs.SetInts("ShiftOff", n.x, n.y, n.z);
+            cs.SetTexture(kShiftSolid, "SolidFine", levels[0].solid);
+            cs.SetTexture(kShiftSolid, "SolidOut", solidPrev);
+            Dispatch(kShiftSolid, Dims);
+            RenderTexture moved = solidPrev; solidPrev = levels[0].solid; levels[0].solid = moved;
+        }
+
+        private void ShiftField(ref RenderTexture field, ref RenderTexture scratch, bool phi)
+        {
+            cs.SetFloat("ShiftPhi", phi ? 1f : 0f);
+            cs.SetTexture(kShift, "Src", field);
+            cs.SetTexture(kShift, "Dst", scratch);
+            Dispatch(kShift, Dims);
+            Swap(ref field, ref scratch);
+        }
+
+        // This box takes the smoke that another box (`src`) has inside it, and the other box loses it. The matrices take a point of this box's
+        // space into the other's and back; `velRot` turns velocity vectors from the other's axes into this one's. Smoke is only taken where it
+        // is at least `margin` metres from this box's faces (near them the edge damping would eat it).
+        public void CaptureFrom(FluidSim src, Matrix4x4 destToSrc, Matrix4x4 srcToDest, Matrix4x4 velRot, float margin)
+        {
+            Vector3 destExtent = new Vector3(Dims.x, Dims.y, Dims.z) * Cell;
+            Vector3 srcExtent = new Vector3(src.Dims.x, src.Dims.y, src.Dims.z) * src.Cell;
+            cs.SetFloat("Hh", Cell);
+            cs.SetMatrix("CapDestToSrc", destToSrc);
+            cs.SetMatrix("CapSrcToDest", srcToDest);
+            cs.SetMatrix("CapVelRot", velRot);
+            cs.SetVector("CapSrcExtent", srcExtent);
+            cs.SetVector("CapDestExtent", destExtent);
+            cs.SetFloat("CapMargin", margin);
+
+            // The texture coordinates of the detail noise, both sets (they read this box's smoke as it was before the capture).
+            cs.SetTexture(kCapPhi, "Solid", levels[0].solid);
+            cs.SetTexture(kCapPhi, "ScalIn", scalA);
+            cs.SetTexture(kCapPhi, "CapScal", src.scalA);
+            cs.SetTexture(kCapPhi, "CapPhi", src.phiA); cs.SetTexture(kCapPhi, "CapPhiOwn", phiA); cs.SetTexture(kCapPhi, "CapPhiOut", phiTmp);
+            Dispatch(kCapPhi, Dims);
+            Swap(ref phiA, ref phiTmp);
+            cs.SetTexture(kCapPhi, "CapPhi", src.phiB); cs.SetTexture(kCapPhi, "CapPhiOwn", phiB); cs.SetTexture(kCapPhi, "CapPhiOut", phiTmp);
+            Dispatch(kCapPhi, Dims);
+            Swap(ref phiB, ref phiTmp);
+
+            cs.SetTexture(kCapture, "Solid", levels[0].solid);
+            cs.SetTexture(kCapture, "VelIn", velA); cs.SetTexture(kCapture, "ScalIn", scalA);
+            cs.SetTexture(kCapture, "VelOut", velB); cs.SetTexture(kCapture, "ScalOut", scalB);
+            cs.SetTexture(kCapture, "CapVel", src.velA); cs.SetTexture(kCapture, "CapScal", src.scalA);
+            Dispatch(kCapture, Dims);
+            Swap(ref velA, ref velB); Swap(ref scalA, ref scalB);
+
+            // The other box lets go of what was taken.
+            cs.SetFloat("Hh", src.Cell);
+            cs.SetTexture(kCut, "ScalIn", src.scalA); cs.SetTexture(kCut, "ScalOut", src.scalB);
+            Dispatch(kCut, src.Dims);
+            Swap(ref src.scalA, ref src.scalB);
         }
 
         // The ambient wind over the box: 64 velocities (m/s) on a 4 x 4 x 4 lattice, x fastest, in the box's space. Call every frame (the wind

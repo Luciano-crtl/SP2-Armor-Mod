@@ -65,6 +65,8 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeHeatCooling;        // local: how fast the residual heat is lost (per second)
         internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
         internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
+        internal static ConfigEntry<bool> SmokePlayerBubble;        // local: a small box that follows your vehicle and takes the smoke it drives through
+        internal static ConfigEntry<float> SmokePlayerBubbleSize;   // local: how wide that box is (m)
         internal static ConfigEntry<float> SmokeBoxSize;            // local: the size of the box the smoke is simulated in (1 = standard)
         internal static ConfigEntry<bool> SmokeWash;                // local: propellers, rotors and jets blow the smoke
         internal static ConfigEntry<float> SmokeWashStrength;       // local: how hard they blow
@@ -353,6 +355,11 @@ namespace ArmorFragments
             SmokeTurbulence = Config.Bind("Smoke", "Turbulence", 0.2f,
                 new ConfigDescription("Cannon smoke: a weak, endless swirling of the air in the whole box (m/s^2), so the smoke keeps rolling and billowing in calm weather instead of freezing. 0 = perfectly still air.",
                     new AcceptableValueRange<float>(0f, 1f)));
+            SmokePlayerBubble = Config.Bind("Smoke", "PlayerBubble", true,
+                "Cannon smoke: a small box of fluid follows your vehicle while smoke from a shot reaches it, and takes the smoke inside it, so that smoke you drive through or drag along behind you travels with you instead of being left in the box of the shot.");
+            SmokePlayerBubbleSize = Config.Bind("Smoke", "PlayerBubbleSize", 12f,
+                new ConfigDescription("Cannon smoke: how wide the box around your vehicle is, in metres (6 to 30). Applies the next time it is made. A bigger one has coarser cells.",
+                    new AcceptableValueRange<float>(6f, 30f)));
             SmokeBoxSize = Config.Bind("Smoke", "BoxSize", 1f,
                 new ConfigDescription("Cannon smoke: how big the box the smoke is simulated in is (1 = standard, 18 x 9 x 9 m for a 75 mm gun). Smoke that leaves the box vanishes. The number of cells is fixed by the quality level, so a bigger box has coarser cells (less fine detail). Applies to the next shot.",
                     new AcceptableValueRange<float>(0.5f, 3f)));

@@ -36,7 +36,7 @@ namespace ArmorFragments
     // A second shot from the same place while the cloud is young adds to the same cloud (rapid fire makes one dense cloud, not many).
     //
     // Cost control: three quality levels (cell count and ray steps), chosen by distance and, in the automatic mode, by the frame time.
-    internal static class FluidSmoke
+    internal static partial class FluidSmoke
     {
         public static bool Enabled = true;
         public static int MaxActive = 4;               // simulations running at once
@@ -138,6 +138,7 @@ namespace ArmorFragments
             public FluidSim sim;
             public GameObject box;
             public MeshRenderer boxRenderer;
+            public bool isBubble;            // the small box that follows the player's vehicle (PlayerBubble.cs)
             public readonly Dictionary<AircraftScript, Bounds> crafts = new Dictionary<AircraftScript, Bounds>();     // vehicles with a part in the box, and where
             public Material material;
             public Vector3 origin;          // world position of the box corner
@@ -238,7 +239,7 @@ namespace ArmorFragments
                     }
                 }
 
-                if (Active.Count >= MaxActive) return;
+                if (Active.Count - (bubble != null ? 1 : 0) >= MaxActive) return;
                 LastShot[id] = now;
 
                 int level = LevelFor(distance);
@@ -338,6 +339,8 @@ namespace ArmorFragments
             WindQueryManager wind = WindQueryManager.Instance;
             Camera cam = Camera.main;
             Watch.Restart();
+            try { UpdateBubble(frame); }
+            catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] player bubble failed and is off: " + e); if (ArmorFragmentsPlugin.SmokePlayerBubble != null) ArmorFragmentsPlugin.SmokePlayerBubble.Value = false; DropBubble("it failed"); }
             for (int i = Active.Count - 1; i >= 0; i--)
             {
                 Cloud c = Active[i];
@@ -359,7 +362,7 @@ namespace ArmorFragments
                         // A cloud past the middle of its life changes slowly: it is stepped every other frame, twice as long.
                         float step = frame;
                         bool run = true;
-                        if (c.age > 0.45f * c.end)
+                        if (c.age > 0.45f * c.end && !c.isBubble)
                         {
                             c.accumulated += frame;
                             c.frameCounter++;
@@ -415,9 +418,13 @@ namespace ArmorFragments
                     m.SetTexture("_Solid", c.sim.Solid);
                     m.SetFloat("_ShowSolid", ShowSolid ? 1f : 0f);
                     // The flash of the latest shot lights the smoke, and the shadow the smoke casts on the scene.
-                    Shot latest = c.shots[c.shots.Count - 1];
-                    float flashLevel = MuzzleFlash.Enabled ? MuzzleFlash.Level(c.age - latest.start, c.timeScale) * MuzzleFlash.Intensity : 0f;
-                    m.SetVector("_FlashPos", new Vector4(latest.flashWorld.x, latest.flashWorld.y, latest.flashWorld.z, 4f * flashLevel));
+                    if (c.shots.Count > 0)
+                    {
+                        Shot latest = c.shots[c.shots.Count - 1];
+                        float flashLevel = MuzzleFlash.Enabled ? MuzzleFlash.Level(c.age - latest.start, c.timeScale) * MuzzleFlash.Intensity : 0f;
+                        m.SetVector("_FlashPos", new Vector4(latest.flashWorld.x, latest.flashWorld.y, latest.flashWorld.z, 4f * flashLevel));
+                    }
+                    else m.SetVector("_FlashPos", Vector4.zero);
                     m.SetColor("_FlashColor", new Color(1f, 0.62f, 0.3f, 1f));
                     m.SetFloat("_FlashRange", 3f * c.scale);
                     bool shadows = SmokeShadows;
@@ -509,7 +516,7 @@ namespace ArmorFragments
 
             float ramp = Mathf.SmoothStep(0f, 1f, (c.age - 1.0f * c.timeScale) / (0.8f * c.timeScale));
             Vector3 target = mean * (DriftShare * ramp);
-            c.drift = Vector3.Lerp(c.drift, target, 1f - Mathf.Exp(-frame / 0.4f));
+            c.drift = c.isBubble ? Vector3.zero : Vector3.Lerp(c.drift, target, 1f - Mathf.Exp(-frame / 0.4f));
 
             Quaternion toGrid = Quaternion.Inverse(c.rotation);
             for (int i = 0; i < 64; i++)
@@ -587,6 +594,7 @@ namespace ArmorFragments
 
         private static void Retire(Cloud c)
         {
+            if (c == bubble) bubble = null;
             if (c.box != null) Object.Destroy(c.box);
             if (c.material != null) Object.Destroy(c.material);
             if (c.sim != null) ReturnToPool(c.sim);
@@ -602,6 +610,7 @@ namespace ArmorFragments
                 if (c.sim != null) c.sim.Dispose();
             }
             Active.Clear();
+            bubble = null;
             MuzzleFlash.Shutdown();
             Wash.Shutdown();
             GroundColor.Shutdown();
