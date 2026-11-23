@@ -79,6 +79,7 @@ namespace ArmorFragments
 
                 SmokeSim sim = go.AddComponent<SmokeSim>();
                 sim.StartKelvin = StartKelvin;
+                go.AddComponent<SmokeVolume>();
                 sim.InitialVelocity = pointVelocity;
 
                 ps.Play();

@@ -14,6 +14,7 @@ namespace ArmorFragments
         private const string BundleFile = "armorvfx";
         private static AssetBundle bundle;
         private static readonly Dictionary<string, GameObject> Prefabs = new Dictionary<string, GameObject>();
+        private static readonly Dictionary<string, Material> Materials = new Dictionary<string, Material>();
         private static readonly List<GameObject> Spawned = new List<GameObject>();
         private static bool loadFailed;
 
@@ -23,6 +24,14 @@ namespace ArmorFragments
             if (bundle == null && !loadFailed && !Load()) loadFailed = true;
             GameObject prefab;
             return Prefabs.TryGetValue(name, out prefab) ? prefab : null;
+        }
+
+        // A material of the bundle by name, lower case ("smokevolume"); null if it cannot be had.
+        public static Material Material(string name)
+        {
+            if (bundle == null && !loadFailed && !Load()) loadFailed = true;
+            Material material;
+            return Materials.TryGetValue(name, out material) ? material : null;
         }
 
         public static void Spawn()
@@ -47,6 +56,7 @@ namespace ArmorFragments
                 {
                     SmokeSim sim = ps.gameObject.AddComponent<SmokeSim>();
                     sim.StartKelvin = 650f;   // warm, not glowing: it rises and swells a little
+                    ps.gameObject.AddComponent<SmokeVolume>();
                     ps.Play();
                 }
 
@@ -73,6 +83,7 @@ namespace ArmorFragments
             foreach (GameObject go in Spawned) if (go != null) Object.Destroy(go);
             Spawned.Clear();
             Prefabs.Clear();
+            Materials.Clear();
             if (bundle != null) bundle.Unload(true);
             bundle = null;
             loadFailed = false;
@@ -101,7 +112,9 @@ namespace ArmorFragments
             foreach (string asset in names)
             {
                 GameObject go = bundle.LoadAsset<GameObject>(asset);
-                if (go != null) Prefabs[Path.GetFileNameWithoutExtension(asset).ToLowerInvariant()] = go;
+                if (go != null) { Prefabs[Path.GetFileNameWithoutExtension(asset).ToLowerInvariant()] = go; continue; }
+                Material material = bundle.LoadAsset<Material>(asset);
+                if (material != null) Materials[Path.GetFileNameWithoutExtension(asset).ToLowerInvariant()] = material;
             }
             return true;
         }

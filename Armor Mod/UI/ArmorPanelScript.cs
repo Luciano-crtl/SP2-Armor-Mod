@@ -645,6 +645,7 @@ namespace ArmorFragments.UI
                 new KeyValuePair<string, Action>("Camera diagnostic", CameraDiagnostic.Run),
                 new KeyValuePair<string, Action>("Test: effect bundle", VfxBundleTest.Spawn),
                 new KeyValuePair<string, Action>("Test: muzzle smoke on/off", MuzzleSmoke.Toggle),
+                new KeyValuePair<string, Action>("Test: smoke volume on/off", SmokeVolume.Toggle),
                 // RELEASE-STRIP-END
             });
         }
