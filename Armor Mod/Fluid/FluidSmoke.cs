@@ -62,6 +62,7 @@ namespace ArmorFragments
             if (ArmorFragmentsPlugin.SmokeJetFocus != null) SmokeBlast.Focus = ArmorFragmentsPlugin.SmokeJetFocus.Value;
             if (ArmorFragmentsPlugin.SmokeMuzzleBrake != null) SmokeBlast.MuzzleBrake = ArmorFragmentsPlugin.SmokeMuzzleBrake.Value;
             if (ArmorFragmentsPlugin.SmokeBlastDust != null) SmokeBlast.BlastDust = ArmorFragmentsPlugin.SmokeBlastDust.Value;
+            if (ArmorFragmentsPlugin.SmokeShockWave != null) SmokeBlast.ShockWave = ArmorFragmentsPlugin.SmokeShockWave.Value;
             if (ArmorFragmentsPlugin.SmokeResidualHeat != null) SmokeBlast.ResidualHeat = Mathf.Clamp(ArmorFragmentsPlugin.SmokeResidualHeat.Value, 0f, 0.35f);
         }
         public static bool ShowSolid;                  // debugging view: paint what the smoke treats as solid (the parts of vehicles, the ground)
@@ -155,6 +156,8 @@ namespace ArmorFragments
             public int children;             // faces that already have an overflow box
             public float probeAt;
             public bool probing;
+            public bool useHeight;           // the ground is a height map (Terrain.cs)
+            public float groundAt;
             public bool isTail;              // smoke the bubble left behind: an ordinary cloud that stays where it was released
             public float lastPeakSpeed;      // the fastest part speed the last time the solids were measured
             public int solidFrame;
@@ -380,7 +383,10 @@ namespace ArmorFragments
                         if (ArmorFragmentsPlugin.SmokeBuoyancy != null) c.sim.Params.buoyancy = ArmorFragmentsPlugin.SmokeBuoyancy.Value;
                         if (ArmorFragmentsPlugin.SmokeHeatCooling != null) c.sim.Params.cool = ArmorFragmentsPlugin.SmokeHeatCooling.Value;
                         if (ArmorFragmentsPlugin.SmokeTurbulence != null) c.sim.Params.turbulence = ArmorFragmentsPlugin.SmokeTurbulence.Value;
+                        if (ArmorFragmentsPlugin.SmokeDustWeight != null) c.sim.Params.dustWeight = ArmorFragmentsPlugin.SmokeDustWeight.Value;
+                        if (ArmorFragmentsPlugin.SmokeDetail != null) c.sim.Params.detail = ArmorFragmentsPlugin.SmokeDetail.Value;
                         UpdateWind(c, wind, frame);
+                        RefreshGround(c);
                         // The solids: every frame, or every second frame when the cloud is past its blast and nothing near it moves.
                         bool skipSolids = FastSolids && !c.isBubble && c.sim.HasSolids && c.age > 1.6f * c.timeScale && c.lastPeakSpeed < 0.5f && ((c.solidFrame++ & 1) == 1);
                         if (!skipSolids)
@@ -455,6 +461,7 @@ namespace ArmorFragments
                         m.SetVector("_OccDim", new Vector4(od.x, od.y, od.z, 0f));
                     }
                     m.SetFloat("_UseOcc", fast ? 1f : 0f);
+                    m.SetFloat("_MultiScatter", ArmorFragmentsPlugin.SmokeMultiScatter != null ? ArmorFragmentsPlugin.SmokeMultiScatter.Value : 0.6f);
                     m.SetFloat("_LightEvery", fast ? 2f : 1f);
                     m.SetFloat("_ShowSolid", ShowSolid ? 1f : 0f);
                     // The flash of the latest shot lights the smoke, and the shadow the smoke casts on the scene.
@@ -683,6 +690,7 @@ namespace ArmorFragments
             }
             Active.Clear();
             bubble = null;
+            ShutdownTerrain();
             MuzzleFlash.Shutdown();
             Wash.Shutdown();
             GroundColor.Shutdown();
@@ -732,7 +740,7 @@ namespace ArmorFragments
             Vector3 center = c.origin + c.rotation * (c.extent * 0.5f);
             Quaternion toGrid = Quaternion.Inverse(c.rotation);
 
-            if (c.hasGround)
+            if (c.hasGround && !c.useHeight)
             {
                 float height = Vector3.Dot(center - c.groundPoint, c.groundNormal);
                 if (height < c.extent.magnitude * 0.5f)
@@ -755,7 +763,16 @@ namespace ArmorFragments
                 Collider col = Overlaps[i];
                 if (col == null) continue;
                 PartScript part = col.GetComponentInParent<PartScript>();
-                if (part == null) continue;
+                if (part == null)
+                {
+                    // Things standing on the ground (walls, buildings, rocks): solid like the parts, a little less important than them.
+                    if (!WorldSolids || !IsWorldShape(col) || col.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                    Bounds wb = col.bounds;
+                    float worldSize = wb.size.magnitude;
+                    if (worldSize < c.sim.Cell) continue;
+                    Candidates.Add(new KeyValuePair<float, int>(Mathf.Sqrt(wb.SqrDistance(near)) - 0.5f * worldSize + 6f, i));
+                    continue;
+                }
                 c.partsSeen++;
                 AircraftScript owner = part.Aircraft;
                 if (owner != null)
@@ -823,7 +840,7 @@ namespace ArmorFragments
                 {
                     Vector3 hullCenterWorld = m.GetColumn(3);
                     Vector3 hullVelocity = -c.drift, hullSpin = Vector3.zero;
-                    Assets.Scripts.Craft.IRigidBody hullBody = part.Body != null ? part.Body.RigidBody : null;
+                    Assets.Scripts.Craft.IRigidBody hullBody = part != null && part.Body != null ? part.Body.RigidBody : null;
                     if (hullBody != null && !hullBody.IsDead) { hullVelocity += SafeVelocity(part, hullBody.GetPointVelocity(hullCenterWorld)); hullSpin = SafeSpin(part, hullBody.angularVelocity, col.bounds.extents.magnitude); }
                     int first = PlaneBuffer.Count;
                     // The planes are measured from the middle of the mesh's box, which is where the shape's own space starts.
@@ -844,7 +861,7 @@ namespace ArmorFragments
             // with the wind). The tank driving toward the gas pushes it; one standing still makes the wind blow around it.
             Vector3 centerWorld = m.GetColumn(3);
             Vector3 velocity = -c.drift, spin = Vector3.zero;
-            Assets.Scripts.Craft.IRigidBody body = part.Body != null ? part.Body.RigidBody : null;
+            Assets.Scripts.Craft.IRigidBody body = part != null && part.Body != null ? part.Body.RigidBody : null;
             if (body != null && !body.IsDead)
             {
                 velocity += SafeVelocity(part, body.GetPointVelocity(centerWorld));

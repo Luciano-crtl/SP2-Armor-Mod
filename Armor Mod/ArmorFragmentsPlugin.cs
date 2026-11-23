@@ -65,6 +65,11 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeHeatCooling;        // local: how fast the residual heat is lost (per second)
         internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
         internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
+        internal static ConfigEntry<float> SmokeShockWave;          // local: the ring of dust and the push of the blast around the muzzle
+        internal static ConfigEntry<float> SmokeMultiScatter;       // local: light scattered several times inside dense smoke
+        internal static ConfigEntry<float> SmokeDustWeight;         // local: how fast dust settles
+        internal static ConfigEntry<float> SmokeDetail;             // local: small eddies inside the smoke
+        internal static ConfigEntry<bool> SmokeTerrain;             // local: the terrain and the things standing on it stop the smoke
         internal static ConfigEntry<bool> SmokeOverflow;            // local: smoke that reaches the edge of its box goes on into a bigger box
         internal static ConfigEntry<bool> SmokeFastDrawing;         // local: skip empty blocks and look up the sun and shadow less often
         internal static ConfigEntry<bool> SmokeFastSolids;          // local: measure the solids every second frame when nothing moves
@@ -360,6 +365,20 @@ namespace ArmorFragments
             SmokeTurbulence = Config.Bind("Smoke", "Turbulence", 0.2f,
                 new ConfigDescription("Cannon smoke: a weak, endless swirling of the air in the whole box (m/s^2), so the smoke keeps rolling and billowing in calm weather instead of freezing. 0 = perfectly still air.",
                     new AcceptableValueRange<float>(0f, 1f)));
+            SmokeShockWave = Config.Bind("Smoke", "ShockWave", 1f,
+                new ConfigDescription("Cannon smoke: the pressure wave of the shot: a ring of dust that runs out over the ground from under the muzzle, stronger in front, and a quick push of the air outward around the barrel. 0 for none. Applies to the next shot.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            SmokeMultiScatter = Config.Bind("Smoke", "MultiScatter", 0.6f,
+                new ConfigDescription("Cannon smoke: how much of the sunlight is scattered several times inside dense smoke, which makes its middle lighter and softer instead of black. 0 = only direct light.",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            SmokeDustWeight = Config.Bind("Smoke", "DustWeight", 2f,
+                new ConfigDescription("Cannon smoke: how fast dust settles, in m/s^2 of sinking per unit of dust (heat lifts the smoke, dust falls out of the air). 0 = dust floats like the smoke.",
+                    new AcceptableValueRange<float>(0f, 10f)));
+            SmokeDetail = Config.Bind("Smoke", "DetailTurbulence", 0.6f,
+                new ConfigDescription("Cannon smoke: small eddies inside the smoke, as strong as the smoke is dense, which the grid is too coarse to make by itself (m/s^2). 0 = none.",
+                    new AcceptableValueRange<float>(0f, 3f)));
+            SmokeTerrain = Config.Bind("Smoke", "Terrain", true,
+                "Cannon smoke: hills, slopes and roads under the smoke (found with a grid of rays) and walls, buildings and rocks that stand still stop the smoke, as vehicle parts do. Off: the ground is a flat plane under the muzzle and only vehicles are solid.");
             SmokeOverflow = Config.Bind("Smoke", "Overflow", true,
                 "Cannon smoke: smoke that reaches the edge of its box goes on into a second, bigger box with coarser cells made beyond that face (at most two at a time), instead of being cut off at a flat edge.");
             SmokeFastDrawing = Config.Bind("Smoke", "FastDrawing", true,

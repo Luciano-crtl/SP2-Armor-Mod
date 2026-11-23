@@ -12,6 +12,7 @@ namespace ArmorFragments.Fluid
         public static float Focus = 0.7f;           // 0 = the old round fireball, 1 = a narrow jet that shoots along the barrel
         public static float MuzzleBrake = 0.3f;     // 0..1: how much of the gas leaves sideways, as through a muzzle brake
         public static float BlastDust = 1f;         // multiplier of the dust the blast lifts
+        public static float ShockWave = 1f;         // 0..2: the ring of dust that runs out over the ground and the quick push of the air around the barrel
         public static float ResidualHeat = 0.3f;    // 0..0.35: the temperature of the propellant smoke (what makes it rise; above 0.37 it also glows)
 
         // What the blast sees of the ground, all in the box's space.
@@ -72,6 +73,25 @@ namespace ArmorFragments.Fluid
                 }
             }
 
+            // The pressure wave in the air: for a moment a ring around the barrel, at the muzzle, pushes the air outward (no smoke in it: only
+            // the speed), so the fireball and the smoke flare out sideways.
+            if (ShockWave > 0.01f && t < 0.07f * T)
+            {
+                float fade = 1f - t / (0.07f * T);
+                for (int k = 0; k < 8; k++)
+                {
+                    float angle = k / 8f * 2f * Mathf.PI;
+                    Vector3 around = new Vector3(0f, Mathf.Cos(angle), Mathf.Sin(angle));
+                    list.Add(new FluidSim.Blob
+                    {
+                        center = muzzle + new Vector3(0.5f * s, 0f, 0f) + around * (1.1f * s),
+                        radius = 0.6f * s,
+                        vel = new Vector3(3f * T * fade, 0f, 0f) + around * (16f * T * fade * ShockWave),
+                        falloff = 1.0f,
+                    });
+                }
+            }
+
             // The propellant smoke keeps coming out for a while: dense, so that it stays opaque as it spreads.
             if (t < smoke)
             {
@@ -122,19 +142,20 @@ namespace ArmorFragments.Fluid
                 }
 
                 float low = Mathf.Clamp01(1f - ground.height / (5f * s));
-                if (low > 0.02f)
+                if (low > 0.02f && ShockWave > 0.01f)
                 {
-                    float travel = Mathf.Min(10f * s, 12f * T * t + 0.8f * s);       // how far the front of the fan has run
-                    const int arc = 9;
+                    // The pressure wave runs out over the ground in a ring all around the muzzle, thicker in front of the barrel.
+                    float travel = Mathf.Min(10f * s, 12f * T * t + 0.8f * s);       // how far the front of the ring has run
+                    const int arc = 16;
                     for (int j = 0; j < arc; j++)
                     {
-                        float angle = Mathf.Lerp(-115f, 115f, j / (float)(arc - 1)) * Mathf.Deg2Rad;
+                        float angle = (j / (float)arc) * 2f * Mathf.PI;
                         Vector3 direction = along * Mathf.Cos(angle) + across * Mathf.Sin(angle);
                         list.Add(new FluidSim.Blob
                         {
                             center = ground.foot + direction * travel + up * (0.25f * s),
                             radius = 0.9f * s + 0.1f * travel,
-                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust,
+                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * ShockWave * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
                             vel = direction * (6f * T * fade) + up * (1.5f * T * fade),
                             radial = 0f, noise = 0.3f, falloff = 1.2f,
                             swirl = 2f * T * fade, swirlFreq = 0.8f / s,

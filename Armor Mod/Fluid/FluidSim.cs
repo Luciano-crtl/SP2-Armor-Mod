@@ -66,6 +66,8 @@ namespace ArmorFragments.Fluid
             public float cool;             // per second: the temperature below 0.35 (the residual heat) decays as exp(-cool * t)
             public float coolHot;          // per second: the temperature above 0.35 (the flame) decays as exp(-coolHot * t)
             public float turbulence;       // m/s^2 of weak, endless swirling everywhere in the box (0 = still air)
+            public float dustWeight;       // m/s^2 of sinking per unit of dust (0 = dust floats like the smoke)
+            public float detail;           // m/s^2 of small eddies inside the smoke (0 = none)
             public float dissipate;        // per second: the density thins as exp(-dissipate * t)
             public float drag;             // per second
             public float edgeMeters;       // thickness of the absorbing edge
@@ -251,11 +253,28 @@ namespace ArmorFragments.Fluid
         // The solid things in the box (vehicle parts, the ground). Call before stepping; null or empty clears them.
         public bool HasSolids { get { return hadShapes; } }
 
+        // The ground as a height map over the box's floor (n x n samples, x fastest; the height in the box's space, below 0 where there is none).
+        // It is used by the next SetObstacles. SetGround(null, ...) goes back to having no height map.
+        private Texture2D groundTexture, noGround;
+        private float groundSizeX, groundSizeZ; private Vector3 groundVelocity; private bool groundSet;
+        public void SetGround(float[] heights, int n, float sizeX, float sizeZ, Vector3 velocity)
+        {
+            if (heights == null) { groundSet = false; return; }
+            if (groundTexture == null || groundTexture.width != n)
+            {
+                if (groundTexture != null) UnityEngine.Object.Destroy(groundTexture);
+                groundTexture = new Texture2D(n, n, TextureFormat.RFloat, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+            }
+            groundTexture.SetPixelData(heights, 0);
+            groundTexture.Apply(false);
+            groundSizeX = sizeX; groundSizeZ = sizeZ; groundVelocity = velocity; groundSet = true;
+        }
+
         public void SetObstacles(IList<Shape> shapes, IList<Vector4> planes = null)
         {
             int count = shapes == null ? 0 : shapes.Count;
-            if (count == 0 && !hadShapes) return;
-            hadShapes = count > 0;
+            if (count == 0 && !hadShapes && !groundSet) return;
+            hadShapes = count > 0 || groundSet;
             if (count > 0)
             {
                 if (shapeBuffer == null || shapeCapacity < count)
@@ -290,6 +309,11 @@ namespace ArmorFragments.Fluid
             cs.SetBuffer(kObstacles, "Planes", planeBuffer);
             cs.SetFloat("Hh", Cell);
             cs.SetInt("ShapeCount", count);
+            if (!groundSet && noGround == null)
+                noGround = new Texture2D(1, 1, TextureFormat.RFloat, false) { hideFlags = HideFlags.HideAndDontSave };
+            cs.SetTexture(kObstacles, "GroundHeight", groundSet ? groundTexture : noGround);
+            cs.SetVector("HeightInfo", new Vector4(groundSet ? 1f : 0f, groundSizeX, groundSizeZ, 0f));
+            cs.SetVector("HeightVel", groundVelocity);
             // The map of last time is kept by swapping the two textures (the new map is written over the older one in full).
             if (DisplaceSmoke) { RenderTexture older = levels[0].solid; levels[0].solid = solidPrev; solidPrev = older; }
             cs.SetTexture(kObstacles, "SolidOut", levels[0].solid);
@@ -560,6 +584,7 @@ namespace ArmorFragments.Fluid
             cs.SetVector("BuoyDir", s.buoyDir);
             cs.SetFloat("Buoy", s.buoyancy);
             cs.SetFloat("Weight", s.weight);
+            cs.SetFloat("DustWeight", s.dustWeight);
             cs.SetTexture(kBuoyancy, "VelIn", velA); cs.SetTexture(kBuoyancy, "ScalIn", scalA); cs.SetTexture(kBuoyancy, "VelOut", velB);
             Dispatch(kBuoyancy, Dims);
             Swap(ref velA, ref velB);
@@ -603,6 +628,8 @@ namespace ArmorFragments.Fluid
             cs.SetFloat("TurbAmp", s.turbulence);
             cs.SetFloat("TurbFreq", 0.35f);
             cs.SetFloat("TurbTime", Time);
+            cs.SetFloat("DetailAmp", s.detail);
+            cs.SetFloat("DetailFreq", 1.4f);
             cs.SetFloat("Diss", Mathf.Exp(-s.dissipate * dt));
             cs.SetFloat("Drag", Mathf.Exp(-s.drag * dt));
             cs.SetTexture(kDamp, "Solid", levels[0].solid); cs.SetTexture(kDamp, "SolidVel", solidVel);

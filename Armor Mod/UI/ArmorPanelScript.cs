@@ -677,6 +677,16 @@ namespace ArmorFragments.UI
                 "How hot the propellant smoke is after the flame (0 to 0.35). Applies to the next shot.", 0.025f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeTurbulence, "Background turbulence",
                 "A weak endless swirling of the air so the smoke keeps billowing in calm weather. 0 = still air.", 0.025f, " m/s2");
+            FloatSetting(ArmorFragmentsPlugin.SmokeShockWave, "Shock wave",
+                "The pressure wave of the shot: a ring of dust over the ground and a push of the air around the barrel. Applies to the next shot.", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.SmokeMultiScatter, "Multiple scattering",
+                "How much light scatters several times inside dense smoke, so its middle is lighter and softer.", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.SmokeDustWeight, "Dust settling",
+                "How fast dust settles out of the air.", 0.25f, " m/s2");
+            FloatSetting(ArmorFragmentsPlugin.SmokeDetail, "Small eddies",
+                "Small eddies inside the smoke, as strong as the smoke is dense.", 0.1f, " m/s2");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeTerrain, "Terrain and walls stop the smoke",
+                "Hills, slopes, roads (a height map from rays) and still walls, buildings and rocks are solid for the smoke.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeOverflow, "Smoke goes on past the box",
                 "Smoke that reaches the edge of its box goes on into a second, bigger box with coarser cells (at most two at a time), instead of being cut off.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeFastDrawing, "Faster drawing of the smoke",
