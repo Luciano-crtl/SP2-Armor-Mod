@@ -202,7 +202,7 @@ namespace ArmorFragments
                 ComputeShader cs = VfxBundleTest.Compute("fluid");
                 Material template = VfxBundleTest.Material("smokevolume");
                 if (cs == null || template == null) return;
-                int level = Mathf.Max(LevelFor(0f), 1);       // the bubble is never finer than medium
+                int level = Mathf.Max(LevelFor(0f), 2);       // the bubble is never finer than medium
                 QualityLevel q = Levels[level];
                 float size = BubbleSize;
                 Vector3 target = new Vector3(size, size * 0.6f, size);

@@ -683,8 +683,8 @@ namespace ArmorFragments.UI
                 "Skips blocks with no smoke and looks up the sun and the shadows on every second sample. About a third faster to draw, the picture hardly changes.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeFastSolids, "Measure solids less often when nothing moves",
                 "After the blast, when nothing near the cloud moves, vehicles and ground are measured every second frame.");
-            ToggleSetting(ArmorFragmentsPlugin.SmokeHalfPrecision, "16-bit smoke fields (high and medium)",
-                "The high and medium levels use half the memory and about 40% of the time per step with the same look. Applies to the next cloud.");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeHalfPrecision, "16-bit smoke fields (ultra, high and medium)",
+                "The ultra, high and medium levels use half the memory and about 40% of the time per step with the same look. Applies to the next cloud.");
             ToggleSetting(ArmorFragmentsPlugin.SmokePlayerBubble, "Box that follows my vehicle",
                 "A small box follows your vehicle while smoke reaches it and takes the smoke inside it, so smoke you drive through or drag along travels with you.");
             ToggleSetting(ArmorFragmentsPlugin.SmokePlayerBubbleTail, "Leave a trail of smoke behind",

@@ -74,21 +74,22 @@ namespace ArmorFragments
         public static float MaxCameraDistance = 400f;  // farther than this: no cloud
         public static float MergeSeconds = 1.2f;       // a shot this soon after a cloud began, inside its box, joins it
 
-        // Quality: 0 = high, 1 = medium, 2 = low. `Chosen` is the best level the player allows; Auto lets the frame time lower it. High and
-        // medium keep their fields in 16 bits (see HalfPrecision).
+        // Quality: 0 = ultra, 1 = high, 2 = medium, 3 = low. `Chosen` is the best level the player allows; Auto lets the frame time lower it, and
+        // never goes above high (ultra is only for when it is picked). Ultra, high and medium keep their fields in 16 bits (see HalfPrecision).
         public struct QualityLevel { public int nx, ny, nz; public float cellMultiplier; public int steps; public int cycles; public string name; public bool half; }
         public static readonly QualityLevel[] Levels =
         {
+            new QualityLevel { nx = 208, ny = 104, nz = 104, cellMultiplier = 0.550f, steps = 56, cycles = 2, name = "ultra", half = true },
             new QualityLevel { nx = 160, ny = 80, nz = 80, cellMultiplier = 0.650f, steps = 48, cycles = 2, name = "high", half = true },
             new QualityLevel { nx = 128, ny = 72, nz = 72, cellMultiplier = 0.800f, steps = 40, cycles = 2, name = "medium", half = true },
             new QualityLevel { nx = 96, ny = 56, nz = 56, cellMultiplier = 1.000f, steps = 32, cycles = 2, name = "low" },
         };
-        private const int AutoBest = 0;                // the best level the automatic mode uses: high
+        private const int AutoBest = 1;                // the best level the automatic mode uses: high
         public static int Chosen = AutoBest;
         public static bool Auto = true;
         private static int autoLevel = AutoBest;       // what the automatic mode currently allows
         private const float BaseCell = 0.125f;
-        public static readonly int[] CellBudget = { 1500000, 900000, 450000 };   // most cells a cloud of each quality may have
+        public static readonly int[] CellBudget = { 2400000, 1500000, 900000, 450000 };   // most cells a cloud of each quality may have
         // How far up the box the muzzle sits: the ground is 2 m or so below it, and the heat of the smoke takes it up, so most of the box is above.
         private const float MuzzleHeightFraction = 0.3f;
         private static readonly Vector3 BaseExtent = new Vector3(18f, 9f, 9f);  // metres, for a 75 mm gun
@@ -217,7 +218,7 @@ namespace ArmorFragments
         {
             int level = Auto ? autoLevel : Chosen;
             if (distance > 300f) level = Mathf.Max(level, Levels.Length - 1);
-            else if (distance > 150f) level = Mathf.Max(level, 1);
+            else if (distance > 150f) level = Mathf.Max(level, 2);
             return level;
         }
 
@@ -616,7 +617,7 @@ namespace ArmorFragments
 
         // A finished simulation waits for the next shot of the same size; only a few are kept, so memory does not pile up.
         private const int MaxPooled = 5;
-        // 16-bit fields (Smoke/HalfPrecision, on by default; only the high and medium levels use them): the speed, smoke, heat, noise coordinates
+        // 16-bit fields (Smoke/HalfPrecision, on by default; only the ultra, high and medium levels use them): the speed, smoke, heat, noise coordinates
         // and pressure take half the memory and about 40% of the time of a step, and the clouds look the same (the difference is that of
         // turbulence from a 0.1% change). A graphics card that cannot write to those formats gets 32 bits.
         public static bool HalfPrecision { get { return ArmorFragmentsPlugin.SmokeHalfPrecision == null || ArmorFragmentsPlugin.SmokeHalfPrecision.Value; } }
@@ -628,7 +629,7 @@ namespace ArmorFragments
             {
                 halfChecked = SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf) && SystemInfo.SupportsRandomWriteOnRenderTextureFormat(RenderTextureFormat.ARGBHalf)
                               && SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RHalf) && SystemInfo.SupportsRandomWriteOnRenderTextureFormat(RenderTextureFormat.RHalf) ? 1 : 2;
-                if (halfChecked == 2) ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke: this graphics card cannot write to 16-bit textures, so high and medium use 32 bits");
+                if (halfChecked == 2) ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke: this graphics card cannot write to 16-bit textures, so ultra, high and medium use 32 bits");
             }
             return halfChecked == 1;
         }

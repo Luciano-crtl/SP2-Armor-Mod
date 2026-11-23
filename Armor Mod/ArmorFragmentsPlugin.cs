@@ -68,7 +68,7 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> SmokeOverflow;            // local: smoke that reaches the edge of its box goes on into a bigger box
         internal static ConfigEntry<bool> SmokeFastDrawing;         // local: skip empty blocks and look up the sun and shadow less often
         internal static ConfigEntry<bool> SmokeFastSolids;          // local: measure the solids every second frame when nothing moves
-        internal static ConfigEntry<bool> SmokeHalfPrecision;       // local: high and medium keep their fields in 16 bits
+        internal static ConfigEntry<bool> SmokeHalfPrecision;       // local: ultra, high and medium keep their fields in 16 bits
         internal static ConfigEntry<bool> SmokePlayerBubble;        // local: a small box that follows your vehicle and takes the smoke it drives through
         internal static ConfigEntry<bool> SmokePlayerBubbleTail;    // local: the bubble leaves a trail of smoke behind
         internal static ConfigEntry<float> SmokePlayerBubbleSize;   // local: how wide that box is (m)
@@ -367,7 +367,7 @@ namespace ArmorFragments
             SmokeFastSolids = Config.Bind("Smoke", "FastSolids", true,
                 "Cannon smoke: once the blast is over and nothing near the cloud moves, the solid shapes of vehicles and ground are measured every second frame instead of every frame.");
             SmokeHalfPrecision = Config.Bind("Smoke", "HalfPrecision", true,
-                "Cannon smoke: the high and medium quality levels keep the speed, smoke and heat of the air in 16-bit numbers. That takes half the memory and about 40% of the time of a step, and the clouds look the same. A graphics card that cannot do it uses 32 bits. Applies to the next cloud.");
+                "Cannon smoke: the ultra, high and medium quality levels keep the speed, smoke and heat of the air in 16-bit numbers. That takes half the memory and about 40% of the time of a step, and the clouds look the same. A graphics card that cannot do it uses 32 bits. Applies to the next cloud.");
             SmokePlayerBubble = Config.Bind("Smoke", "PlayerBubble", true,
                 "Cannon smoke: a small box of fluid follows your vehicle while smoke from a shot reaches it, and takes the smoke inside it, so that smoke you drive through or drag along behind you travels with you instead of being left in the box of the shot.");
             SmokePlayerBubbleTail = Config.Bind("Smoke", "PlayerBubbleTail", true,
