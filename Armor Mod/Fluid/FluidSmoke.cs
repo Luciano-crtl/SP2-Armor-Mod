@@ -39,9 +39,12 @@ namespace ArmorFragments
     {
         public static bool Enabled = true;
         public static int MaxActive = 4;               // simulations running at once
-        // The brake on the air after the blast (per second): the first 0.3 s are braked hard so the blast pushes the air aside and stops;
-        // after that the smoke only has to keep drifting. At 1.5 it was almost still after 3 s, at 0.4 it still moves at 0.7 m/s after 6 s.
-        public static float LateDrag = 0.4f;
+        // The brake on the air (per second), set in the config (section Smoke): the first BlastSeconds are braked hard so the blast pushes the air
+        // aside and stops; after that the smoke only has to keep drifting. At 1.5 it was almost still after 3 s, at 0.4 it still moves at 0.7 m/s
+        // after 6 s.
+        public static float BlastBrake { get { return ArmorFragmentsPlugin.SmokeBlastBrake != null ? ArmorFragmentsPlugin.SmokeBlastBrake.Value : 7f; } }
+        public static float BlastSeconds { get { return ArmorFragmentsPlugin.SmokeBlastSeconds != null ? ArmorFragmentsPlugin.SmokeBlastSeconds.Value : 0.3f; } }
+        public static float LateBrake { get { return ArmorFragmentsPlugin.SmokeLateBrake != null ? ArmorFragmentsPlugin.SmokeLateBrake.Value : 0.4f; } }
         public static bool ShowSolid;                  // debugging view: paint what the smoke treats as solid (the parts of vehicles, the ground)
         public static void ToggleShowSolid() { ShowSolid = !ShowSolid; }
         public static float MinInterval = 0.1f;        // seconds between the shots one cannon adds
@@ -317,7 +320,7 @@ namespace ArmorFragments
                     {
                         // Gravity in the box's axes; the blast slows fast, then the smoke drifts.
                         c.sim.Params.buoyDir = Quaternion.Inverse(c.rotation) * Vector3.up;
-                        c.sim.Params.drag = c.age < 0.3f * c.timeScale ? 7f / c.timeScale : LateDrag;
+                        c.sim.Params.drag = c.age < BlastSeconds * c.timeScale ? BlastBrake / c.timeScale : LateBrake;
                         UpdateWind(c, wind, frame);
                         c.sim.SetObstacles(Obstacles(c), PlaneBuffer);
 

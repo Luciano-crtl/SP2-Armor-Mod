@@ -50,6 +50,9 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> ImpactCameraXRay;
         // RELEASE-STRIP-BEGIN
         internal static ConfigEntry<bool> PerfSceneReport;          // local: every 15 s, a [PERF] line with the frame time and what is in the scene
+        internal static ConfigEntry<float> SmokeBlastBrake;         // local: the brake on the air of a gun's smoke during the blast (per second)
+        internal static ConfigEntry<float> SmokeBlastSeconds;       // local: how long that hard brake lasts (seconds)
+        internal static ConfigEntry<float> SmokeLateBrake;          // local: the brake on the air after the blast (per second)
         // RELEASE-STRIP-END
         internal static ConfigEntry<bool> ImpactCameraDamageView;   // local: the damage map drawn over the plates in the impact camera
         internal static ConfigEntry<int> DamageMapsRelief;           // local: 0 normal map, 1 bump (height) map, 2 both
@@ -291,6 +294,15 @@ namespace ArmorFragments
             PerfSceneReport = Config.Bind("Debug", "PerfSceneReport", false,
                 "If true, every 15 s a [PERF] line in the log gives the frame time next to how many renderers, particle systems, decals... " +
                 "are in the scene (to find out what slows the game down). Counting them costs about 10 ms each time, so it is off.");
+            SmokeBlastBrake = Config.Bind("Smoke", "BlastBrake", 7f,
+                new ConfigDescription("Cannon smoke: the brake on the air during the blast, per second (the air loses that much of its speed, as a rate). High values stop the blast at once; low ones let the fireball and the smoke fly farther.",
+                    new AcceptableValueRange<float>(0f, 20f)));
+            SmokeBlastSeconds = Config.Bind("Smoke", "BlastSeconds", 0.3f,
+                new ConfigDescription("Cannon smoke: how long the hard brake of the blast lasts, in seconds (bigger guns last a little longer). After it the late brake takes over.",
+                    new AcceptableValueRange<float>(0.05f, 1.5f)));
+            SmokeLateBrake = Config.Bind("Smoke", "LateBrake", 0.4f,
+                new ConfigDescription("Cannon smoke: the brake on the air after the blast, per second. 1.5 stops the smoke after about 3 s; 0.4 lets it keep drifting for many seconds; 0 never brakes it (it only stops by thinning out).",
+                    new AcceptableValueRange<float>(0f, 3f)));
             // RELEASE-STRIP-END
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");

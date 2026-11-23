@@ -663,6 +663,12 @@ namespace ArmorFragments.UI
                 new KeyValuePair<string, Action>("Quality", FluidSmoke.CycleQuality),
                 new KeyValuePair<string, Action>("Show solids (red)", FluidSmoke.ToggleShowSolid),
             });
+            FloatSetting(ArmorFragmentsPlugin.SmokeBlastBrake, "Blast brake",
+                "The brake on the air during the blast, per second. High stops the blast at once; low lets the fireball and the smoke fly farther. Applies to the next shot.", 0.5f, " /s");
+            FloatSetting(ArmorFragmentsPlugin.SmokeBlastSeconds, "Blast brake duration",
+                "How long the hard brake of the blast lasts, in seconds. Applies to the next shot.", 0.05f, " s");
+            FloatSetting(ArmorFragmentsPlugin.SmokeLateBrake, "Late brake",
+                "The brake on the air after the blast, per second. 1.5 stops the smoke after about 3 s; 0.4 lets it drift for many seconds; 0 never brakes it. Applies to the clouds already in the air too.", 0.05f, " /s");
         }
         // RELEASE-STRIP-END
 
