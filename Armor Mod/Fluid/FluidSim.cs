@@ -266,6 +266,23 @@ namespace ArmorFragments.Fluid
 
         public void NoWind() { windSet = false; }
 
+        // Diagnostics: how many cells of the box are solid right now (the answer arrives a few frames later, in `done`).
+        public void CountSolid(Action<int> done)
+        {
+            Vector3Int d = Dims;
+            AsyncGPUReadback.Request(levels[0].solid, 0, 0, d.x, 0, d.y, 0, d.z, request =>
+            {
+                if (request.hasError) { done(-1); return; }
+                int count = 0;
+                for (int z = 0; z < d.z; z++)
+                {
+                    Unity.Collections.NativeArray<float> layer = request.GetData<float>(z);
+                    for (int i = 0; i < layer.Length; i++) if (layer[i] > 0.5f) count++;
+                }
+                done(count);
+            });
+        }
+
         private void ResetPhi(RenderTexture target)
         {
             cs.SetFloat("Hh", Cell);

@@ -122,6 +122,8 @@ namespace ArmorFragments
             public PartScript cannonPart;    // its own colliders do not block its smoke
             public bool hasGround;
             public Vector3 groundPoint, groundNormal;
+            public int diagFrames;           // frames since it began, for the first few clouds' diagnostics
+            public int overlapsSeen, partsSeen, shapesSent;
         }
 
         private static readonly List<Cloud> Active = new List<Cloud>();
@@ -132,6 +134,7 @@ namespace ArmorFragments
         private static Mesh boxMesh;
         private static Driver driver;
         private static bool loggedFirst;
+        private static int diagClouds;       // how many clouds have had their surroundings logged
 
         // Frame-time watching (for the automatic quality and for the log).
         private static float frameEma, baselineEma, slowTimer, goodTimer, logTimer, cpuMsSum;
@@ -217,7 +220,9 @@ namespace ArmorFragments
                 Quaternion rot = Quaternion.LookRotation(ez, ey);
 
                 Vector3 extent = size.extent;
-                Vector3 muzzleLocal = new Vector3(1.6f * scale, extent.y * 0.5f, extent.z * 0.5f);
+                // The muzzle sits a third of the way along the box, so the front of the vehicle (the turret and the hull below the gun)
+                // is inside it, not only the gas ahead.
+                Vector3 muzzleLocal = new Vector3(extent.x * 0.32f, extent.y * 0.5f, extent.z * 0.5f);
                 Vector3 origin = tip - rot * muzzleLocal;
 
                 Stack<FluidSim> pool;
@@ -341,6 +346,15 @@ namespace ArmorFragments
                         }
                     }
 
+                    if (diagClouds < 5 && c.diagFrames == 3)
+                    {
+                        diagClouds++;
+                        Cloud cd = c;
+                        c.sim.CountSolid(solid => ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke surroundings: " + cd.overlapsSeen + " collider(s) in the box, "
+                            + cd.partsSeen + " of vehicle parts, " + cd.shapesSent + " solid shape(s) sent (ground " + (cd.hasGround ? "yes" : "no") + "), "
+                            + solid + " of " + (cd.sim != null ? cd.sim.Dims.x * cd.sim.Dims.y * cd.sim.Dims.z : 0) + " cells are solid"));
+                    }
+                    c.diagFrames++;
                     Material m = c.material;
                     m.SetTexture("_Grid", c.sim.Scalars);
                     m.SetTexture("_PhiA", c.sim.PhiA);
@@ -463,8 +477,10 @@ namespace ArmorFragments
 
             if (Auto)
             {
-                bool slow = frameEma > 25f && frameEma - baselineEma > 2.5f;      // under 40 fps, and clearly the clouds' doing
-                bool fine = frameEma < 18f;
+                // Slow only counts when the frame time without clouds is known (it is measured whenever no cloud runs) and the clouds are
+                // clearly what made it longer: more than 3 ms or a fifth above it.
+                bool slow = baselineEma > 0f && frameEma > baselineEma + Mathf.Max(3f, 0.2f * baselineEma);
+                bool fine = baselineEma <= 0f || frameEma < baselineEma + 1.5f;
                 slowTimer = slow ? slowTimer + seconds : 0f;
                 goodTimer = fine ? goodTimer + seconds : 0f;
                 if (slowTimer > 1f && autoLevel < Levels.Length - 1)
@@ -553,9 +569,9 @@ namespace ArmorFragments
 
         // ---- the world around the cloud -----------------------------------------------------------------------------------------
 
-        private static readonly Collider[] Overlaps = new Collider[96];
+        private static readonly Collider[] Overlaps = new Collider[256];
         private static readonly List<FluidSim.Shape> ShapeBuffer = new List<FluidSim.Shape>(32);
-        private const int MaxShapes = 28;
+        private const int MaxShapes = 64;
 
         // The solid things inside the box: the parts of vehicles (the shooter's own too, except its cannon) and the ground. Each is a box,
         // an ellipsoid or a half-space in the box's own space (see Fluid.compute).
@@ -578,16 +594,20 @@ namespace ArmorFragments
             }
 
             int count = Physics.OverlapBoxNonAlloc(center, c.extent * 0.5f, Overlaps, c.rotation, ~0, QueryTriggerInteraction.Ignore);
+            c.overlapsSeen = count; c.partsSeen = 0;
             for (int i = 0; i < count && ShapeBuffer.Count < MaxShapes; i++)
             {
                 Collider col = Overlaps[i];
                 if (col == null) continue;
                 PartScript part = col.GetComponentInParent<PartScript>();
-                if (part == null || part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
+                if (part == null) continue;
+                c.partsSeen++;
+                if (part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
                 if (col.GetComponentInParent<CannonProjectileScript>() != null) continue;
                 FluidSim.Shape shape;
                 if (ShapeOf(col, part, c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
             }
+            c.shapesSent = ShapeBuffer.Count;
             return ShapeBuffer;
         }
 
