@@ -668,6 +668,7 @@ namespace ArmorFragments.UI
             builder.Buttons(new List<KeyValuePair<string, Action>>
             {
                 new KeyValuePair<string, Action>("Ray-marched smoke on/off", SmokeVolume.Toggle),
+                new KeyValuePair<string, Action>("Fluid muzzle smoke on/off", FluidSmoke.Toggle),
             });
         }
         // RELEASE-STRIP-END

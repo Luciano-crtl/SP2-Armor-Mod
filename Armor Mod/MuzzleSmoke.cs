@@ -17,6 +17,7 @@ namespace ArmorFragments
         {
             MuzzleSmoke.OnShot(__instance);
             BlastCloud.OnShot(__instance);
+            FluidSmoke.OnShot(__instance);
         }
     }
 

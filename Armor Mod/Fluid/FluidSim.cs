@@ -1,0 +1,299 @@
+// RELEASE-STRIP-BEGIN
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+namespace ArmorFragments.Fluid
+{
+    // Drives the GPU smoke solver (Fluid.compute in the effect bundle). It has no dependency on the game, so the same file also runs
+    // in the Unity project that builds the bundle, where an editor test renders it to pictures.
+    //
+    // One simulation is a box of nx x ny x nz cells of `cell` metres. The box has its own axes (the caller decides how they sit in the
+    // world); gravity and wind are given in them. The boundaries are open: whatever reaches the edge leaves.
+    public sealed class FluidSim : IDisposable
+    {
+        public struct Blob
+        {
+            public Vector3 center;     // metres from the box corner
+            public float radius;
+            public float rho;
+            public float temp;
+            public Vector3 vel;
+            public float radial;
+            public float noise;
+            public float falloff;
+            public const int Stride = 12 * 4;
+        }
+
+        public struct Settings
+        {
+            public Vector3 buoyDir;        // "up" in the box's axes
+            public float buoyancy;         // m/s^2 of lift per unit of temperature
+            public float weight;           // m/s^2 of sinking per unit of density
+            public float vorticity;        // vorticity confinement
+            public float cool;             // per second: the excess temperature decays as exp(-cool * t)
+            public float dissipate;        // per second: the density thins as exp(-dissipate * t)
+            public float drag;             // per second
+            public float edgeMeters;       // thickness of the absorbing edge
+            public int cycles;             // multigrid cycles per step
+            public static Settings Default
+            {
+                get
+                {
+                    return new Settings { buoyDir = Vector3.up, buoyancy = 0.6f, weight = 0f, vorticity = 1.2f, cool = 1.7f,
+                                          dissipate = 0.08f, drag = 0.15f, edgeMeters = 1.0f, cycles = 2 };
+                }
+            }
+        }
+
+        private sealed class Level
+        {
+            public Vector3Int dims;
+            public float h;
+            public RenderTexture p, rhs, res;
+        }
+
+        public readonly Vector3Int Dims;
+        public readonly float Cell;
+        public Settings Params = Settings.Default;
+        public int CoarseSweeps = 10;      // red-black sweeps on the smallest multigrid level
+
+        private readonly ComputeShader cs;
+        private readonly List<Level> levels = new List<Level>();
+        private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort;
+        private ComputeBuffer blobBuffer;
+        private int blobCapacity;
+        private int seed = 1;
+        private bool disposed;
+
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP;
+
+        // The texture to draw: R = density, G = temperature (0..1 above the air).
+        public RenderTexture Scalars { get { return scalA; } }
+        public RenderTexture Velocity { get { return velA; } }
+        public float Time { get; private set; }
+
+        public FluidSim(ComputeShader shader, int nx, int ny, int nz, float cell)
+        {
+            cs = shader;
+            Dims = new Vector3Int(nx, ny, nz);
+            Cell = cell;
+            kBuoyancy = cs.FindKernel("Buoyancy"); kCurl = cs.FindKernel("Curl"); kVortForce = cs.FindKernel("VortForce");
+            kDivergence = cs.FindKernel("Divergence"); kSmooth = cs.FindKernel("Smooth"); kResidual = cs.FindKernel("Residual");
+            kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
+            kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
+            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP");
+
+            velA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+            scalA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); scalB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+            hat = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); tilde = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+            vort = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+
+            // Multigrid levels: halve every dimension while they stay even and at least 8 cells.
+            Vector3Int d = Dims;
+            float h = cell;
+            while (true)
+            {
+                Level L = new Level
+                {
+                    dims = d, h = h,
+                    p = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
+                    rhs = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
+                    res = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
+                };
+                levels.Add(L);
+                if ((d.x & 1) != 0 || (d.y & 1) != 0 || (d.z & 1) != 0 || Mathf.Min(d.x, Mathf.Min(d.y, d.z)) < 16) break;
+                d = new Vector3Int(d.x / 2, d.y / 2, d.z / 2);
+                h *= 2f;
+            }
+            Clear();
+        }
+
+        private static RenderTexture Make(int x, int y, int z, RenderTextureFormat format)
+        {
+            RenderTexture rt = new RenderTexture(x, y, 0, format)
+            {
+                dimension = TextureDimension.Tex3D,
+                volumeDepth = z,
+                enableRandomWrite = true,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                useMipMap = false,
+                autoGenerateMips = false,
+                hideFlags = HideFlags.HideAndDontSave,    // survives scene changes in the editor
+            };
+            rt.Create();
+            return rt;
+        }
+
+        public void Dispose()
+        {
+            if (disposed) return;
+            disposed = true;
+            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort })
+                if (rt != null) rt.Release();
+            foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); }
+            if (blobBuffer != null) blobBuffer.Release();
+        }
+
+        private void Dispatch(int kernel, Vector3Int dims)
+        {
+            cs.SetInts("Dim", dims.x, dims.y, dims.z);
+            cs.Dispatch(kernel, (dims.x + 7) / 8, (dims.y + 7) / 8, (dims.z + 7) / 8);
+        }
+
+        private static void Swap(ref RenderTexture a, ref RenderTexture b) { RenderTexture t = a; a = b; b = t; }
+
+        public void Clear()
+        {
+            cs.SetFloat("Hh", Cell);
+            cs.SetTexture(kClear, "VelOut", velA);
+            cs.SetTexture(kClear, "ScalOut", scalA);
+            cs.SetTexture(kClear, "Vort", vort);
+            Dispatch(kClear, Dims);
+            cs.SetTexture(kClear, "VelOut", velB);
+            cs.SetTexture(kClear, "ScalOut", scalB);
+            Dispatch(kClear, Dims);
+            foreach (Level L in levels) ClearPressure(L);
+            Time = 0f;
+        }
+
+        // ---- sources -----------------------------------------------------------------------------------------------------------
+        public void AddBlobs(IList<Blob> blobs)
+        {
+            if (blobs == null || blobs.Count == 0) return;
+            if (blobBuffer == null || blobCapacity < blobs.Count)
+            {
+                if (blobBuffer != null) blobBuffer.Release();
+                blobCapacity = Mathf.Max(16, blobs.Count);
+                blobBuffer = new ComputeBuffer(blobCapacity, Blob.Stride);
+            }
+            Blob[] array = new Blob[blobs.Count];
+            blobs.CopyTo(array, 0);
+            blobBuffer.SetData(array);
+            seed += 17;
+            cs.SetFloat("Hh", Cell);
+            cs.SetInt("BlobCount", array.Length);
+            cs.SetInt("Seed", seed);
+            cs.SetBuffer(kBlobs, "Blobs", blobBuffer);
+            cs.SetTexture(kBlobs, "VelIn", velA); cs.SetTexture(kBlobs, "ScalIn", scalA);
+            cs.SetTexture(kBlobs, "VelOut", velB); cs.SetTexture(kBlobs, "ScalOut", scalB);
+            Dispatch(kBlobs, Dims);
+            Swap(ref velA, ref velB); Swap(ref scalA, ref scalB);
+        }
+
+        // ---- one step ----------------------------------------------------------------------------------------------------------
+        public void Step(float dt)
+        {
+            Settings s = Params;
+            cs.SetFloat("Hh", Cell);
+            cs.SetFloat("Dt", dt);
+
+            // Forces.
+            cs.SetVector("BuoyDir", s.buoyDir);
+            cs.SetFloat("Buoy", s.buoyancy);
+            cs.SetFloat("Weight", s.weight);
+            cs.SetTexture(kBuoyancy, "VelIn", velA); cs.SetTexture(kBuoyancy, "ScalIn", scalA); cs.SetTexture(kBuoyancy, "VelOut", velB);
+            Dispatch(kBuoyancy, Dims);
+            Swap(ref velA, ref velB);
+
+            cs.SetTexture(kCurl, "VelIn", velA); cs.SetTexture(kCurl, "Vort", vort);
+            Dispatch(kCurl, Dims);
+            cs.SetFloat("VortEps", s.vorticity);
+            cs.SetTexture(kVortForce, "VelIn", velA); cs.SetTexture(kVortForce, "VortIn", vort); cs.SetTexture(kVortForce, "VelOut", velB);
+            Dispatch(kVortForce, Dims);
+            Swap(ref velA, ref velB);
+
+            Project(s.cycles);
+
+            // Advection: velocity, then the smoke, both with the projected velocity.
+            float dtdx = dt / Cell;
+            cs.SetFloat("DtDx", dtdx);
+            Advect(velA, velB);
+            Advect(scalA, scalB);
+            Swap(ref velA, ref velB);
+            Swap(ref scalA, ref scalB);
+
+            // Damping.
+            cs.SetFloat("EdgeCells", s.edgeMeters / Cell);
+            cs.SetFloat("KeepRate", Mathf.Min(1f, dt * 10f));
+            cs.SetFloat("Cool", Mathf.Exp(-s.cool * dt));
+            cs.SetFloat("Diss", Mathf.Exp(-s.dissipate * dt));
+            cs.SetFloat("Drag", Mathf.Exp(-s.drag * dt));
+            cs.SetTexture(kDamp, "VelIn", velA); cs.SetTexture(kDamp, "ScalIn", scalA);
+            cs.SetTexture(kDamp, "VelOut", velB); cs.SetTexture(kDamp, "ScalOut", scalB);
+            Dispatch(kDamp, Dims);
+            Swap(ref velA, ref velB); Swap(ref scalA, ref scalB);
+
+            Time += dt;
+        }
+
+        // MacCormack: trace back (hat), trace forward from that (tilde), then correct and limit. The result goes to `dst`; the field
+        // and the velocity that moves it are read from `src` and velA.
+        private void Advect(RenderTexture src, RenderTexture dst)
+        {
+            cs.SetTexture(kAdv, "VelIn", velA);
+            cs.SetTexture(kAdv, "Src", src); cs.SetTexture(kAdv, "Dst", hat); cs.SetFloat("TraceSign", 1f);
+            Dispatch(kAdv, Dims);
+            cs.SetTexture(kAdv, "Src", hat); cs.SetTexture(kAdv, "Dst", tilde); cs.SetFloat("TraceSign", -1f);
+            Dispatch(kAdv, Dims);
+            cs.SetTexture(kMac, "VelIn", velA); cs.SetTexture(kMac, "Src", src);
+            cs.SetTexture(kMac, "HatIn", hat); cs.SetTexture(kMac, "TildeIn", tilde); cs.SetTexture(kMac, "Dst", dst);
+            Dispatch(kMac, Dims);
+        }
+
+        // ---- pressure projection --------------------------------------------------------------------------------------------
+        private void Project(int cycles)
+        {
+            Level L0 = levels[0];
+            cs.SetTexture(kDivergence, "VelIn", velA); cs.SetTexture(kDivergence, "RhsOut", L0.rhs);
+            Dispatch(kDivergence, Dims);
+            for (int i = 0; i < cycles; i++) VCycle(0);
+            cs.SetTexture(kSubGrad, "VelIn", velA); cs.SetTexture(kSubGrad, "PIn", L0.p); cs.SetTexture(kSubGrad, "VelOut", velB);
+            Dispatch(kSubGrad, Dims);
+            Swap(ref velA, ref velB);
+        }
+
+        private void Sweeps(Level L, int count)
+        {
+            cs.SetFloat("H2", L.h * L.h);
+            cs.SetTexture(kSmooth, "P", L.p); cs.SetTexture(kSmooth, "Rhs", L.rhs);
+            for (int i = 0; i < count; i++)
+                for (int color = 0; color < 2; color++)
+                {
+                    cs.SetInt("RbColor", color);
+                    Dispatch(kSmooth, L.dims);
+                }
+        }
+
+        private void VCycle(int index)
+        {
+            Level L = levels[index];
+            if (index == levels.Count - 1) { Sweeps(L, CoarseSweeps); return; }
+            Sweeps(L, 2);
+
+            cs.SetFloat("H2", L.h * L.h);
+            cs.SetTexture(kResidual, "P", L.p); cs.SetTexture(kResidual, "Rhs", L.rhs); cs.SetTexture(kResidual, "Res", L.res);
+            Dispatch(kResidual, L.dims);
+
+            Level C = levels[index + 1];
+            cs.SetTexture(kRestrict, "ResIn", L.res); cs.SetTexture(kRestrict, "RhsOut", C.rhs);
+            Dispatch(kRestrict, C.dims);
+            ClearPressure(C);
+
+            VCycle(index + 1);
+
+            cs.SetTexture(kProlong, "P", L.p); cs.SetTexture(kProlong, "PIn", C.p);
+            Dispatch(kProlong, L.dims);
+            Sweeps(L, 2);
+        }
+
+        private void ClearPressure(Level L)
+        {
+            cs.SetTexture(kClearP, "P", L.p);
+            Dispatch(kClearP, L.dims);
+        }
+    }
+}
+// RELEASE-STRIP-END

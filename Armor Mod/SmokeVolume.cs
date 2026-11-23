@@ -200,8 +200,8 @@ namespace ArmorFragments
             noiseOffset += velocitySum / count * Time.deltaTime;
             float meanSize = Mathf.Max(0.05f, sizeSum / count);
 
-            material.SetVector("_GridMin", new Vector4(origin.x, origin.y, origin.z, 0f));
-            material.SetFloat("_GridSize", extent);
+            material.SetMatrix("_WorldToGrid", Matrix4x4.Translate(-origin));
+            material.SetVector("_GridExtent", new Vector4(extent, extent, extent, 0f));
             material.SetVector("_NoiseOffset", new Vector4(noiseOffset.x, noiseOffset.y, noiseOffset.z, 0f));
             material.SetFloat("_NoiseScale", 1f / (DetailPerSize * 2f * meanSize));
 
@@ -223,7 +223,7 @@ namespace ArmorFragments
 
         // Whether the scene's depth texture exists, so the smoke can stop at solid things. If the render pipeline does not make it
         // and the camera is allowed, ask the main camera for it.
-        private static bool DepthTextureAvailable()
+        internal static bool DepthTextureAvailable()
         {
             if (depthChecked) return depthAvailable;
             depthChecked = true;

@@ -15,6 +15,7 @@ namespace ArmorFragments
         private static AssetBundle bundle;
         private static readonly Dictionary<string, GameObject> Prefabs = new Dictionary<string, GameObject>();
         private static readonly Dictionary<string, Material> Materials = new Dictionary<string, Material>();
+        private static readonly Dictionary<string, ComputeShader> Computes = new Dictionary<string, ComputeShader>();
         private static readonly List<GameObject> Spawned = new List<GameObject>();
         private static bool loadFailed;
 
@@ -24,6 +25,14 @@ namespace ArmorFragments
             if (bundle == null && !loadFailed && !Load()) loadFailed = true;
             GameObject prefab;
             return Prefabs.TryGetValue(name, out prefab) ? prefab : null;
+        }
+
+        // A compute shader of the bundle by name, lower case ("fluid"); null if it cannot be had.
+        public static ComputeShader Compute(string name)
+        {
+            if (bundle == null && !loadFailed && !Load()) loadFailed = true;
+            ComputeShader shader;
+            return Computes.TryGetValue(name, out shader) ? shader : null;
         }
 
         // A material of the bundle by name, lower case ("smokevolume"); null if it cannot be had.
@@ -80,10 +89,12 @@ namespace ArmorFragments
         public static void Shutdown()
         {
             MuzzleSmoke.Shutdown();
+            FluidSmoke.Shutdown();
             foreach (GameObject go in Spawned) if (go != null) Object.Destroy(go);
             Spawned.Clear();
             Prefabs.Clear();
             Materials.Clear();
+            Computes.Clear();
             if (bundle != null) bundle.Unload(true);
             bundle = null;
             loadFailed = false;
@@ -114,7 +125,9 @@ namespace ArmorFragments
                 GameObject go = bundle.LoadAsset<GameObject>(asset);
                 if (go != null) { Prefabs[Path.GetFileNameWithoutExtension(asset).ToLowerInvariant()] = go; continue; }
                 Material material = bundle.LoadAsset<Material>(asset);
-                if (material != null) Materials[Path.GetFileNameWithoutExtension(asset).ToLowerInvariant()] = material;
+                if (material != null) { Materials[Path.GetFileNameWithoutExtension(asset).ToLowerInvariant()] = material; continue; }
+                ComputeShader compute = bundle.LoadAsset<ComputeShader>(asset);
+                if (compute != null) Computes[Path.GetFileNameWithoutExtension(asset).ToLowerInvariant()] = compute;
             }
             return true;
         }
