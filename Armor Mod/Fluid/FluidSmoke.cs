@@ -124,6 +124,7 @@ namespace ArmorFragments
             public PartScript cannonPart;    // its own colliders do not block its smoke
             public bool hasGround;
             public Vector3 groundPoint, groundNormal;
+            public float windPeak;           // the strongest ambient wind the game reported over the box (m/s), for the log
             public int diagFrames;           // frames since it began, for the first few clouds' diagnostics
             public int overlapsSeen, partsSeen, shapesSent;
         }
@@ -357,14 +358,14 @@ namespace ArmorFragments
                             + cd.partsSeen + " of vehicle parts, " + cd.shapesSent + " solid shape(s) sent (ground " + (cd.hasGround ? "yes" : "no") + "), "
                             + solid + " of " + (cd.sim != null ? cd.sim.Dims.x * cd.sim.Dims.y * cd.sim.Dims.z : 0) + " cells are solid"));
                     }
-                    if (checkClouds < 8 && c.diagFrames == 14 && c.sim != null)
+                    if (checkClouds < 18 && (c.diagFrames == 8 || c.diagFrames == 16 || c.diagFrames == 32) && c.sim != null)
                     {
                         checkClouds++;
                         Cloud cc = c;
                         float splitX = cc.extent.x * 0.32f + 2.5f * cc.scale;
                         c.sim.Inspect(splitX, (fastest, mass, bad, ahead) => ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke check, " + cc.age.ToString("F2") + " s after the shot: fastest air "
                             + fastest.ToString("F1") + " m/s, smoke " + mass.ToString("F0") + " (" + (mass > 0 ? 100.0 * ahead / mass : 0).ToString("F0") + "% of it beyond the muzzle's end)"
-                            + (bad > 0 ? ", " + bad + " cell(s) that are not numbers" : "") + ", quality " + Levels[cc.level].name));
+                            + (bad > 0 ? ", " + bad + " cell(s) that are not numbers" : "") + ", the wind over the box peaked at " + cc.windPeak.ToString("F1") + " m/s, quality " + Levels[cc.level].name + ", box " + cc.extent.x.ToString("F1") + " m"));
                     }
                     c.diagFrames++;
                     Material m = c.material;
@@ -472,6 +473,9 @@ namespace ArmorFragments
             Quaternion toGrid = Quaternion.Inverse(c.rotation);
             for (int i = 0; i < 64; i++)
                 AmbientBuffer[i] = toGrid * (new Vector3(windResults[i].x, windResults[i].y, windResults[i].z) - c.drift);
+            float peak = 0f;
+            for (int i = 0; i < 64; i++) peak = Mathf.Max(peak, AmbientBuffer[i].magnitude);
+            c.windPeak = Mathf.Max(c.windPeak, peak);
             c.sim.SetWind(AmbientBuffer);
         }
 
