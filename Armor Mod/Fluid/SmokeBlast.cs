@@ -12,6 +12,7 @@ namespace ArmorFragments.Fluid
         public static float Focus = 0.7f;           // 0 = the old round fireball, 1 = a narrow jet that shoots along the barrel
         public static float MuzzleBrake = 0.3f;     // 0..1: how much of the gas leaves sideways, as through a muzzle brake
         public static float BlastDust = 1f;         // multiplier of the dust the blast lifts
+        public static float ResidualHeat = 0.3f;    // 0..0.35: the temperature of the propellant smoke (what makes it rise; above 0.37 it also glows)
 
         // What the blast sees of the ground, all in the box's space.
         public sealed class Ground
@@ -79,7 +80,7 @@ namespace ArmorFragments.Fluid
                 {
                     center = muzzle + new Vector3(0.9f * s, 0, 0),
                     radius = Mathf.Lerp(1.3f, 1.0f, focus) * s,
-                    rho = 1.7f * fade, temp = 0.3f * fade,
+                    rho = 1.7f * fade, temp = ResidualHeat * fade,
                     vel = new Vector3(Mathf.Lerp(4f, 8f, focus) * T * fade, 0, 0),
                     radial = 1.0f * T, noise = 0.15f, falloff = 1.1f,
                     swirl = 3f * T * fade, swirlFreq = 0.7f / s,
@@ -89,7 +90,7 @@ namespace ArmorFragments.Fluid
                 {
                     center = muzzle + new Vector3(-0.5f * s, 0, 0),
                     radius = 0.8f * s,
-                    rho = 0.7f * fade, temp = 0.25f * fade,
+                    rho = 0.7f * fade, temp = 0.8f * ResidualHeat * fade,
                     vel = new Vector3(-4f * T * fade, 0, 0),
                     radial = 1.5f * T, noise = 0.2f, falloff = 1.1f,
                     swirl = 2f * T * fade, swirlFreq = 0.8f / s,

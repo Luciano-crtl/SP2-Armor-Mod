@@ -57,6 +57,7 @@ namespace ArmorFragments
             if (ArmorFragmentsPlugin.SmokeJetFocus != null) SmokeBlast.Focus = ArmorFragmentsPlugin.SmokeJetFocus.Value;
             if (ArmorFragmentsPlugin.SmokeMuzzleBrake != null) SmokeBlast.MuzzleBrake = ArmorFragmentsPlugin.SmokeMuzzleBrake.Value;
             if (ArmorFragmentsPlugin.SmokeBlastDust != null) SmokeBlast.BlastDust = ArmorFragmentsPlugin.SmokeBlastDust.Value;
+            if (ArmorFragmentsPlugin.SmokeResidualHeat != null) SmokeBlast.ResidualHeat = Mathf.Clamp(ArmorFragmentsPlugin.SmokeResidualHeat.Value, 0f, 0.35f);
         }
         public static bool ShowSolid;                  // debugging view: paint what the smoke treats as solid (the parts of vehicles, the ground)
         public static void ToggleShowSolid() { ShowSolid = !ShowSolid; }
@@ -348,6 +349,10 @@ namespace ArmorFragments
                         // Gravity in the box's axes; the blast slows fast, then the smoke drifts.
                         c.sim.Params.buoyDir = Quaternion.Inverse(c.rotation) * Vector3.up;
                         c.sim.Params.drag = c.age < BlastSeconds * c.timeScale ? BlastBrake / c.timeScale : LateBrake;
+                        // Heat that makes the smoke rise and the weak, endless swirling of the air (see the settings in section Smoke).
+                        if (ArmorFragmentsPlugin.SmokeBuoyancy != null) c.sim.Params.buoyancy = ArmorFragmentsPlugin.SmokeBuoyancy.Value;
+                        if (ArmorFragmentsPlugin.SmokeHeatCooling != null) c.sim.Params.cool = ArmorFragmentsPlugin.SmokeHeatCooling.Value;
+                        if (ArmorFragmentsPlugin.SmokeTurbulence != null) c.sim.Params.turbulence = ArmorFragmentsPlugin.SmokeTurbulence.Value;
                         UpdateWind(c, wind, frame);
                         c.sim.SetObstacles(Obstacles(c), PlaneBuffer);
 

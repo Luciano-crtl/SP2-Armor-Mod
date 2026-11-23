@@ -61,6 +61,10 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeBlastDust;          // local: how much dust the blast lifts
         internal static ConfigEntry<bool> SmokeShadows;             // local: the smoke casts shadows on the scene
         internal static ConfigEntry<float> SmokeShadowStrength;     // local: how dark those shadows are
+        internal static ConfigEntry<float> SmokeBuoyancy;           // local: how strongly heat lifts the smoke (m/s^2 per unit of temperature)
+        internal static ConfigEntry<float> SmokeHeatCooling;        // local: how fast the residual heat is lost (per second)
+        internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
+        internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
         internal static ConfigEntry<float> SmokeBoxSize;            // local: the size of the box the smoke is simulated in (1 = standard)
         internal static ConfigEntry<bool> SmokeWash;                // local: propellers, rotors and jets blow the smoke
         internal static ConfigEntry<float> SmokeWashStrength;       // local: how hard they blow
@@ -336,6 +340,18 @@ namespace ArmorFragments
                 "Cannon smoke: the smoke casts shadows on the ground and on vehicles (only the sun's shadow, and only inside the game's shadow distance).");
             SmokeShadowStrength = Config.Bind("Smoke", "ShadowStrength", 0.8f,
                 new ConfigDescription("Cannon smoke: how dark the shadow of dense smoke is (0 = none, 1 = as dark as any shadow).",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            SmokeBuoyancy = Config.Bind("Smoke", "Buoyancy", 10f,
+                new ConfigDescription("Cannon smoke: how strongly heat lifts the smoke, in m/s^2 per unit of temperature (the propellant smoke has up to 0.35). 10 lifts a puff about 2 m in 5 s; with more, the smoke rises as a column and spreads at the top; with 0 it only drifts.",
+                    new AcceptableValueRange<float>(0f, 30f)));
+            SmokeHeatCooling = Config.Bind("Smoke", "HeatCooling", 0.3f,
+                new ConfigDescription("Cannon smoke: how fast the residual heat of the smoke is lost, per second (the flame itself always burns out in about a second). Lower = the smoke keeps rising for longer.",
+                    new AcceptableValueRange<float>(0f, 3f)));
+            SmokeResidualHeat = Config.Bind("Smoke", "ResidualHeat", 0.3f,
+                new ConfigDescription("Cannon smoke: how hot the propellant smoke is after the flame (0 to 0.35; above that it also glows orange). Applies to the next shot.",
+                    new AcceptableValueRange<float>(0f, 0.35f)));
+            SmokeTurbulence = Config.Bind("Smoke", "Turbulence", 0.2f,
+                new ConfigDescription("Cannon smoke: a weak, endless swirling of the air in the whole box (m/s^2), so the smoke keeps rolling and billowing in calm weather instead of freezing. 0 = perfectly still air.",
                     new AcceptableValueRange<float>(0f, 1f)));
             SmokeBoxSize = Config.Bind("Smoke", "BoxSize", 1f,
                 new ConfigDescription("Cannon smoke: how big the box the smoke is simulated in is (1 = standard, 18 x 9 x 9 m for a 75 mm gun). Smoke that leaves the box vanishes. The number of cells is fixed by the quality level, so a bigger box has coarser cells (less fine detail). Applies to the next shot.",

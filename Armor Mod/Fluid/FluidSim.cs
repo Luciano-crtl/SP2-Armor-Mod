@@ -63,7 +63,9 @@ namespace ArmorFragments.Fluid
             public float buoyancy;         // m/s^2 of lift per unit of temperature
             public float weight;           // m/s^2 of sinking per unit of density
             public float vorticity;        // vorticity confinement
-            public float cool;             // per second: the excess temperature decays as exp(-cool * t)
+            public float cool;             // per second: the temperature below 0.35 (the residual heat) decays as exp(-cool * t)
+            public float coolHot;          // per second: the temperature above 0.35 (the flame) decays as exp(-coolHot * t)
+            public float turbulence;       // m/s^2 of weak, endless swirling everywhere in the box (0 = still air)
             public float dissipate;        // per second: the density thins as exp(-dissipate * t)
             public float drag;             // per second
             public float edgeMeters;       // thickness of the absorbing edge
@@ -73,7 +75,7 @@ namespace ArmorFragments.Fluid
             {
                 get
                 {
-                    return new Settings { buoyDir = Vector3.up, buoyancy = 0.6f, weight = 0f, vorticity = 1.2f, cool = 1.7f,
+                    return new Settings { buoyDir = Vector3.up, buoyancy = 0.6f, weight = 0f, vorticity = 1.2f, cool = 1.7f, coolHot = 1.7f, turbulence = 0f,
                                           dissipate = 0.04f, drag = 0.15f, edgeMeters = 1.0f, cycles = 2, windFollow = 1.2f };
                 }
             }
@@ -495,6 +497,10 @@ namespace ArmorFragments.Fluid
             cs.SetFloat("EdgeCells", s.edgeMeters / Cell);
             cs.SetFloat("KeepRate", Mathf.Min(1f, dt * 10f));
             cs.SetFloat("Cool", Mathf.Exp(-s.cool * dt));
+            cs.SetFloat("CoolHot", Mathf.Exp(-s.coolHot * dt));
+            cs.SetFloat("TurbAmp", s.turbulence);
+            cs.SetFloat("TurbFreq", 0.35f);
+            cs.SetFloat("TurbTime", Time);
             cs.SetFloat("Diss", Mathf.Exp(-s.dissipate * dt));
             cs.SetFloat("Drag", Mathf.Exp(-s.drag * dt));
             cs.SetTexture(kDamp, "Solid", levels[0].solid); cs.SetTexture(kDamp, "SolidVel", solidVel);

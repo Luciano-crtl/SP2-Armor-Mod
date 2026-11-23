@@ -669,6 +669,14 @@ namespace ArmorFragments.UI
                 "How long the hard brake of the blast lasts, in seconds. Applies to the next shot.", 0.05f, " s");
             FloatSetting(ArmorFragmentsPlugin.SmokeLateBrake, "Late brake",
                 "The brake on the air after the blast, per second. 1.5 stops the smoke after about 3 s; 0.4 lets it drift for many seconds; 0 never brakes it. Applies to the clouds already in the air too.", 0.05f, " /s");
+            FloatSetting(ArmorFragmentsPlugin.SmokeBuoyancy, "Smoke buoyancy",
+                "How strongly heat lifts the smoke. More makes a rising column; 0 only drifts.", 1f, " m/s2");
+            FloatSetting(ArmorFragmentsPlugin.SmokeHeatCooling, "Heat loss",
+                "How fast the smoke loses its residual heat, per second. Lower: it rises for longer.", 0.05f, " /s");
+            FloatSetting(ArmorFragmentsPlugin.SmokeResidualHeat, "Smoke heat",
+                "How hot the propellant smoke is after the flame (0 to 0.35). Applies to the next shot.", 0.025f, "");
+            FloatSetting(ArmorFragmentsPlugin.SmokeTurbulence, "Background turbulence",
+                "A weak endless swirling of the air so the smoke keeps billowing in calm weather. 0 = still air.", 0.025f, " m/s2");
             FloatSetting(ArmorFragmentsPlugin.SmokeBoxSize, "Simulation box size",
                 "How big the box the smoke is simulated in is (1 = standard). Smoke that leaves it vanishes; a bigger box has coarser cells because the cell count is fixed by the quality level. Applies to the next shot.", 0.1f, " x");
             FloatSetting(ArmorFragmentsPlugin.SmokeJetFocus, "Jet focus",
