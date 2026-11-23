@@ -47,6 +47,9 @@ namespace ArmorFragments
         public static float BlastSeconds { get { return ArmorFragmentsPlugin.SmokeBlastSeconds != null ? ArmorFragmentsPlugin.SmokeBlastSeconds.Value : 0.3f; } }
         public static float LateBrake { get { return ArmorFragmentsPlugin.SmokeLateBrake != null ? ArmorFragmentsPlugin.SmokeLateBrake.Value : 0.4f; } }
         public static bool SmokeGroundDust { get { return ArmorFragmentsPlugin.SmokeGroundDust == null || ArmorFragmentsPlugin.SmokeGroundDust.Value; } }
+        // How much bigger (or smaller) than the standard the box of a new cloud is, in every direction. The number of cells is limited by the
+        // quality level, so a bigger box has coarser cells.
+        public static float BoxSize { get { return ArmorFragmentsPlugin.SmokeBoxSize != null ? Mathf.Clamp(ArmorFragmentsPlugin.SmokeBoxSize.Value, 0.5f, 3f) : 1f; } }
         public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
         public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.8f; } }
         private static void ReadBlastSettings()
@@ -95,7 +98,7 @@ namespace ArmorFragments
             Sizing z = new Sizing();
             z.scale = Mathf.Clamp(caliberMm / 75f, 0.2f, 3.5f);
             z.timeScale = Mathf.Pow(z.scale, 0.3f);
-            Vector3 target = BaseExtent * z.scale;
+            Vector3 target = BaseExtent * z.scale * BoxSize;
             float h = BaseCell * Mathf.Sqrt(z.scale) * Levels[level].cellMultiplier;
             Vector3Int d;
             while (true)

@@ -669,6 +669,8 @@ namespace ArmorFragments.UI
                 "How long the hard brake of the blast lasts, in seconds. Applies to the next shot.", 0.05f, " s");
             FloatSetting(ArmorFragmentsPlugin.SmokeLateBrake, "Late brake",
                 "The brake on the air after the blast, per second. 1.5 stops the smoke after about 3 s; 0.4 lets it drift for many seconds; 0 never brakes it. Applies to the clouds already in the air too.", 0.05f, " /s");
+            FloatSetting(ArmorFragmentsPlugin.SmokeBoxSize, "Simulation box size",
+                "How big the box the smoke is simulated in is (1 = standard). Smoke that leaves it vanishes; a bigger box has coarser cells because the cell count is fixed by the quality level. Applies to the next shot.", 0.1f, " x");
             FloatSetting(ArmorFragmentsPlugin.SmokeJetFocus, "Jet focus",
                 "The shape of the blast: 0 is a round fireball, 1 a narrow jet along the barrel. Applies to the next shot.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeMuzzleBrake, "Muzzle brake",
