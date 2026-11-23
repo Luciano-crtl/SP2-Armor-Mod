@@ -136,6 +136,7 @@ namespace ArmorFragments
         private static Mesh boxMesh;
         private static Driver driver;
         private static bool loggedFirst;
+        private static int checkClouds;       // how many clouds have had their air speed and smoke measured
         private static int diagClouds;       // how many clouds have had their surroundings logged
 
         // Frame-time watching (for the automatic quality and for the log).
@@ -355,6 +356,15 @@ namespace ArmorFragments
                         c.sim.CountSolid(solid => ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke surroundings: " + cd.overlapsSeen + " collider(s) in the box, "
                             + cd.partsSeen + " of vehicle parts, " + cd.shapesSent + " solid shape(s) sent (ground " + (cd.hasGround ? "yes" : "no") + "), "
                             + solid + " of " + (cd.sim != null ? cd.sim.Dims.x * cd.sim.Dims.y * cd.sim.Dims.z : 0) + " cells are solid"));
+                    }
+                    if (checkClouds < 8 && c.diagFrames == 14 && c.sim != null)
+                    {
+                        checkClouds++;
+                        Cloud cc = c;
+                        float splitX = cc.extent.x * 0.32f + 2.5f * cc.scale;
+                        c.sim.Inspect(splitX, (fastest, mass, bad, ahead) => ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke check, " + cc.age.ToString("F2") + " s after the shot: fastest air "
+                            + fastest.ToString("F1") + " m/s, smoke " + mass.ToString("F0") + " (" + (mass > 0 ? 100.0 * ahead / mass : 0).ToString("F0") + "% of it beyond the muzzle's end)"
+                            + (bad > 0 ? ", " + bad + " cell(s) that are not numbers" : "") + ", quality " + Levels[cc.level].name));
                     }
                     c.diagFrames++;
                     Material m = c.material;
@@ -675,7 +685,7 @@ namespace ArmorFragments
                     Vector3 hullCenterWorld = m.GetColumn(3);
                     Vector3 hullVelocity = -c.drift, hullSpin = Vector3.zero;
                     Assets.Scripts.Craft.IRigidBody hullBody = part.Body != null ? part.Body.RigidBody : null;
-                    if (hullBody != null && !hullBody.IsDead) { hullVelocity += hullBody.GetPointVelocity(hullCenterWorld); hullSpin = hullBody.angularVelocity; }
+                    if (hullBody != null && !hullBody.IsDead) { hullVelocity += SafeVelocity(part, hullBody.GetPointVelocity(hullCenterWorld)); hullSpin = SafeSpin(part, hullBody.angularVelocity); }
                     int first = PlaneBuffer.Count;
                     // The planes are measured from the middle of the mesh's box, which is where the shape's own space starts.
                     for (int i = 0; i < planes.Length; i++)
@@ -698,11 +708,38 @@ namespace ArmorFragments
             Assets.Scripts.Craft.IRigidBody body = part.Body != null ? part.Body.RigidBody : null;
             if (body != null && !body.IsDead)
             {
-                velocity += body.GetPointVelocity(centerWorld);
-                spin = body.angularVelocity;
+                velocity += SafeVelocity(part, body.GetPointVelocity(centerWorld));
+                spin = SafeSpin(part, body.angularVelocity);
             }
             shape = FluidSim.Shape.Make(m.inverse * gridToWorld, half, kind, toGrid * velocity, toGrid * spin, toGrid * (centerWorld - c.origin));
             return true;
+        }
+
+        // A part that reports an impossible speed (not a number, or far beyond anything a vehicle does) must not reach the solver: the gas
+        // next to it would be thrown out of the box. Such a value counts as standing still, and the first few are written to the log.
+        private const float MaxSolidSpeed = 60f;         // m/s
+        private const float MaxSolidSpin = 40f;          // rad/s
+        private static int rejectedVelocities;
+
+        private static Vector3 SafeVelocity(PartScript part, Vector3 v)
+        {
+            if (!float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v.sqrMagnitude <= MaxSolidSpeed * MaxSolidSpeed) return v;
+            Reject(part, "speed", v);
+            return Vector3.zero;
+        }
+
+        private static Vector3 SafeSpin(PartScript part, Vector3 w)
+        {
+            if (!float.IsNaN(w.x) && !float.IsNaN(w.y) && !float.IsNaN(w.z) && w.sqrMagnitude <= MaxSolidSpin * MaxSolidSpin) return w;
+            Reject(part, "spin", w);
+            return Vector3.zero;
+        }
+
+        private static void Reject(PartScript part, string what, Vector3 value)
+        {
+            if (++rejectedVelocities > 6) return;
+            ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke: part '" + (part != null && part.Part != null ? part.Part.Name : "?") + "' reports an impossible " + what + " ("
+                                             + value.ToString("F1") + "); the smoke treats it as standing still");
         }
 
         // The planes (outward normal, offset) that bound a convex mesh, in the mesh's own space, found once per mesh. Null when the mesh is not

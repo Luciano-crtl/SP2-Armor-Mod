@@ -86,7 +86,19 @@ namespace ArmorFragments.Fluid
         }
 
         public readonly Vector3Int Dims;
-        public float Cell;        // metres; it may be changed between steps (a bigger box for a bigger gun) without reallocating
+        private float cellSize;
+        // metres; it may be changed between steps (a bigger box for a bigger gun) without reallocating. The pressure solver's coarse levels
+        // take their size from it, so they follow it.
+        public float Cell
+        {
+            get { return cellSize; }
+            set
+            {
+                cellSize = value;
+                float h = value;
+                foreach (Level level in levels) { level.h = h; h *= 2f; }
+            }
+        }
         public Settings Params = Settings.Default;
         public int CoarseSweeps = 10;      // red-black sweeps on the smallest multigrid level
 
@@ -133,7 +145,7 @@ namespace ArmorFragments.Fluid
         {
             cs = shader;
             Dims = new Vector3Int(nx, ny, nz);
-            Cell = cell;
+            cellSize = cell;
             kBuoyancy = cs.FindKernel("Buoyancy"); kCurl = cs.FindKernel("Curl"); kVortForce = cs.FindKernel("VortForce");
             kDivergence = cs.FindKernel("Divergence"); kSmooth = cs.FindKernel("Smooth"); kResidual = cs.FindKernel("Residual");
             kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
@@ -308,6 +320,37 @@ namespace ArmorFragments.Fluid
         }
 
         public void NoWind() { windSet = false; }
+
+        // Diagnostics: the fastest air, the smoke left, the cells with a value that is not a number, and how much of the smoke is in the
+        // half of the box ahead of the muzzle's end (x above `splitX` metres). The answer arrives a few frames later, in `done`.
+        public void Inspect(float splitX, Action<float, double, int, double> done)
+        {
+            Vector3Int d = Dims;
+            RenderTexture scalarTexture = scalA, velocityTexture = velA;
+            AsyncGPUReadback.Request(scalarTexture, 0, 0, d.x, 0, d.y, 0, d.z, rs =>
+            {
+                if (rs.hasError) { done(-1f, -1, 0, 0); return; }
+                AsyncGPUReadback.Request(velocityTexture, 0, 0, d.x, 0, d.y, 0, d.z, rv =>
+                {
+                    if (rv.hasError) { done(-1f, -1, 0, 0); return; }
+                    double mass = 0, ahead = 0; float fastest = 0f; int bad = 0;
+                    for (int z = 0; z < d.z; z++)
+                    {
+                        Unity.Collections.NativeArray<Vector4> ls = rs.GetData<Vector4>(z), lv = rv.GetData<Vector4>(z);
+                        for (int i = 0; i < ls.Length; i++)
+                        {
+                            float density = ls[i].x;
+                            Vector3 v = new Vector3(lv[i].x, lv[i].y, lv[i].z);
+                            if (float.IsNaN(density) || float.IsInfinity(density) || float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z)) { bad++; continue; }
+                            mass += density;
+                            if (((i % d.x) + 0.5f) * Cell > splitX) ahead += density;
+                            fastest = Mathf.Max(fastest, v.magnitude);
+                        }
+                    }
+                    done(fastest, mass, bad, ahead);
+                });
+            });
+        }
 
         // Diagnostics: how many cells of the box are solid right now (the answer arrives a few frames later, in `done`).
         public void CountSolid(Action<int> done)
