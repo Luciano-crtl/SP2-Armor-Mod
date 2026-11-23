@@ -521,6 +521,7 @@ namespace ArmorFragments
                     float haze = HeatHazeStrength;
                     m.SetFloat("_Distort", haze > 0.01f && OpaqueTextureAvailable() ? haze : 0f);
                     m.SetFloat("_SoftContact", ArmorFragmentsPlugin.SmokeSoftContact != null ? ArmorFragmentsPlugin.SmokeSoftContact.Value : 0.35f);
+                    m.SetFloat("_Cubic", ArmorFragmentsPlugin.SmokeCubicGrid == null || ArmorFragmentsPlugin.SmokeCubicGrid.Value ? 1f : 0f);
                     m.SetFloat("_FogOn", ArmorFragmentsPlugin.SmokeFog == null || ArmorFragmentsPlugin.SmokeFog.Value ? 1f : 0f);
                     c.sim.UseBfecc = BfeccAdvection;
                     m.SetFloat("_MultiScatter", ArmorFragmentsPlugin.SmokeMultiScatter != null ? ArmorFragmentsPlugin.SmokeMultiScatter.Value : 0.6f);

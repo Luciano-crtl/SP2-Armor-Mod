@@ -695,6 +695,8 @@ namespace ArmorFragments.UI
                 "The distance over which smoke fades out before it meets a surface.", 0.05f, " m");
             ToggleSetting(ArmorFragmentsPlugin.SmokeFog, "Scene fog hides the smoke",
                 "The scene's own fog also hides distant smoke.");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeCubicGrid, "Smooth smoke grid (cubic)",
+                "Read the smoke density with a cubic spline so the cloud shows no blocks along the grid; a little softer.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeBfecc, "BFECC advection (experimental)",
                 "BFECC instead of MacCormack for the movement of smoke and air: a little more accurate and softer, about 10% more time per step.");
             FloatSetting(ArmorFragmentsPlugin.SmokeCannonProfile, "Cannon settings shape the smoke",

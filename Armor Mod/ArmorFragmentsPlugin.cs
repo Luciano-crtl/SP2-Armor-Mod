@@ -72,6 +72,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeHeatHaze;           // local: the shimmer of hot air
         internal static ConfigEntry<float> SmokeSoftContact;        // local: smoke fades out near surfaces (m)
         internal static ConfigEntry<bool> SmokeFog;                 // local: the scene's fog hides the smoke too
+        internal static ConfigEntry<bool> SmokeCubicGrid;           // local: the smoke grid is read with a cubic B-spline
         internal static ConfigEntry<bool> SmokeBfecc;               // local: BFECC advection instead of MacCormack
         internal static ConfigEntry<float> SmokeCannonProfile;      // local: how much the cannon's own settings shape its smoke
         internal static ConfigEntry<float> SmokeSizeThinning;       // local: how much thinner a small gun's smoke is (exponent of calibre / 75 mm)
@@ -395,6 +396,8 @@ namespace ArmorFragments
                     new AcceptableValueRange<float>(0f, 2f)));
             SmokeFog = Config.Bind("Smoke", "Fog", true,
                 "Cannon smoke: the scene's fog (if it has any) hides distant smoke as it does everything else.");
+            SmokeCubicGrid = Config.Bind("Smoke", "CubicGrid", true,
+                "Cannon smoke: the density grid is read with a cubic B-spline (8 reads) instead of the straight blend between cells, so the cloud shows no blocks along the grid. A little softer; costs a few more reads when drawing.");
             SmokeBfecc = Config.Bind("Smoke", "BfeccAdvection", false,
                 "Cannon smoke: BFECC advection instead of MacCormack. In the lab: 12 to 30% less error in a standard test and a slightly softer picture, for 10% more time per step (the two advections cost 40% more).");
             SmokeCannonProfile = Config.Bind("Smoke", "CannonProfile", 1f,
