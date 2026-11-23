@@ -33,7 +33,11 @@ namespace ArmorFragments
                 Object.Destroy(go, 15f);
 
                 ParticleSystem[] systems = go.GetComponentsInChildren<ParticleSystem>(true);
-                foreach (ParticleSystem ps in systems) ps.Play();
+                foreach (ParticleSystem ps in systems)
+                {
+                    ps.gameObject.AddComponent<SmokeWind>();
+                    ps.Play();
+                }
 
                 // Report what the game does with the effect's material: a shader the game stripped shows up as a pink or invisible effect.
                 foreach (ParticleSystemRenderer r in go.GetComponentsInChildren<ParticleSystemRenderer>(true))
