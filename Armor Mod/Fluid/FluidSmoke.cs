@@ -55,6 +55,13 @@ namespace ArmorFragments
         // are measured every second frame.
         public static bool FastDrawing { get { return ArmorFragmentsPlugin.SmokeFastDrawing == null || ArmorFragmentsPlugin.SmokeFastDrawing.Value; } }
         public static bool FastSolids { get { return ArmorFragmentsPlugin.SmokeFastSolids == null || ArmorFragmentsPlugin.SmokeFastSolids.Value; } }
+        // Balancing the smoke by calibre (Smoke/SizeThinning, Smoke/SizeCooling): a small gun makes a thin puff (the less gas, the shorter the
+        // path the light takes through it and the less opaque it is), and its heat is lost faster (the smaller the puff, the faster it mixes
+        // with the air), so it does not rise as far or last as long as a big gun's. The scale is calibre / 75 mm.
+        public static float SizeThinning { get { return ArmorFragmentsPlugin.SmokeSizeThinning != null ? ArmorFragmentsPlugin.SmokeSizeThinning.Value : 0.45f; } }
+        public static float SizeCooling { get { return ArmorFragmentsPlugin.SmokeSizeCooling != null ? ArmorFragmentsPlugin.SmokeSizeCooling.Value : 0.8f; } }
+        public static float CaliberAmount(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.05f), SizeThinning), 0.1f, 1.4f); }
+        public static float CaliberLoss(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.2f), -SizeCooling), 0.6f, 5f); }
         public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
         public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.8f; } }
         private static void ReadBlastSettings()
@@ -141,6 +148,8 @@ namespace ArmorFragments
             public readonly float[] dustAmount = new float[8];     // 0..1: less when the line of fire is high above the ground
             public bool hasColor;
             public Color groundColor;
+            public float amount = 1f;        // how much smoke, heat and dust this shot makes compared with a 75 mm gun's (see CaliberAmount)
+            public float push = 1f;          // how hard its jets push the air: less for each shot of a burst that is still going on
         }
 
         private sealed class Cloud
@@ -254,7 +263,12 @@ namespace ArmorFragments
                                   && local.x < c.extent.x - margin && local.y < c.extent.y - margin && local.z < c.extent.z - margin;
                     if (inside && Vector3.Dot(ex, c.rotation * Vector3.right) > 0.8f)
                     {
-                        c.shots.Add(MakeShot(tip, c.age, ex, c.scale, cannon));
+                        Shot added = MakeShot(tip, c.age, ex, c.scale, cannon);
+                        int burst = 0;
+                        foreach (Shot earlier in c.shots) if (c.age - earlier.start < 0.5f) burst++;
+                        added.push = 1f / (1f + 0.25f * burst);
+                        added.amount = CaliberAmount(c.scale) * Mathf.Sqrt(added.push);
+                        c.shots.Add(added);
                         MuzzleFlash.Spawn(tip + ex * (1.2f * c.scale), c.scale, c.timeScale);
                         c.end = Mathf.Min(c.age + Lifetime * c.timeScale, MaxLifetime);
                         LastShot[id] = now;
@@ -283,7 +297,12 @@ namespace ArmorFragments
                 Vector3 extent = size.extent;
                 // The muzzle sits a third of the way along the box, so the front of the vehicle (the turret and the hull below the gun)
                 // is inside it, not only the gas ahead.
-                Vector3 muzzleLocal = new Vector3(extent.x * 0.32f, extent.y * MuzzleHeightFraction, extent.z * 0.5f);
+                // The ground has to be inside the box (its dust, the solid under the smoke): in a small box the muzzle is put higher than the usual
+                // 30% when the ground is further below it than that.
+                RaycastHit below;
+                float heightFraction = MuzzleHeightFraction;
+                if (FindGround(tip, cannon.PartScript, out below)) heightFraction = Mathf.Clamp((Mathf.Max(tip.y - below.point.y, 0f) + 0.6f) / extent.y, MuzzleHeightFraction, 0.6f);
+                Vector3 muzzleLocal = new Vector3(extent.x * 0.32f, extent.y * heightFraction, extent.z * 0.5f);
                 Vector3 origin = tip - rot * muzzleLocal;
 
                 Stack<FluidSim> pool;
@@ -295,7 +314,9 @@ namespace ArmorFragments
                 sim.CoarseSweeps = 10;
 
                 Cloud cloud = new Cloud { level = level, sim = sim, origin = origin, rotation = rot, extent = extent, scale = scale, timeScale = size.timeScale, end = Lifetime * size.timeScale };
-                cloud.shots.Add(MakeShot(tip, 0f, ex, scale, cannon));
+                Shot first = MakeShot(tip, 0f, ex, scale, cannon);
+                first.amount = CaliberAmount(scale);
+                cloud.shots.Add(first);
                 MuzzleFlash.Spawn(tip + ex * (1.2f * scale), scale, size.timeScale);
                 cloud.cannonPart = cannon.PartScript;
                 RaycastHit ground;
@@ -381,7 +402,9 @@ namespace ArmorFragments
                         c.sim.Params.drag = c.age < BlastSeconds * c.timeScale ? BlastBrake / c.timeScale : LateBrake;
                         // Heat that makes the smoke rise and the weak, endless swirling of the air (see the settings in section Smoke).
                         if (ArmorFragmentsPlugin.SmokeBuoyancy != null) c.sim.Params.buoyancy = ArmorFragmentsPlugin.SmokeBuoyancy.Value;
-                        if (ArmorFragmentsPlugin.SmokeHeatCooling != null) c.sim.Params.cool = ArmorFragmentsPlugin.SmokeHeatCooling.Value;
+                        float loss = CaliberLoss(c.scale);
+                        if (ArmorFragmentsPlugin.SmokeHeatCooling != null) c.sim.Params.cool = ArmorFragmentsPlugin.SmokeHeatCooling.Value * loss;
+                        c.sim.Params.dissipate = 0.04f * loss;
                         if (ArmorFragmentsPlugin.SmokeTurbulence != null) c.sim.Params.turbulence = ArmorFragmentsPlugin.SmokeTurbulence.Value;
                         if (ArmorFragmentsPlugin.SmokeDustWeight != null) c.sim.Params.dustWeight = ArmorFragmentsPlugin.SmokeDustWeight.Value;
                         if (ArmorFragmentsPlugin.SmokeDetail != null) c.sim.Params.detail = ArmorFragmentsPlugin.SmokeDetail.Value;
@@ -533,7 +556,7 @@ namespace ArmorFragments
                         BlastGround.amounts[i] = shot.dustAmount[i];
                     }
                 }
-                SmokeBlast.Build(list, t, s, T, muzzle, BlastGround);
+                SmokeBlast.Build(list, t, s, T, muzzle, BlastGround, shot.amount, shot.push);
             }
             return list;
         }

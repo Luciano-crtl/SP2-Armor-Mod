@@ -28,8 +28,9 @@ namespace ArmorFragments.Fluid
         }
 
         // Adds to `list` the sources of a shot `t` seconds after it was fired. `s` is the size of the blast (calibre / 75 mm), `T` its time scale,
-        // `muzzle` the end of the barrel.
-        public static void Build(List<FluidSim.Blob> list, float t, float s, float T, Vector3 muzzle, Ground ground)
+        // `muzzle` the end of the barrel. `amount` (0..1.4) is how much smoke, heat and dust this shot makes compared with a 75 mm gun's (a
+        // small gun's puff is thin and cool), `push` how hard its jets push the air (less for each shot of a burst).
+        public static void Build(List<FluidSim.Blob> list, float t, float s, float T, Vector3 muzzle, Ground ground, float amount = 1f, float push = 1f)
         {
             float focus = Mathf.Clamp01(Focus), brake = Mathf.Clamp01(MuzzleBrake);
             float fire = 0.12f * T, smoke = 1.2f * T, dust = 0.35f * T;
@@ -46,9 +47,9 @@ namespace ArmorFragments.Fluid
                     {
                         center = muzzle + new Vector3((0.7f + 0.9f * k) * s, 0, 0),
                         radius = Mathf.Lerp(0.9f + 0.25f * k, 0.75f + 0.3f * k, focus) * s,
-                        rho = 0.9f, temp = Mathf.Lerp(1f, 0.6f + 0.08f * k, focus),      // focused: the tail is cooler, the head is hot
-                        vel = new Vector3(Mathf.Lerp(14f, 20f, focus) * T * fade, 0, 0),
-                        radial = Mathf.Lerp(10f, 5f, focus) * T * fade,
+                        rho = 0.9f * amount, temp = Mathf.Lerp(1f, 0.6f + 0.08f * k, focus),      // focused: the tail is cooler, the head is hot
+                        vel = new Vector3(Mathf.Lerp(14f, 20f, focus) * T * fade, 0, 0) * push,
+                        radial = Mathf.Lerp(10f, 5f, focus) * T * fade * push,
                         noise = 0.15f, falloff = 1.3f,
                         swirl = Mathf.Lerp(6f, 4f, focus) * T * fade, swirlFreq = 0.9f / s,
                     });
@@ -63,8 +64,8 @@ namespace ArmorFragments.Fluid
                         {
                             center = muzzle + new Vector3(-0.1f * s, 0, side * 0.4f * s),
                             radius = 0.55f * s,
-                            rho = 0.9f * brake, temp = 0.9f,
-                            vel = new Vector3(-3f * T * fade, 0, side * 20f * T * fade * brake),
+                            rho = 0.9f * brake * amount, temp = 0.9f,
+                            vel = new Vector3(-3f * T * fade, 0, side * 20f * T * fade * brake) * push,
                             radial = 2f * T * fade,
                             noise = 0.2f, falloff = 1.2f,
                             swirl = 3f * T * fade, swirlFreq = 1.1f / s,
@@ -86,7 +87,7 @@ namespace ArmorFragments.Fluid
                     {
                         center = muzzle + new Vector3(0.5f * s, 0f, 0f) + around * (1.1f * s),
                         radius = 0.6f * s,
-                        vel = new Vector3(3f * T * fade, 0f, 0f) + around * (16f * T * fade * ShockWave),
+                        vel = (new Vector3(3f * T * fade, 0f, 0f) + around * (16f * T * fade * ShockWave)) * push,
                         falloff = 1.0f,
                     });
                 }
@@ -100,8 +101,8 @@ namespace ArmorFragments.Fluid
                 {
                     center = muzzle + new Vector3(0.9f * s, 0, 0),
                     radius = Mathf.Lerp(1.3f, 1.0f, focus) * s,
-                    rho = 1.7f * fade, temp = ResidualHeat * fade,
-                    vel = new Vector3(Mathf.Lerp(4f, 8f, focus) * T * fade, 0, 0),
+                    rho = 1.7f * fade * amount, temp = ResidualHeat * fade * amount,
+                    vel = new Vector3(Mathf.Lerp(4f, 8f, focus) * T * fade, 0, 0) * push,
                     radial = 1.0f * T, noise = 0.15f, falloff = 1.1f,
                     swirl = 3f * T * fade, swirlFreq = 0.7f / s,
                 });
@@ -110,8 +111,8 @@ namespace ArmorFragments.Fluid
                 {
                     center = muzzle + new Vector3(-0.5f * s, 0, 0),
                     radius = 0.8f * s,
-                    rho = 0.7f * fade, temp = 0.8f * ResidualHeat * fade,
-                    vel = new Vector3(-4f * T * fade, 0, 0),
+                    rho = 0.7f * fade * amount, temp = 0.8f * ResidualHeat * fade * amount,
+                    vel = new Vector3(-4f * T * fade, 0, 0) * push,
                     radial = 1.5f * T, noise = 0.2f, falloff = 1.1f,
                     swirl = 2f * T * fade, swirlFreq = 0.8f / s,
                 });
@@ -134,7 +135,7 @@ namespace ArmorFragments.Fluid
                     {
                         center = ground.points[i] + up * (0.3f * s),
                         radius = (1.5f + 0.35f * i) * s,
-                        rho = 0f, temp = 0.05f, dust = Mathf.Min(ground.amounts[i] * BlastDust, 1.2f),
+                        rho = 0f, temp = 0.05f, dust = Mathf.Min(ground.amounts[i] * BlastDust, 1.2f) * amount,
                         vel = (up * 3f + along * 2f) * T * fade,
                         radial = 7f * T * fade, noise = 0.25f, falloff = 1.1f,
                         swirl = 5f * T * fade, swirlFreq = 0.9f / s,
@@ -155,7 +156,7 @@ namespace ArmorFragments.Fluid
                         {
                             center = ground.foot + direction * travel + up * (0.25f * s),
                             radius = 0.9f * s + 0.1f * travel,
-                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * ShockWave * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
+                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * ShockWave * amount * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
                             vel = direction * (6f * T * fade) + up * (1.5f * T * fade),
                             radial = 0f, noise = 0.3f, falloff = 1.2f,
                             swirl = 2f * T * fade, swirlFreq = 0.8f / s,

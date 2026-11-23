@@ -677,6 +677,10 @@ namespace ArmorFragments.UI
                 "How hot the propellant smoke is after the flame (0 to 0.35). Applies to the next shot.", 0.025f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeTurbulence, "Background turbulence",
                 "A weak endless swirling of the air so the smoke keeps billowing in calm weather. 0 = still air.", 0.025f, " m/s2");
+            FloatSetting(ArmorFragmentsPlugin.SmokeSizeThinning, "Small guns: thinner smoke",
+                "The amount of smoke, heat and dust of a shot is (calibre / 75 mm) to this power. 0 = every gun as dense as a 75 mm, 1 = proportional to the calibre. Applies to the next shot.", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.SmokeSizeCooling, "Small guns: smoke fades faster",
+                "How much faster the smoke of a small gun loses its heat and thins out (rates divided by (calibre / 75 mm) to this power).", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeShockWave, "Shock wave",
                 "The pressure wave of the shot: a ring of dust over the ground and a push of the air around the barrel. Applies to the next shot.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeMultiScatter, "Multiple scattering",
