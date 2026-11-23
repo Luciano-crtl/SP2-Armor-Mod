@@ -46,7 +46,7 @@ namespace ArmorFragments
                 foreach (ParticleSystem ps in systems)
                 {
                     SmokeSim sim = ps.gameObject.AddComponent<SmokeSim>();
-                    sim.Heat = 0.6f;   // warm: it rises and swells a little and glows faintly at first
+                    sim.StartKelvin = 650f;   // warm, not glowing: it rises and swells a little
                     ps.Play();
                 }
 

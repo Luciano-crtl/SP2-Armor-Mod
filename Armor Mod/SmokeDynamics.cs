@@ -29,16 +29,19 @@ namespace ArmorFragments
         public static float SwirlPerWindSpeed = 0.08f;
         public static float MaxSwirlBoost = 1.5f;
 
-        // Temperature.
-        public static float CoolSeconds = 2.4f;        // time for the excess heat to fall to 37% in still air
-        public static float CoolPerWindSpeed = 0.06f;  // each m/s of wind makes cooling this much faster (a fraction)
-        public static float Buoyancy = 3.0f;           // m/s² of upward push at temperature 1
-        public static float ExpandPerSecond = 0.22f;   // growth rate of a puff at temperature 1 (0.22 = +22% a second)
+        // Temperature, in kelvin. The air is 300 K; gas leaves a gun barrel at about 1700 K.
+        public const float AmbientKelvin = 300f;
+        public const float KelvinRange = 1500f;        // the shader reads (kelvin - 300) / 1500, so 1800 K is the top of its scale
+        public static float MixSeconds = 1.6f;         // mixing with the cold air: the excess heat falls to 37% in this time (still air)
+        public static float MixPerWindSpeed = 0.06f;   // each m/s of wind makes the mixing this much faster (a fraction)
+        public static float RadiationRate = 240f;      // K/s lost by radiation at 1000 K; grows with the 4th power of the temperature
+        public static float BuoyancyFraction = 0.12f;  // upward acceleration = g * this * (excess heat / 300 K)
+        public static float ExpandPerSecond = 0.9f;    // growth rate of a puff at the full 1500 K excess (0.9 = +90% a second)
         public static float MaxSize = 14f;             // metres: a puff never swells past this
 
         // Set by whoever spawns the effect.
-        public float Heat;                             // temperature of a new puff, 0..1 (0 = cold smoke)
-        public float HeatSpread = 0.2f;                // random variation of that, fraction
+        public float StartKelvin = 300f;               // temperature of a new puff (300 = cold smoke)
+        public float HeatSpread = 0.1f;                // random variation of the excess heat, fraction
         public Vector3 InitialVelocity;                // added to every new puff: the speed of the thing that made the smoke
 
         private ParticleSystem system;
@@ -95,31 +98,39 @@ namespace ArmorFragments
 
                     // Temperature: a new puff takes the heat it was made with; an old one cools.
                     uint key = particles[i].randomSeed;
-                    float t;
-                    if (temperature.TryGetValue(key, out t))
+                    float kelvin;
+                    if (temperature.TryGetValue(key, out kelvin))
                     {
-                        float seconds = CoolSeconds / (1f + CoolPerWindSpeed * windSpeed);
-                        t *= Mathf.Exp(-dt / Mathf.Max(0.05f, seconds));
+                        // Mixing with the cold air (Newton) plus radiation, which is fierce while the gas is white-hot
+                        // and almost nothing once it is warm: that is what makes the flash short and the smoke long-lived.
+                        float seconds = MixSeconds / (1f + MixPerWindSpeed * windSpeed);
+                        float excess = kelvin - AmbientKelvin;
+                        float hot = kelvin / 1000f;
+                        float radiation = RadiationRate * hot * hot * hot * hot;
+                        excess -= (excess / Mathf.Max(0.05f, seconds) + radiation) * dt;
+                        kelvin = AmbientKelvin + Mathf.Max(0f, excess);
                     }
                     else
                     {
-                        t = Mathf.Clamp01(Heat * (1f + HeatSpread * (UnityEngine.Random.value * 2f - 1f)));
+                        float start = AmbientKelvin + (StartKelvin - AmbientKelvin) * (1f + HeatSpread * (UnityEngine.Random.value * 2f - 1f));
+                        kelvin = Mathf.Max(AmbientKelvin, start);
                         particles[i].velocity += InitialVelocity;
                     }
-                    nextTemperature[key] = t;
-                    if (t > hottest) hottest = t;
+                    nextTemperature[key] = kelvin;
+                    if (kelvin > hottest) hottest = kelvin;
+                    float heat = Mathf.Clamp01((kelvin - AmbientKelvin) / KelvinRange);
 
                     Vector3 velocity = particles[i].velocity;
-                    velocity += (target - velocity) * follow;     // the wind carries it
-                    velocity.y += Buoyancy * t * dt;              // hot gas rises
+                    velocity += (target - velocity) * follow;                                    // the wind carries it
+                    velocity.y += 9.81f * BuoyancyFraction * (kelvin - AmbientKelvin) / AmbientKelvin * dt;   // hot gas rises
                     particles[i].velocity = velocity;
 
                     // Hot gas swells (and keeps the size it reached when it cools).
                     float size = particles[i].startSize;
-                    if (size < MaxSize) particles[i].startSize = Mathf.Min(MaxSize, size * (1f + ExpandPerSecond * t * dt));
+                    if (size < MaxSize) particles[i].startSize = Mathf.Min(MaxSize, size * (1f + ExpandPerSecond * heat * dt));
 
                     // The temperature for the shader: red channel. (Green and blue are not used.)
-                    particles[i].startColor = new Color32((byte)Mathf.RoundToInt(t * 255f), 0, 0, 255);
+                    particles[i].startColor = new Color32((byte)Mathf.RoundToInt(heat * 255f), 0, 0, 255);
                 }
                 system.SetParticles(particles, count);
 
@@ -141,7 +152,7 @@ namespace ArmorFragments
                     loggedFirst = true;
                     ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] smoke: " + count + " puff(s), wind there "
                         + new Vector3(w[0].x, w[0].y, w[0].z) + " (" + mean.ToString("F1") + " m/s on average), hottest puff "
-                        + hottest.ToString("F2"));
+                        + hottest.ToString("F0") + " K");
                 }
             }
             catch (System.Exception e)

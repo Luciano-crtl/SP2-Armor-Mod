@@ -24,7 +24,7 @@ namespace ArmorFragments
         public static bool Enabled = true;
         public static int MaxLive = 24;           // puffs alive at once; more shots than that make no smoke until some fade
         public static float MinInterval = 0.12f;  // seconds between the puffs of one cannon (a machine gun does not make a hundred)
-        public static float StartHeat = 0.95f;
+        public static float StartKelvin = 1750f;  // gas leaving the barrel (the air is 300 K)
         public static float LifeSeconds = 12f;
 
         private static readonly List<GameObject> Live = new List<GameObject>();
@@ -78,7 +78,7 @@ namespace ArmorFragments
                                                                     (short)Mathf.RoundToInt(12f + 10f * Mathf.Min(scale, 2f))) });
 
                 SmokeSim sim = go.AddComponent<SmokeSim>();
-                sim.Heat = StartHeat;
+                sim.StartKelvin = StartKelvin;
                 sim.InitialVelocity = pointVelocity;
 
                 ps.Play();
