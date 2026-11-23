@@ -76,10 +76,12 @@ namespace ArmorFragments
 
             string[] names = bundle.GetAllAssetNames();
             ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] loaded " + path + ", " + names.Length + " asset(s): " + string.Join(", ", names));
+            // The smoke prefab is the one under test; without it, the first prefab in the bundle.
             foreach (string name in names)
             {
                 GameObject go = bundle.LoadAsset<GameObject>(name);
-                if (go != null) { prefab = go; break; }
+                if (go == null) continue;
+                if (prefab == null || name.Contains("smoke")) prefab = go;
             }
             if (prefab == null)
             {
