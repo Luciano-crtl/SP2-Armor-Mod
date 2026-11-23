@@ -43,6 +43,8 @@ namespace ArmorFragments
         public float StartKelvin = 300f;               // temperature of a new puff (300 = cold smoke)
         public float HeatSpread = 0.1f;                // random variation of the excess heat, fraction
         public Vector3 InitialVelocity;                // added to every new puff: the speed of the thing that made the smoke
+        // A baked simulation (a flipbook) already holds its own heat, rise and swelling: only the wind moves it.
+        public bool Baked;
 
         private ParticleSystem system;
         private ParticleSystem.Particle[] particles;
@@ -95,6 +97,19 @@ namespace ArmorFragments
                     Vector3 target = new Vector3(w[i].x, w[i].y, w[i].z);
                     float windSpeed = target.magnitude;
                     speedSum += windSpeed;
+
+                    if (Baked)
+                    {
+                        // Only drift with the wind (and the speed of whatever made it); keep the vertex color black: no vertex heat.
+                        uint bakedKey = particles[i].randomSeed;
+                        if (!temperature.ContainsKey(bakedKey)) particles[i].velocity += InitialVelocity;   // a new particle
+                        nextTemperature[bakedKey] = 0f;                                                      // (remembered as seen)
+                        Vector3 v = particles[i].velocity;
+                        v += (target - v) * follow;
+                        particles[i].velocity = v;
+                        particles[i].startColor = new Color32(0, 0, 0, 255);
+                        continue;
+                    }
 
                     // Temperature: a new puff takes the heat it was made with; an old one cools.
                     uint key = particles[i].randomSeed;
