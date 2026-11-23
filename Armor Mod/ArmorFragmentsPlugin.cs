@@ -53,6 +53,14 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeBlastBrake;         // local: the brake on the air of a gun's smoke during the blast (per second)
         internal static ConfigEntry<float> SmokeBlastSeconds;       // local: how long that hard brake lasts (seconds)
         internal static ConfigEntry<float> SmokeLateBrake;          // local: the brake on the air after the blast (per second)
+        internal static ConfigEntry<float> SmokeJetFocus;           // local: 0 round fireball .. 1 narrow jet along the barrel
+        internal static ConfigEntry<float> SmokeMuzzleBrake;        // local: how much of the gas leaves sideways, as through a muzzle brake
+        internal static ConfigEntry<bool> SmokeFlash;               // local: the light of the blast
+        internal static ConfigEntry<float> SmokeFlashIntensity;     // local: how bright it is
+        internal static ConfigEntry<bool> SmokeGroundDust;          // local: the dust has the colour of the ground
+        internal static ConfigEntry<float> SmokeBlastDust;          // local: how much dust the blast lifts
+        internal static ConfigEntry<bool> SmokeShadows;             // local: the smoke casts shadows on the scene
+        internal static ConfigEntry<float> SmokeShadowStrength;     // local: how dark those shadows are
         // RELEASE-STRIP-END
         internal static ConfigEntry<bool> ImpactCameraDamageView;   // local: the damage map drawn over the plates in the impact camera
         internal static ConfigEntry<int> DamageMapsRelief;           // local: 0 normal map, 1 bump (height) map, 2 both
@@ -303,6 +311,27 @@ namespace ArmorFragments
             SmokeLateBrake = Config.Bind("Smoke", "LateBrake", 0.4f,
                 new ConfigDescription("Cannon smoke: the brake on the air after the blast, per second. 1.5 stops the smoke after about 3 s; 0.4 lets it keep drifting for many seconds; 0 never brakes it (it only stops by thinning out).",
                     new AcceptableValueRange<float>(0f, 3f)));
+            SmokeJetFocus = Config.Bind("Smoke", "JetFocus", 0.7f,
+                new ConfigDescription("Cannon smoke: the shape of the blast. 0 is a round fireball that grows evenly in every direction; 1 is a narrow jet that shoots along the barrel and rolls up at its front.",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            SmokeMuzzleBrake = Config.Bind("Smoke", "MuzzleBrake", 0.3f,
+                new ConfigDescription("Cannon smoke: how much of the gas leaves sideways, left and right of the end of the barrel, as through a muzzle brake. 0 for a bare barrel.",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            SmokeFlash = Config.Bind("Smoke", "FlashLight", true,
+                "Cannon smoke: the blast lights up its surroundings for a moment: a warm flash on the smoke and, if the game's render pipeline draws extra lights, on the ground and the vehicle (the log says whether it does).");
+            SmokeFlashIntensity = Config.Bind("Smoke", "FlashIntensity", 1f,
+                new ConfigDescription("Cannon smoke: how bright the flash is (1 = normal).",
+                    new AcceptableValueRange<float>(0f, 4f)));
+            SmokeGroundDust = Config.Bind("Smoke", "GroundDust", true,
+                "Cannon smoke: the dust the blast lifts has the colour of the ground it comes from (the texture under the blast), not always brown.");
+            SmokeBlastDust = Config.Bind("Smoke", "BlastDust", 1f,
+                new ConfigDescription("Cannon smoke: how much dust the blast lifts from the ground: spots along the line of fire and a fan that runs out from under the muzzle, stronger the lower the barrel is. 0 for none.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            SmokeShadows = Config.Bind("Smoke", "Shadows", true,
+                "Cannon smoke: the smoke casts shadows on the ground and on vehicles (only the sun's shadow, and only inside the game's shadow distance).");
+            SmokeShadowStrength = Config.Bind("Smoke", "ShadowStrength", 0.8f,
+                new ConfigDescription("Cannon smoke: how dark the shadow of dense smoke is (0 = none, 1 = as dark as any shadow).",
+                    new AcceptableValueRange<float>(0f, 1f)));
             // RELEASE-STRIP-END
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");

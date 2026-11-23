@@ -669,6 +669,22 @@ namespace ArmorFragments.UI
                 "How long the hard brake of the blast lasts, in seconds. Applies to the next shot.", 0.05f, " s");
             FloatSetting(ArmorFragmentsPlugin.SmokeLateBrake, "Late brake",
                 "The brake on the air after the blast, per second. 1.5 stops the smoke after about 3 s; 0.4 lets it drift for many seconds; 0 never brakes it. Applies to the clouds already in the air too.", 0.05f, " /s");
+            FloatSetting(ArmorFragmentsPlugin.SmokeJetFocus, "Jet focus",
+                "The shape of the blast: 0 is a round fireball, 1 a narrow jet along the barrel. Applies to the next shot.", 0.05f, "");
+            FloatSetting(ArmorFragmentsPlugin.SmokeMuzzleBrake, "Muzzle brake",
+                "How much of the gas leaves sideways, as through a muzzle brake. 0 for a bare barrel. Applies to the next shot.", 0.05f, "");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeFlash, "Flash of light",
+                "The blast lights up the smoke and, if the game's render pipeline draws extra lights, the ground and the vehicle.");
+            FloatSetting(ArmorFragmentsPlugin.SmokeFlashIntensity, "Flash brightness",
+                "How bright the flash of light is.", 0.1f, "");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeGroundDust, "Dust has the ground's colour",
+                "The dust the blast lifts takes the colour of the ground under it. Applies to the next shot.");
+            FloatSetting(ArmorFragmentsPlugin.SmokeBlastDust, "Blast dust",
+                "How much dust the blast lifts from the ground (spots along the line of fire and a fan from under the muzzle). 0 for none. Applies to the next shot.", 0.05f, "");
+            ToggleSetting(ArmorFragmentsPlugin.SmokeShadows, "Smoke casts shadows",
+                "The smoke casts the sun's shadow on the ground and on vehicles (inside the game's shadow distance).");
+            FloatSetting(ArmorFragmentsPlugin.SmokeShadowStrength, "Shadow darkness",
+                "How dark the shadow of dense smoke is.", 0.05f, "");
         }
         // RELEASE-STRIP-END
 

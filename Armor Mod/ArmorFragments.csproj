@@ -43,6 +43,14 @@
 			<HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
+		<Reference Include="UnityEngine.TerrainModule">
+			<HintPath>$(ManagedDir)\UnityEngine.TerrainModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="UnityEngine.TerrainPhysicsModule">
+			<HintPath>$(ManagedDir)\UnityEngine.TerrainPhysicsModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
 		<!-- The turret aim's circle and marker are drawn in OnGUI, over everything (inverting what is behind them) -->
 		<Reference Include="UnityEngine.IMGUIModule">
 			<HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>

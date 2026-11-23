@@ -45,6 +45,15 @@ namespace ArmorFragments
         public static float BlastBrake { get { return ArmorFragmentsPlugin.SmokeBlastBrake != null ? ArmorFragmentsPlugin.SmokeBlastBrake.Value : 7f; } }
         public static float BlastSeconds { get { return ArmorFragmentsPlugin.SmokeBlastSeconds != null ? ArmorFragmentsPlugin.SmokeBlastSeconds.Value : 0.3f; } }
         public static float LateBrake { get { return ArmorFragmentsPlugin.SmokeLateBrake != null ? ArmorFragmentsPlugin.SmokeLateBrake.Value : 0.4f; } }
+        public static bool SmokeGroundDust { get { return ArmorFragmentsPlugin.SmokeGroundDust == null || ArmorFragmentsPlugin.SmokeGroundDust.Value; } }
+        public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
+        public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.8f; } }
+        private static void ReadBlastSettings()
+        {
+            if (ArmorFragmentsPlugin.SmokeJetFocus != null) SmokeBlast.Focus = ArmorFragmentsPlugin.SmokeJetFocus.Value;
+            if (ArmorFragmentsPlugin.SmokeMuzzleBrake != null) SmokeBlast.MuzzleBrake = ArmorFragmentsPlugin.SmokeMuzzleBrake.Value;
+            if (ArmorFragmentsPlugin.SmokeBlastDust != null) SmokeBlast.BlastDust = ArmorFragmentsPlugin.SmokeBlastDust.Value;
+        }
         public static bool ShowSolid;                  // debugging view: paint what the smoke treats as solid (the parts of vehicles, the ground)
         public static void ToggleShowSolid() { ShowSolid = !ShowSolid; }
         public static float MinInterval = 0.1f;        // seconds between the shots one cannon adds
@@ -102,13 +111,20 @@ namespace ArmorFragments
 
         private static int RoundUp8(float cells) { return Mathf.Max(24, Mathf.CeilToInt(cells / 8f) * 8); }
 
-        private struct Shot
+        private sealed class Shot
         {
             public Vector3 muzzleWorld;      // where the muzzle was: the sources stay there while the box may drift
             public float start;
-            public bool hasDust;
-            public Vector3 dustWorld;        // where the blast meets the ground
-            public float dustAmount;         // 0..1: less when the muzzle is high above the ground
+            public Vector3 flashWorld;       // where the flash of light is (a little ahead of the muzzle)
+            public bool hasGround;
+            public Vector3 groundNormal = Vector3.up;
+            public Vector3 footWorld;        // the point of the ground under the muzzle
+            public float height;             // the muzzle's height above it
+            public int dustCount;            // dust spots along the line of fire
+            public readonly Vector3[] dustWorld = new Vector3[8];
+            public readonly float[] dustAmount = new float[8];     // 0..1: less when the line of fire is high above the ground
+            public bool hasColor;
+            public Color groundColor;
         }
 
         private sealed class Cloud
@@ -116,6 +132,7 @@ namespace ArmorFragments
             public int level;
             public FluidSim sim;
             public GameObject box;
+            public MeshRenderer boxRenderer;
             public Material material;
             public Vector3 origin;          // world position of the box corner
             public Quaternion rotation;     // box axes -> world
@@ -208,6 +225,7 @@ namespace ArmorFragments
                     if (inside && Vector3.Dot(ex, c.rotation * Vector3.right) > 0.8f)
                     {
                         c.shots.Add(MakeShot(tip, c.age, ex, c.scale, cannon));
+                        MuzzleFlash.Spawn(tip + ex * (1.2f * c.scale), c.scale, c.timeScale);
                         c.end = Mathf.Min(c.age + Lifetime * c.timeScale, MaxLifetime);
                         LastShot[id] = now;
                         return;
@@ -246,6 +264,7 @@ namespace ArmorFragments
 
                 Cloud cloud = new Cloud { level = level, sim = sim, origin = origin, rotation = rot, extent = extent, scale = scale, timeScale = size.timeScale, end = Lifetime * size.timeScale };
                 cloud.shots.Add(MakeShot(tip, 0f, ex, scale, cannon));
+                MuzzleFlash.Spawn(tip + ex * (1.2f * scale), scale, size.timeScale);
                 cloud.cannonPart = cannon.PartScript;
                 RaycastHit ground;
                 if (FindGround(tip + ex * 1.5f * scale, cannon.PartScript, out ground))
@@ -268,7 +287,8 @@ namespace ArmorFragments
                 cloud.box.AddComponent<MeshFilter>().sharedMesh = boxMesh;
                 MeshRenderer renderer = cloud.box.AddComponent<MeshRenderer>();
                 renderer.sharedMaterial = cloud.material;
-                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.shadowCastingMode = SmokeShadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off;
+                cloud.boxRenderer = renderer;
                 renderer.receiveShadows = false;
                 VfxBundleTest.SetLayer(cloud.box, ImpactCamera.EffectsLayer);
                 Place(cloud);
@@ -307,6 +327,8 @@ namespace ArmorFragments
             Monitor(unscaled);
 
             float frame = Mathf.Min(Time.deltaTime, 0.03f);
+            ReadBlastSettings();
+            MuzzleFlash.Tick(Time.deltaTime, Active.Count > 0 ? Active[0].timeScale : 1f);
             WindQueryManager wind = WindQueryManager.Instance;
             Camera cam = Camera.main;
             Watch.Restart();
@@ -381,6 +403,19 @@ namespace ArmorFragments
                     m.SetTexture("_PhiB", c.sim.PhiB);
                     m.SetTexture("_Solid", c.sim.Solid);
                     m.SetFloat("_ShowSolid", ShowSolid ? 1f : 0f);
+                    // The flash of the latest shot lights the smoke, and the shadow the smoke casts on the scene.
+                    Shot latest = c.shots[c.shots.Count - 1];
+                    float flashLevel = MuzzleFlash.Enabled ? MuzzleFlash.Level(c.age - latest.start, c.timeScale) * MuzzleFlash.Intensity : 0f;
+                    m.SetVector("_FlashPos", new Vector4(latest.flashWorld.x, latest.flashWorld.y, latest.flashWorld.z, 4f * flashLevel));
+                    m.SetColor("_FlashColor", new Color(1f, 0.62f, 0.3f, 1f));
+                    m.SetFloat("_FlashRange", 3f * c.scale);
+                    bool shadows = SmokeShadows;
+                    m.SetFloat("_ShadowStrength", shadows ? ShadowStrength : 0f);
+                    if (c.boxRenderer != null)
+                    {
+                        UnityEngine.Rendering.ShadowCastingMode wanted = shadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off;
+                        if (c.boxRenderer.shadowCastingMode != wanted) c.boxRenderer.shadowCastingMode = wanted;
+                    }
                     Vector2 w = c.sim.PhiWeights;
                     m.SetVector("_PhiWeights", new Vector4(w.x, w.y, 0f, 0f));
                     m.SetFloat("_Fade", Mathf.Clamp01((c.end - c.age) / (FadeSeconds * c.timeScale)));
@@ -406,8 +441,10 @@ namespace ArmorFragments
             return false;
         }
 
-        // The sources, in the box's axes, for every shot of the cloud: a hot fireball bursting forward, then the smoke that keeps coming out.
-        // The muzzle stays where it was in the world; the box may drift away from it.
+        // The sources, in the box's axes, for every shot of the cloud (see SmokeBlast). The muzzle stays where it was in the world; the box may
+        // drift away from it.
+        private static readonly SmokeBlast.Ground BlastGround = new SmokeBlast.Ground();
+
         private static List<FluidSim.Blob> Blobs(Cloud c, float now)
         {
             List<FluidSim.Blob> list = new List<FluidSim.Blob>();
@@ -418,34 +455,20 @@ namespace ArmorFragments
                 float t = now - shot.start;
                 if (t < 0f) continue;
                 Vector3 muzzle = inverse * (shot.muzzleWorld - c.origin);
-                float fire = 0.12f * T, smoke = 1.2f * T, dust = 0.35f * T;
-                if (t < fire)
+                BlastGround.present = shot.hasGround;
+                if (shot.hasGround)
                 {
-                    float fade = 1f - t / fire;
-                    for (int k = 0; k < 4; k++)
-                        list.Add(new FluidSim.Blob { center = muzzle + new Vector3((0.7f + 0.9f * k) * s, 0, 0), radius = (0.9f + 0.25f * k) * s, rho = 0.9f, temp = 1f,
-                                                     vel = new Vector3(14f * T * fade, 0, 0), radial = 10f * T * fade, noise = 0.15f, falloff = 1.3f,
-                                                     swirl = 6f * T * fade, swirlFreq = 0.9f / s });
+                    BlastGround.normal = inverse * shot.groundNormal;
+                    BlastGround.height = shot.height;
+                    BlastGround.foot = inverse * (shot.footWorld - c.origin);
+                    BlastGround.count = shot.dustCount;
+                    for (int i = 0; i < shot.dustCount; i++)
+                    {
+                        BlastGround.points[i] = inverse * (shot.dustWorld[i] - c.origin);
+                        BlastGround.amounts[i] = shot.dustAmount[i];
+                    }
                 }
-                if (t < smoke)
-                {
-                    // The propellant smoke keeps coming out for a while: dense, so that it stays opaque as it spreads.
-                    float fade = 1f - t / smoke;
-                    list.Add(new FluidSim.Blob { center = muzzle + new Vector3(0.9f * s, 0, 0), radius = 1.3f * s, rho = 1.7f * fade, temp = 0.3f * fade,
-                                                 vel = new Vector3(4f * T * fade, 0, 0), radial = 1.0f * T, noise = 0.15f, falloff = 1.1f,
-                                                 swirl = 3f * T * fade, swirlFreq = 0.7f / s });
-                }
-                // The blast throws dust up where it meets the ground (the point is kept in the world).
-                if (shot.hasDust && t < dust)
-                {
-                    float fade = 1f - t / dust;
-                    Vector3 foot = inverse * (shot.dustWorld - c.origin);
-                    Vector3 up = inverse * c.groundNormal;
-                    Vector3 along = new Vector3(1f, 0f, 0f);
-                    list.Add(new FluidSim.Blob { center = foot + up * (0.3f * s), radius = 1.7f * s, rho = 0f, temp = 0.05f, dust = shot.dustAmount,
-                                                 vel = (up * 3f + along * 2f) * T * fade, radial = 7f * T * fade, noise = 0.25f, falloff = 1.1f,
-                                                 swirl = 5f * T * fade, swirlFreq = 0.9f / s });
-                }
+                SmokeBlast.Build(list, t, s, T, muzzle, BlastGround);
             }
             return list;
         }
@@ -568,6 +591,8 @@ namespace ArmorFragments
                 if (c.sim != null) c.sim.Dispose();
             }
             Active.Clear();
+            MuzzleFlash.Shutdown();
+            GroundColor.Shutdown();
             foreach (Stack<FluidSim> pool in Pools.Values) while (pool.Count > 0) pool.Pop().Dispose();
             Pools.Clear();
             HullPlanes.Clear();
@@ -833,27 +858,47 @@ namespace ArmorFragments
         // One shot: its muzzle in the box's space, and where its blast meets the ground (if the ground is close).
         private static Shot MakeShot(Vector3 tip, float start, Vector3 forward, float scale, CannonScript cannon)
         {
-            Shot shot = new Shot { muzzleWorld = tip, start = start };
+            Shot shot = new Shot { muzzleWorld = tip, start = start, flashWorld = tip + forward * (1.2f * scale) };
             RaycastHit hit;
-            // The blast reaches the ground just ahead of and below the muzzle.
-            Vector3 aim = tip + forward * 2.6f * scale;
-            if (FindGround(aim, cannon.PartScript, out hit))
+            // The ground under the muzzle: where the blast starts to run along the ground, and how low the barrel is.
+            if (FindGround(tip, cannon.PartScript, out hit))
             {
-                float height = Vector3.Dot(tip - hit.point, hit.normal.sqrMagnitude > 0.5f ? hit.normal.normalized : Vector3.up);
-                float amount = Mathf.Clamp01(1f - height / (6f * scale));
-                if (amount > 0.02f)
+                Vector3 normal = hit.normal.sqrMagnitude > 0.5f ? hit.normal.normalized : Vector3.up;
+                shot.hasGround = true;
+                shot.groundNormal = normal;
+                shot.footWorld = hit.point;
+                shot.height = Mathf.Max(Vector3.Dot(tip - hit.point, normal), 0f);
+                Color ground;
+                if (SmokeGroundDust && GroundColor.TryGet(hit, out ground)) { shot.hasColor = true; shot.groundColor = ground; }
+            }
+            // Dust is lifted where the line of fire passes close above the ground: a few spots along it.
+            for (int i = 0; i < 4; i++)
+            {
+                Vector3 point = tip + forward * ((2.4f + 2.2f * i) * scale);
+                RaycastHit spot;
+                if (!FindGround(point, cannon.PartScript, out spot)) continue;
+                Vector3 n = spot.normal.sqrMagnitude > 0.5f ? spot.normal.normalized : Vector3.up;
+                float height = Vector3.Dot(point - spot.point, n);
+                float amount = Mathf.Clamp01(1f - height / (6f * scale)) * (1f - 0.12f * i);
+                if (amount <= 0.02f) continue;
+                shot.dustWorld[shot.dustCount] = spot.point;
+                shot.dustAmount[shot.dustCount] = amount;
+                shot.dustCount++;
+                if (!shot.hasColor && SmokeGroundDust)
                 {
-                    shot.hasDust = true;
-                    shot.dustWorld = hit.point;
-                    shot.dustAmount = amount;
+                    Color ground;
+                    if (GroundColor.TryGet(spot, out ground)) { shot.hasColor = true; shot.groundColor = ground; }
                 }
+                if (!shot.hasGround) { shot.hasGround = true; shot.groundNormal = n; shot.footWorld = spot.point; shot.height = Mathf.Max(height, 3f * scale); }
             }
             return shot;
         }
 
-        // The colour of the dust: a warm brown (the ground's own colour is not read yet).
+        // The colour of the dust: the ground's own colour, a little paler (a warm brown when the ground cannot be read).
         private static Color DustColor(Cloud c)
         {
+            foreach (Shot shot in c.shots)
+                if (shot.hasColor) return GroundColor.DustFrom(shot.groundColor);
             return new Color(0.62f, 0.50f, 0.38f, 1f);
         }
 
