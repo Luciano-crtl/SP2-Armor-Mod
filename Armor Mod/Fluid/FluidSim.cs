@@ -25,7 +25,18 @@ namespace ArmorFragments.Fluid
             public float falloff;
             public float swirl;        // m/s of random swirling inside the ball
             public float swirlFreq;    // 1/m: how fine the swirling is
-            public const int Stride = 14 * 4;
+            public float dust;         // dust density put into the ball
+            public const int Stride = 15 * 4;
+        }
+
+        // A solid thing, given by the matrix that takes a point of the box's space into the shape's own space.
+        // kind 0: a box (|local| <= half); kind 1: an ellipsoid (|local / half.x| <= 1); kind 2: a half-space (local.y <= 0).
+        public struct Shape
+        {
+            public Matrix4x4 toLocal;
+            public Vector3 half;
+            public int kind;
+            public const int Stride = 20 * 4;
         }
 
         public struct Settings
@@ -53,7 +64,7 @@ namespace ArmorFragments.Fluid
         {
             public Vector3Int dims;
             public float h;
-            public RenderTexture p, rhs, res;
+            public RenderTexture p, rhs, res, solid;
         }
 
         public readonly Vector3Int Dims;
@@ -64,12 +75,14 @@ namespace ArmorFragments.Fluid
         private readonly ComputeShader cs;
         private readonly List<Level> levels = new List<Level>();
         private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp;
-        private ComputeBuffer blobBuffer;
+        private ComputeBuffer blobBuffer, shapeBuffer;
+        private int shapeCapacity;
+        private bool hadShapes;
         private int blobCapacity;
         private int seed = 1;
         private bool disposed;
 
-        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi;
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict;
 
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
@@ -99,7 +112,7 @@ namespace ArmorFragments.Fluid
             kDivergence = cs.FindKernel("Divergence"); kSmooth = cs.FindKernel("Smooth"); kResidual = cs.FindKernel("Residual");
             kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
             kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
-            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi");
+            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict");
 
             velA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             scalA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); scalB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
@@ -119,6 +132,7 @@ namespace ArmorFragments.Fluid
                     p = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
                     rhs = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
                     res = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
+                    solid = Make(d.x, d.y, d.z, RenderTextureFormat.RFloat),
                 };
                 levels.Add(L);
                 if ((d.x & 1) != 0 || (d.y & 1) != 0 || (d.z & 1) != 0 || Mathf.Min(d.x, Mathf.Min(d.y, d.z)) < 16) break;
@@ -151,7 +165,8 @@ namespace ArmorFragments.Fluid
             disposed = true;
             foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp })
                 if (rt != null) rt.Release();
-            foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); }
+            foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); L.solid.Release(); }
+            if (shapeBuffer != null) shapeBuffer.Release();
             if (blobBuffer != null) blobBuffer.Release();
         }
 
@@ -175,7 +190,45 @@ namespace ArmorFragments.Fluid
             Dispatch(kClear, Dims);
             foreach (Level L in levels) ClearPressure(L);
             ResetPhi(phiA); ResetPhi(phiB);
+            hadShapes = true;
+            SetObstacles(null);
             Time = 0f;
+        }
+
+        // The solid things in the box (vehicle parts, the ground). Call before stepping; null or empty clears them.
+        public void SetObstacles(IList<Shape> shapes)
+        {
+            int count = shapes == null ? 0 : shapes.Count;
+            if (count == 0 && !hadShapes) return;
+            hadShapes = count > 0;
+            if (count > 0)
+            {
+                if (shapeBuffer == null || shapeCapacity < count)
+                {
+                    if (shapeBuffer != null) shapeBuffer.Release();
+                    shapeCapacity = Mathf.Max(16, count);
+                    shapeBuffer = new ComputeBuffer(shapeCapacity, Shape.Stride);
+                }
+                Shape[] array = new Shape[count];
+                shapes.CopyTo(array, 0);
+                shapeBuffer.SetData(array);
+                cs.SetBuffer(kObstacles, "Shapes", shapeBuffer);
+            }
+            else
+            {
+                if (shapeBuffer == null) { shapeCapacity = 16; shapeBuffer = new ComputeBuffer(shapeCapacity, Shape.Stride); }
+                cs.SetBuffer(kObstacles, "Shapes", shapeBuffer);
+            }
+            cs.SetFloat("Hh", Cell);
+            cs.SetInt("ShapeCount", count);
+            cs.SetTexture(kObstacles, "SolidOut", levels[0].solid);
+            Dispatch(kObstacles, Dims);
+            for (int i = 1; i < levels.Count; i++)
+            {
+                cs.SetTexture(kMaskRestrict, "SolidFine", levels[i - 1].solid);
+                cs.SetTexture(kMaskRestrict, "SolidOut", levels[i].solid);
+                Dispatch(kMaskRestrict, levels[i].dims);
+            }
         }
 
         private void ResetPhi(RenderTexture target)
@@ -203,6 +256,7 @@ namespace ArmorFragments.Fluid
             cs.SetInt("BlobCount", array.Length);
             cs.SetInt("Seed", seed);
             cs.SetBuffer(kBlobs, "Blobs", blobBuffer);
+            cs.SetTexture(kBlobs, "Solid", levels[0].solid);
             cs.SetTexture(kBlobs, "VelIn", velA); cs.SetTexture(kBlobs, "ScalIn", scalA);
             cs.SetTexture(kBlobs, "VelOut", velB); cs.SetTexture(kBlobs, "ScalOut", scalB);
             Dispatch(kBlobs, Dims);
@@ -249,6 +303,7 @@ namespace ArmorFragments.Fluid
             cs.SetFloat("Cool", Mathf.Exp(-s.cool * dt));
             cs.SetFloat("Diss", Mathf.Exp(-s.dissipate * dt));
             cs.SetFloat("Drag", Mathf.Exp(-s.drag * dt));
+            cs.SetTexture(kDamp, "Solid", levels[0].solid);
             cs.SetTexture(kDamp, "VelIn", velA); cs.SetTexture(kDamp, "ScalIn", scalA);
             cs.SetTexture(kDamp, "VelOut", velB); cs.SetTexture(kDamp, "ScalOut", scalB);
             Dispatch(kDamp, Dims);
@@ -287,9 +342,11 @@ namespace ArmorFragments.Fluid
         private void Project(int cycles)
         {
             Level L0 = levels[0];
+            cs.SetTexture(kDivergence, "Solid", L0.solid);
             cs.SetTexture(kDivergence, "VelIn", velA); cs.SetTexture(kDivergence, "RhsOut", L0.rhs);
             Dispatch(kDivergence, Dims);
             for (int i = 0; i < cycles; i++) VCycle(0);
+            cs.SetTexture(kSubGrad, "Solid", L0.solid);
             cs.SetTexture(kSubGrad, "VelIn", velA); cs.SetTexture(kSubGrad, "PIn", L0.p); cs.SetTexture(kSubGrad, "VelOut", velB);
             Dispatch(kSubGrad, Dims);
             Swap(ref velA, ref velB);
@@ -298,7 +355,7 @@ namespace ArmorFragments.Fluid
         private void Sweeps(Level L, int count)
         {
             cs.SetFloat("H2", L.h * L.h);
-            cs.SetTexture(kSmooth, "P", L.p); cs.SetTexture(kSmooth, "Rhs", L.rhs);
+            cs.SetTexture(kSmooth, "P", L.p); cs.SetTexture(kSmooth, "Rhs", L.rhs); cs.SetTexture(kSmooth, "Solid", L.solid);
             for (int i = 0; i < count; i++)
                 for (int color = 0; color < 2; color++)
                 {
@@ -314,7 +371,7 @@ namespace ArmorFragments.Fluid
             Sweeps(L, 2);
 
             cs.SetFloat("H2", L.h * L.h);
-            cs.SetTexture(kResidual, "P", L.p); cs.SetTexture(kResidual, "Rhs", L.rhs); cs.SetTexture(kResidual, "Res", L.res);
+            cs.SetTexture(kResidual, "P", L.p); cs.SetTexture(kResidual, "Rhs", L.rhs); cs.SetTexture(kResidual, "Res", L.res); cs.SetTexture(kResidual, "Solid", L.solid);
             Dispatch(kResidual, L.dims);
 
             Level C = levels[index + 1];

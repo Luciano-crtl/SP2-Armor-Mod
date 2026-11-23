@@ -2,12 +2,26 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using ArmorFragments.Fluid;
-using Assets.Scripts.Environment.Wind;
+using Assets.Scripts.Craft.Parts;
+using Assets.Scripts.Craft.Parts.Modifiers;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
+using Assets.Scripts.Environment.Wind;
+using HarmonyLib;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 namespace ArmorFragments
 {
+    // A cannon fires (this is also what the game calls to show the muzzle flash of other players' cannons).
+    [HarmonyPatch(typeof(CannonScript), "PlayMuzzleFlash")]
+    internal static class FluidSmokePatch
+    {
+        private static void Postfix(CannonScript __instance)
+        {
+            FluidSmoke.OnShot(__instance);
+        }
+    }
+
     // The smoke of a cannon shot as a real fluid: every shot starts a small GPU simulation of the hot gas bursting out of the barrel
     // (FluidSim, the compute shader Fluid.compute in the effect bundle). It is drawn by the ray-marching shader (SmokeVolume) on a box
     // that lies along the barrel. A cloud lives about 4 seconds, then its memory goes back to a pool.
@@ -40,7 +54,14 @@ namespace ArmorFragments
         private static int autoLevel;                  // what the automatic mode currently allows
         private const float BaseCell = 0.125f;
 
-        private struct Shot { public Vector3 muzzle; public float start; }
+        private struct Shot
+        {
+            public Vector3 muzzle;           // in the box's space
+            public float start;
+            public bool hasDust;
+            public Vector3 dustWorld;        // where the blast meets the ground
+            public float dustAmount;         // 0..1: less when the muzzle is high above the ground
+        }
 
         private sealed class Cloud
         {
@@ -55,6 +76,9 @@ namespace ArmorFragments
             public float age;
             public float end;
             public readonly List<Shot> shots = new List<Shot>();
+            public PartScript cannonPart;    // its own colliders do not block its smoke
+            public bool hasGround;
+            public Vector3 groundPoint, groundNormal;
         }
 
         private static readonly List<Cloud> Active = new List<Cloud>();
@@ -124,7 +148,7 @@ namespace ArmorFragments
                                   && local.x < c.extent.x - margin && local.y < c.extent.y - margin && local.z < c.extent.z - margin;
                     if (inside && Vector3.Dot(ex, c.rotation * Vector3.right) > 0.8f)
                     {
-                        c.shots.Add(new Shot { muzzle = local, start = c.age });
+                        c.shots.Add(MakeShot(local, c.age, tip, ex, c.scale, cannon));
                         c.end = Mathf.Min(c.age + Lifetime, MaxLifetime);
                         LastShot[id] = now;
                         return;
@@ -136,7 +160,7 @@ namespace ArmorFragments
 
                 int level = LevelFor(distance);
                 QualityLevel q = Levels[level];
-                float caliber = MuzzleSmoke.CaliberMillimeters(cannon);
+                float caliber = CaliberMillimeters(cannon);
                 float scale = Mathf.Clamp(caliber / 75f, 0.5f, 2f);
                 float cell = BaseCell * scale * q.cellMultiplier;
 
@@ -158,13 +182,22 @@ namespace ArmorFragments
                 sim.CoarseSweeps = 10;
 
                 Cloud cloud = new Cloud { level = level, sim = sim, origin = origin, rotation = rot, extent = extent, scale = scale, end = Lifetime };
-                cloud.shots.Add(new Shot { muzzle = muzzleLocal, start = 0f });
+                cloud.shots.Add(MakeShot(muzzleLocal, 0f, tip, ex, scale, cannon));
+                cloud.cannonPart = cannon.PartScript;
+                RaycastHit ground;
+                if (FindGround(tip + ex * 1.5f * scale, cannon.PartScript, out ground))
+                {
+                    cloud.hasGround = true;
+                    cloud.groundPoint = ground.point;
+                    cloud.groundNormal = ground.normal.sqrMagnitude > 0.5f ? ground.normal.normalized : Vector3.up;
+                }
                 cloud.material = new Material(template) { name = "ArmorFragments fluid smoke" };
-                cloud.material.SetFloat("_UseDepth", SmokeVolume.DepthTextureAvailable() ? 1f : 0f);
+                cloud.material.SetFloat("_UseDepth", DepthTextureAvailable() ? 1f : 0f);
                 cloud.material.SetFloat("_Extinction", 8f);
                 cloud.material.SetFloat("_Erosion", 0.55f);
                 cloud.material.SetFloat("_NoiseScale", 1.1f / scale);
                 cloud.material.SetFloat("_UsePhi", 1f);
+                cloud.material.SetColor("_DustColor", DustColor(cloud));
                 cloud.material.SetVector("_GridExtent", new Vector4(extent.x, extent.y, extent.z, 0f));
 
                 if (boxMesh == null) boxMesh = MakeBox();
@@ -224,6 +257,7 @@ namespace ArmorFragments
                         // Gravity in the box's axes; the blast slows fast, then the smoke drifts.
                         c.sim.Params.buoyDir = Quaternion.Inverse(c.rotation) * Vector3.up;
                         c.sim.Params.drag = c.age < 0.3f ? 7f : 1.5f;
+                        c.sim.SetObstacles(Obstacles(c));
 
                         bool violent = RecentShot(c);
                         int substeps = violent ? Mathf.Clamp(Mathf.CeilToInt(frame / 0.006f), 1, 3) : 1;
@@ -297,6 +331,18 @@ namespace ArmorFragments
                     list.Add(new FluidSim.Blob { center = shot.muzzle + new Vector3(0.9f * s, 0, 0), radius = 1.3f * s, rho = 1.0f * fade, temp = 0.3f * fade,
                                                  vel = new Vector3(4f * fade, 0, 0), radial = 1.0f, noise = 0.15f, falloff = 1.1f,
                                                  swirl = 3f * fade, swirlFreq = 0.7f / s });
+                }
+                // The blast throws dust up where it meets the ground (the point is kept in the world, the box moves with the wind).
+                if (shot.hasDust && t < 0.35f)
+                {
+                    float fade = 1f - t / 0.35f;
+                    Quaternion inverse = Quaternion.Inverse(c.rotation);
+                    Vector3 foot = inverse * (shot.dustWorld - c.origin);
+                    Vector3 up = inverse * c.groundNormal;
+                    Vector3 along = new Vector3(1f, 0f, 0f);
+                    list.Add(new FluidSim.Blob { center = foot + up * (0.3f * s), radius = 1.7f * s, rho = 0f, temp = 0.05f, dust = shot.dustAmount,
+                                                 vel = (up * 3f + along * 2f) * fade, radial = 7f * fade, noise = 0.25f, falloff = 1.1f,
+                                                 swirl = 5f * fade, swirlFreq = 0.9f / s });
                 }
             }
             return list;
@@ -384,6 +430,173 @@ namespace ArmorFragments
         private sealed class Driver : MonoBehaviour
         {
             private void Update() { FluidSmoke.Tick(); }
+        }
+
+        // ---- the world around the cloud -----------------------------------------------------------------------------------------
+
+        private static readonly Collider[] Overlaps = new Collider[96];
+        private static readonly List<FluidSim.Shape> ShapeBuffer = new List<FluidSim.Shape>(32);
+        private const int MaxShapes = 28;
+
+        // The solid things inside the box: the parts of vehicles (the shooter's own too, except its cannon) and the ground. Each is a box,
+        // an ellipsoid or a half-space in the box's own space (see Fluid.compute).
+        private static List<FluidSim.Shape> Obstacles(Cloud c)
+        {
+            ShapeBuffer.Clear();
+            Matrix4x4 gridToWorld = Matrix4x4.TRS(c.origin, c.rotation, Vector3.one);
+            Vector3 center = c.origin + c.rotation * (c.extent * 0.5f);
+
+            if (c.hasGround)
+            {
+                float height = Vector3.Dot(center - c.groundPoint, c.groundNormal);
+                if (height < c.extent.magnitude * 0.5f)
+                {
+                    Matrix4x4 plane = Matrix4x4.TRS(c.groundPoint, Quaternion.FromToRotation(Vector3.up, c.groundNormal), Vector3.one);
+                    ShapeBuffer.Add(new FluidSim.Shape { toLocal = plane.inverse * gridToWorld, half = Vector3.one, kind = 2 });
+                }
+            }
+
+            int count = Physics.OverlapBoxNonAlloc(center, c.extent * 0.5f, Overlaps, c.rotation, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count && ShapeBuffer.Count < MaxShapes; i++)
+            {
+                Collider col = Overlaps[i];
+                if (col == null) continue;
+                PartScript part = col.GetComponentInParent<PartScript>();
+                if (part == null || part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
+                if (col.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                FluidSim.Shape shape;
+                if (ShapeOf(col, gridToWorld, out shape)) ShapeBuffer.Add(shape);
+            }
+            return ShapeBuffer;
+        }
+
+        private static bool ShapeOf(Collider col, Matrix4x4 gridToWorld, out FluidSim.Shape shape)
+        {
+            shape = new FluidSim.Shape();
+            Matrix4x4 ltw = col.transform.localToWorldMatrix;
+            Matrix4x4 m;
+            BoxCollider box = col as BoxCollider;
+            SphereCollider sphere = col as SphereCollider;
+            CapsuleCollider capsule = col as CapsuleCollider;
+            MeshCollider mesh = col as MeshCollider;
+            if (box != null)
+            {
+                m = ltw * Matrix4x4.TRS(box.center, Quaternion.identity, Vector3.one);
+                shape.half = box.size * 0.5f; shape.kind = 0;
+            }
+            else if (sphere != null)
+            {
+                m = ltw * Matrix4x4.TRS(sphere.center, Quaternion.identity, Vector3.one);
+                shape.half = Vector3.one * sphere.radius; shape.kind = 1;
+            }
+            else if (capsule != null)
+            {
+                m = ltw * Matrix4x4.TRS(capsule.center, Quaternion.identity, Vector3.one);
+                float r = capsule.radius, h = Mathf.Max(capsule.height * 0.5f, r);
+                shape.half = capsule.direction == 0 ? new Vector3(h, r, r) : (capsule.direction == 1 ? new Vector3(r, h, r) : new Vector3(r, r, h));
+                shape.kind = 0;
+            }
+            else if (mesh != null && mesh.sharedMesh != null)
+            {
+                Bounds b = mesh.sharedMesh.bounds;      // the part's own box, turned with the part: tight enough for a part
+                m = ltw * Matrix4x4.TRS(b.center, Quaternion.identity, Vector3.one);
+                shape.half = b.extents; shape.kind = 0;
+            }
+            else
+            {
+                Bounds b = col.bounds;
+                m = Matrix4x4.TRS(b.center, Quaternion.identity, Vector3.one);
+                shape.half = b.extents; shape.kind = 0;
+            }
+            shape.toLocal = m.inverse * gridToWorld;
+            return true;
+        }
+
+        // The first thing below `from` that is not part of a vehicle: the ground (the terrain, a runway, a building roof...).
+        private static bool FindGround(Vector3 from, PartScript own, out RaycastHit result)
+        {
+            result = default(RaycastHit);
+            RaycastHit[] hits = Physics.RaycastAll(from + Vector3.up * 1f, Vector3.down, 40f, ~0, QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (RaycastHit hit in hits)
+            {
+                if (hit.collider.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                if (hit.collider.GetComponentInParent<PartScript>() != null) continue;
+                result = hit;
+                return true;
+            }
+            return false;
+        }
+
+        // One shot: its muzzle in the box's space, and where its blast meets the ground (if the ground is close).
+        private static Shot MakeShot(Vector3 muzzleLocal, float start, Vector3 tip, Vector3 forward, float scale, CannonScript cannon)
+        {
+            Shot shot = new Shot { muzzle = muzzleLocal, start = start };
+            RaycastHit hit;
+            // The blast reaches the ground just ahead of and below the muzzle.
+            Vector3 aim = tip + forward * 2.6f * scale;
+            if (FindGround(aim, cannon.PartScript, out hit))
+            {
+                float height = Vector3.Dot(tip - hit.point, hit.normal.sqrMagnitude > 0.5f ? hit.normal.normalized : Vector3.up);
+                float amount = Mathf.Clamp01(1f - height / (6f * scale));
+                if (amount > 0.02f)
+                {
+                    shot.hasDust = true;
+                    shot.dustWorld = hit.point;
+                    shot.dustAmount = amount;
+                }
+            }
+            return shot;
+        }
+
+        // The colour of the dust: a warm brown (the ground's own colour is not read yet).
+        private static Color DustColor(Cloud c)
+        {
+            return new Color(0.62f, 0.50f, 0.38f, 1f);
+        }
+
+        // The calibre of a cannon in millimetres (75 when the game does not say).
+        internal static float CaliberMillimeters(CannonScript cannon)
+        {
+            if (cannon.PartScript != null)
+            {
+                foreach (PartModifierData modifier in cannon.PartScript.Part.Modifiers)
+                {
+                    CannonData data = modifier as CannonData;
+                    if (data != null) return data.CaliberInMilimeters;
+                }
+            }
+            return 75f;
+        }
+
+        // Whether the scene's depth texture exists, so the smoke can stop at solid things. If the render pipeline does not make it and the
+        // camera is allowed, ask the main camera for it.
+        private static bool depthChecked, depthAvailable;
+        internal static bool DepthTextureAvailable()
+        {
+            if (depthChecked) return depthAvailable;
+            depthChecked = true;
+            try
+            {
+                UniversalRenderPipelineAsset asset = UniversalRenderPipeline.asset;
+                depthAvailable = asset != null && asset.supportsCameraDepthTexture;
+                if (!depthAvailable)
+                {
+                    Camera cam = Camera.main;
+                    UniversalAdditionalCameraData data = cam != null ? cam.GetComponent<UniversalAdditionalCameraData>() : null;
+                    if (data != null)
+                    {
+                        data.requiresDepthOption = CameraOverrideOption.On;
+                        depthAvailable = true;
+                        ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] the render pipeline does not make a depth texture; asked the main camera for one");
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("[VFXBUNDLE] could not check the depth texture: " + e.Message);
+            }
+            return depthAvailable;
         }
 
         private static Mesh MakeBox()

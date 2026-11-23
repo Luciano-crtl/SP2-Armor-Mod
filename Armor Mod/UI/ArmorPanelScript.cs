@@ -75,7 +75,7 @@ namespace ArmorFragments.UI
                 BuildRays();
                 BuildTools();
                 // RELEASE-STRIP-BEGIN
-                BuildSmokeTests();
+                BuildFluidSmoke();
                 // RELEASE-STRIP-END
                 BuildDamageMaps();
                 BuildLog();
@@ -651,25 +651,16 @@ namespace ArmorFragments.UI
         }
 
         // RELEASE-STRIP-BEGIN
-        // The smoke experiments: a few short buttons per row (the row gives each button an equal share of the width).
-        private void BuildSmokeTests()
+        // The smoke of the cannons: a real fluid simulation on the GPU.
+        private void BuildFluidSmoke()
         {
-            builder.Header("Smoke effects (test)", collapsed: true);
+            builder.Header("Cannon smoke (fluid)", collapsed: true);
+            TextControl status = builder.Text("Now", "");
+            refreshers.Add(() => status.ValueText.Text = (FluidSmoke.Enabled ? "on" : "off") + ", quality " + FluidSmoke.QualityName);
             builder.Buttons(new List<KeyValuePair<string, Action>>
             {
-                new KeyValuePair<string, Action>("Smoke column", VfxBundleTest.Spawn),
-                new KeyValuePair<string, Action>("Blast cloud", BlastCloud.Test),
-            });
-            builder.Buttons(new List<KeyValuePair<string, Action>>
-            {
-                new KeyValuePair<string, Action>("Muzzle puff on/off", MuzzleSmoke.Toggle),
-                new KeyValuePair<string, Action>("Ground blast on/off", BlastCloud.ToggleOnShots),
-            });
-            builder.Buttons(new List<KeyValuePair<string, Action>>
-            {
-                new KeyValuePair<string, Action>("Ray-marched smoke on/off", SmokeVolume.Toggle),
-                new KeyValuePair<string, Action>("Fluid muzzle smoke on/off", FluidSmoke.Toggle),
-                new KeyValuePair<string, Action>("Fluid quality (cycles)", FluidSmoke.CycleQuality),
+                new KeyValuePair<string, Action>("On / off", FluidSmoke.Toggle),
+                new KeyValuePair<string, Action>("Quality", FluidSmoke.CycleQuality),
             });
         }
         // RELEASE-STRIP-END
