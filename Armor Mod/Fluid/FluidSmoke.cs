@@ -50,6 +50,11 @@ namespace ArmorFragments
         // How much bigger (or smaller) than the standard the box of a new cloud is, in every direction. The number of cells is limited by the
         // quality level, so a bigger box has coarser cells.
         public static float BoxSize { get { return ArmorFragmentsPlugin.SmokeBoxSize != null ? Mathf.Clamp(ArmorFragmentsPlugin.SmokeBoxSize.Value, 0.5f, 3f) : 1f; } }
+        // Faster drawing (Smoke/FastDrawing): blocks of the grid with no smoke are skipped, and the walk toward the sun and the game's shadow map
+        // are looked up every second sample that holds smoke. Faster solids (Smoke/FastSolids): when nothing near the cloud moves, the solids
+        // are measured every second frame.
+        public static bool FastDrawing { get { return ArmorFragmentsPlugin.SmokeFastDrawing == null || ArmorFragmentsPlugin.SmokeFastDrawing.Value; } }
+        public static bool FastSolids { get { return ArmorFragmentsPlugin.SmokeFastSolids == null || ArmorFragmentsPlugin.SmokeFastSolids.Value; } }
         public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
         public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.8f; } }
         private static void ReadBlastSettings()
@@ -141,6 +146,8 @@ namespace ArmorFragments
             public GameObject box;
             public MeshRenderer boxRenderer;
             public bool isTail;              // smoke the bubble left behind: an ordinary cloud that stays where it was released
+            public float lastPeakSpeed;      // the fastest part speed the last time the solids were measured
+            public int solidFrame;
             public bool isBubble;            // the small box that follows the player's vehicle (PlayerBubble.cs)
             public readonly Dictionary<AircraftScript, Bounds> crafts = new Dictionary<AircraftScript, Bounds>();     // vehicles with a part in the box, and where
             public Material material;
@@ -360,7 +367,13 @@ namespace ArmorFragments
                         if (ArmorFragmentsPlugin.SmokeHeatCooling != null) c.sim.Params.cool = ArmorFragmentsPlugin.SmokeHeatCooling.Value;
                         if (ArmorFragmentsPlugin.SmokeTurbulence != null) c.sim.Params.turbulence = ArmorFragmentsPlugin.SmokeTurbulence.Value;
                         UpdateWind(c, wind, frame);
-                        c.sim.SetObstacles(Obstacles(c), PlaneBuffer);
+                        // The solids: every frame, or every second frame when the cloud is past its blast and nothing near it moves.
+                        bool skipSolids = FastSolids && !c.isBubble && c.sim.HasSolids && c.age > 1.6f * c.timeScale && c.lastPeakSpeed < 0.5f && ((c.solidFrame++ & 1) == 1);
+                        if (!skipSolids)
+                        {
+                            c.sim.SetObstacles(Obstacles(c), PlaneBuffer);
+                            c.lastPeakSpeed = peakSpeed;
+                        }
 
                         // A cloud past the middle of its life changes slowly: it is stepped every other frame, twice as long.
                         float step = frame;
@@ -419,6 +432,16 @@ namespace ArmorFragments
                     m.SetTexture("_PhiA", c.sim.PhiA);
                     m.SetTexture("_PhiB", c.sim.PhiB);
                     m.SetTexture("_Solid", c.sim.Solid);
+                    bool fast = FastDrawing;
+                    if (fast)
+                    {
+                        c.sim.UpdateOccupancy();
+                        m.SetTexture("_Occ", c.sim.Occupancy);
+                        Vector3Int od = c.sim.OccupancyDims;
+                        m.SetVector("_OccDim", new Vector4(od.x, od.y, od.z, 0f));
+                    }
+                    m.SetFloat("_UseOcc", fast ? 1f : 0f);
+                    m.SetFloat("_LightEvery", fast ? 2f : 1f);
                     m.SetFloat("_ShowSolid", ShowSolid ? 1f : 0f);
                     // The flash of the latest shot lights the smoke, and the shadow the smoke casts on the scene.
                     if (c.shots.Count > 0)

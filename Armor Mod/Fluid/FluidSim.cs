@@ -126,7 +126,7 @@ namespace ArmorFragments.Fluid
         private int seed = 1;
         private bool disposed;
 
-        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace, kShift, kShiftSolid, kCapPhi, kCapture, kCut;
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace, kShift, kShiftSolid, kCapPhi, kCapture, kCut, kOccupancy;
 
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
@@ -158,7 +158,7 @@ namespace ArmorFragments.Fluid
             kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
             kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
             kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kDisplace = cs.FindKernel("Displace"); kWind = cs.FindKernel("ApplyWind");
-            kShift = cs.FindKernel("Shift"); kShiftSolid = cs.FindKernel("ShiftSolid"); kCapPhi = cs.FindKernel("CapturePhi"); kCapture = cs.FindKernel("Capture"); kCut = cs.FindKernel("Cut");
+            kShift = cs.FindKernel("Shift"); kShiftSolid = cs.FindKernel("ShiftSolid"); kCapPhi = cs.FindKernel("CapturePhi"); kCapture = cs.FindKernel("Capture"); kCut = cs.FindKernel("Cut"); kOccupancy = cs.FindKernel("Occupancy");
 
             IsHalf = HalfFields;
             velA = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat);
@@ -214,7 +214,7 @@ namespace ArmorFragments.Fluid
         {
             if (disposed) return;
             disposed = true;
-            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel, solidPrev })
+            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel, solidPrev, occupancy })
                 if (rt != null) rt.Release();
             foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); L.solid.Release(); }
             if (shapeBuffer != null) shapeBuffer.Release();
@@ -249,6 +249,8 @@ namespace ArmorFragments.Fluid
         }
 
         // The solid things in the box (vehicle parts, the ground). Call before stepping; null or empty clears them.
+        public bool HasSolids { get { return hadShapes; } }
+
         public void SetObstacles(IList<Shape> shapes, IList<Vector4> planes = null)
         {
             int count = shapes == null ? 0 : shapes.Count;
@@ -316,6 +318,22 @@ namespace ArmorFragments.Fluid
         // ---- a box that follows something, and boxes that hand smoke to each other ---------------------------------------------
         // The window of this simulation moves by n cells (in the box's own axes): every field keeps its place in the world, the cells that
         // come in are empty, what leaves is lost. Whole cells only, so nothing is resampled and nothing blurs.
+        // For drawing: per block of 8 x 8 x 8 cells, the most smoke in it or next to it (x). Call after the step; the drawing skips empty blocks.
+        private RenderTexture occupancy;
+        public RenderTexture Occupancy { get { return occupancy; } }
+        public Vector3Int OccupancyDims { get { return new Vector3Int((Dims.x + 7) / 8, (Dims.y + 7) / 8, (Dims.z + 7) / 8); } }
+
+        public void UpdateOccupancy()
+        {
+            Vector3Int o = OccupancyDims;
+            if (occupancy == null) occupancy = Make(o.x, o.y, o.z, RenderTextureFormat.ARGBHalf);
+            cs.SetInts("OccDim", o.x, o.y, o.z);
+            cs.SetInts("Dim", Dims.x, Dims.y, Dims.z);
+            cs.SetTexture(kOccupancy, "Src", scalA);
+            cs.SetTexture(kOccupancy, "Dst", occupancy);
+            cs.Dispatch(kOccupancy, (o.x + 3) / 4, (o.y + 3) / 4, (o.z + 3) / 4);
+        }
+
         public void ShiftBy(Vector3Int n)
         {
             if (n == Vector3Int.zero) return;
