@@ -66,6 +66,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
         internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
         internal static ConfigEntry<bool> SmokePlayerBubble;        // local: a small box that follows your vehicle and takes the smoke it drives through
+        internal static ConfigEntry<bool> SmokePlayerBubbleTail;    // local: the bubble leaves a trail of smoke behind
         internal static ConfigEntry<float> SmokePlayerBubbleSize;   // local: how wide that box is (m)
         internal static ConfigEntry<float> SmokeBoxSize;            // local: the size of the box the smoke is simulated in (1 = standard)
         internal static ConfigEntry<bool> SmokeWash;                // local: propellers, rotors and jets blow the smoke
@@ -357,6 +358,8 @@ namespace ArmorFragments
                     new AcceptableValueRange<float>(0f, 1f)));
             SmokePlayerBubble = Config.Bind("Smoke", "PlayerBubble", true,
                 "Cannon smoke: a small box of fluid follows your vehicle while smoke from a shot reaches it, and takes the smoke inside it, so that smoke you drive through or drag along behind you travels with you instead of being left in the box of the shot.");
+            SmokePlayerBubbleTail = Config.Bind("Smoke", "PlayerBubbleTail", true,
+                "Cannon smoke: the smoke the following box leaves behind as your vehicle drives on is handed to a new cloud that stays where it was and thins out, so a long trail of smoke is left on the road behind you (at most two such clouds at a time).");
             SmokePlayerBubbleSize = Config.Bind("Smoke", "PlayerBubbleSize", 12f,
                 new ConfigDescription("Cannon smoke: how wide the box around your vehicle is, in metres (6 to 30). Applies the next time it is made. A bigger one has coarser cells.",
                     new AcceptableValueRange<float>(6f, 30f)));

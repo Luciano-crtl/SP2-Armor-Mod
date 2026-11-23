@@ -338,8 +338,9 @@ namespace ArmorFragments.Fluid
         // This box takes the smoke that another box (`src`) has inside it, and the other box loses it. The matrices take a point of this box's
         // space into the other's and back; `velRot` turns velocity vectors from the other's axes into this one's. Smoke is only taken where it
         // is at least `margin` metres from this box's faces (near them the edge damping would eat it).
-        public void CaptureFrom(FluidSim src, Matrix4x4 destToSrc, Matrix4x4 srcToDest, Matrix4x4 velRot, float margin)
+        public void CaptureFrom(FluidSim src, Matrix4x4 destToSrc, Matrix4x4 srcToDest, Matrix4x4 velRot, float margin, Vector4? plane = null)
         {
+            cs.SetVector("CapPlane", plane.HasValue ? plane.Value : new Vector4(0f, 0f, 0f, 1f));
             Vector3 destExtent = new Vector3(Dims.x, Dims.y, Dims.z) * Cell;
             Vector3 srcExtent = new Vector3(src.Dims.x, src.Dims.y, src.Dims.z) * src.Cell;
             cs.SetFloat("Hh", Cell);

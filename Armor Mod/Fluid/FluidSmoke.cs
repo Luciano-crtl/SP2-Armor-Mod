@@ -138,6 +138,7 @@ namespace ArmorFragments
             public FluidSim sim;
             public GameObject box;
             public MeshRenderer boxRenderer;
+            public bool isTail;              // smoke the bubble left behind: an ordinary cloud that stays where it was released
             public bool isBubble;            // the small box that follows the player's vehicle (PlayerBubble.cs)
             public readonly Dictionary<AircraftScript, Bounds> crafts = new Dictionary<AircraftScript, Bounds>();     // vehicles with a part in the box, and where
             public Material material;

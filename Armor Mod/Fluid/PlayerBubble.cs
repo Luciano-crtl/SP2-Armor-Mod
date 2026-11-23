@@ -17,6 +17,7 @@ namespace ArmorFragments
         private static Cloud bubble;
         private static float bubbleGroundAt;
         private static int bubbleLogged;
+        private static Vector3 lastRelease;
         private static readonly List<Cloud> Reaching = new List<Cloud>();
 
         public static bool BubbleEnabled { get { return ArmorFragmentsPlugin.SmokePlayerBubble == null || ArmorFragmentsPlugin.SmokePlayerBubble.Value; } }
@@ -32,13 +33,14 @@ namespace ArmorFragments
             }
         }
 
-        private static bool PlayerVehicle(out Vector3 center)
+        private static bool PlayerVehicle(out Vector3 center, out Vector3 velocity)
         {
-            center = Vector3.zero;
+            center = Vector3.zero; velocity = Vector3.zero;
             FlightSceneScript scene = FlightSceneScript.Instance;
             AircraftScript aircraft = scene != null && scene.LocalPlayer != null ? scene.LocalPlayer.Aircraft : null;
             if (aircraft == null || aircraft.LoadContext != CraftLoadContext.Flight || aircraft.MainCockpit == null) return false;
             center = aircraft.MainCockpit.transform.position;
+            velocity = aircraft.Velocity;
             return !float.IsNaN(center.x) && !float.IsNaN(center.y) && !float.IsNaN(center.z);
         }
 
@@ -61,8 +63,8 @@ namespace ArmorFragments
         private static void UpdateBubble(float frame)
         {
             if (!BubbleEnabled) { DropBubble("it was switched off"); return; }
-            Vector3 center;
-            if (!PlayerVehicle(out center)) { DropBubble("there is no vehicle of yours in flight"); return; }
+            Vector3 center, velocity;
+            if (!PlayerVehicle(out center, out velocity)) { DropBubble("there is no vehicle of yours in flight"); return; }
 
             float reach = BubbleSize * 0.9f;       // a little more than half the diagonal of the bubble
             Reaching.Clear();
@@ -74,6 +76,7 @@ namespace ArmorFragments
                 if (Reaching.Count == 0 || Active.Count >= MaxActive + 1) return;
                 MakeBubble(Reaching[0], center);
                 if (bubble == null) return;
+                lastRelease = center;
             }
 
             Cloud b = bubble;
@@ -119,6 +122,78 @@ namespace ArmorFragments
                 if (c.material != null) b.material.SetColor("_DustColor", c.material.GetColor("_DustColor"));
             }
             Place(b);
+
+            // Driving on: every few metres the smoke behind the vehicle is handed to a cloud that stays where it is.
+            if (ArmorFragmentsPlugin.SmokePlayerBubbleTail == null || ArmorFragmentsPlugin.SmokePlayerBubbleTail.Value)
+            {
+                Vector3 flat = new Vector3(velocity.x, 0f, velocity.z);
+                float release = BubbleSize * 0.5f;
+                if (flat.magnitude >= 3f && b.end - b.age > 1f && (center - lastRelease).sqrMagnitude > release * release)
+                {
+                    lastRelease = center;
+                    int tails = 0;
+                    foreach (Cloud c in Active) if (c.isTail) tails++;
+                    if (tails < 2) ReleaseTail(b, center, flat.normalized);
+                }
+            }
+        }
+
+        // The smoke of the bubble more than 1.5 m behind the vehicle (along its direction of travel) goes to a new cloud with the same box,
+        // where the bubble is now. The cloud lives as long as the bubble would have, and is dropped at once if it turns out to hold almost nothing.
+        private static void ReleaseTail(Cloud b, Vector3 center, Vector3 forward)
+        {
+            try
+            {
+                ComputeShader cs = VfxBundleTest.Compute("fluid");
+                Material template = VfxBundleTest.Material("smokevolume");
+                if (cs == null || template == null) return;
+                Vector3Int d = b.sim.Dims;
+                Stack<FluidSim> pool;
+                FluidSim sim = Pools.TryGetValue(d, out pool) && pool.Count > 0 ? pool.Pop() : new FluidSim(cs, d.x, d.y, d.z, b.sim.Cell);
+                sim.Cell = b.sim.Cell;
+                sim.Clear();
+                sim.Params = b.sim.Params;
+                sim.CoarseSweeps = 10;
+                Cloud t = new Cloud
+                {
+                    isTail = true, level = b.level, sim = sim, origin = b.origin, rotation = Quaternion.identity, extent = b.extent,
+                    scale = b.scale, timeScale = b.timeScale, age = 100f, end = 100f + Mathf.Max(b.end - b.age, 0f),
+                    hasGround = b.hasGround, groundPoint = b.groundPoint, groundNormal = b.groundNormal,
+                };
+                t.material = new Material(template) { name = "ArmorFragments fluid smoke (trail)" };
+                t.material.CopyPropertiesFromMaterial(b.material);
+                t.material.SetVector("_GridExtent", new Vector4(t.extent.x, t.extent.y, t.extent.z, 0f));
+                if (boxMesh == null) boxMesh = MakeBox();
+                t.box = new GameObject("ArmorFragments fluid smoke (trail)");
+                t.box.AddComponent<MeshFilter>().sharedMesh = boxMesh;
+                MeshRenderer renderer = t.box.AddComponent<MeshRenderer>();
+                renderer.sharedMaterial = t.material;
+                renderer.shadowCastingMode = SmokeShadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off;
+                t.boxRenderer = renderer;
+                renderer.receiveShadows = false;
+                VfxBundleTest.SetLayer(t.box, ImpactCamera.EffectsLayer);
+                Place(t);
+                // The two boxes coincide, so the matrices are the identity. The plane: the bubble smoke behind the vehicle.
+                Vector3 normal = -forward;
+                Vector3 point = center - forward * 1.5f - b.origin;
+                float margin = Mathf.Max(b.sim.Params.edgeMeters, b.sim.Cell) + 0.5f;
+                t.sim.CaptureFrom(b.sim, Matrix4x4.identity, Matrix4x4.identity, Matrix4x4.identity, margin, new Vector4(normal.x, normal.y, normal.z, -Vector3.Dot(normal, point)));
+                Active.Add(t);
+                Cloud mine = t;
+                t.sim.Inspect(0f, r =>
+                {
+                    if (mine.sim != null && r.mass < 30.0)
+                    {
+                        mine.end = mine.age;
+                        if (bubbleLogged < 12) { bubbleLogged++; ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] player bubble: a trail cloud held almost no smoke (" + r.mass.ToString("F0") + ") and was dropped"); }
+                    }
+                    else if (bubbleLogged < 12) { bubbleLogged++; ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] player bubble: left a trail cloud behind, smoke " + r.mass.ToString("F0")); }
+                });
+            }
+            catch (System.Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogWarning("[VFXBUNDLE] player bubble: the trail could not be made: " + e.Message);
+            }
         }
 
         private static void MakeBubble(Cloud first, Vector3 center)
