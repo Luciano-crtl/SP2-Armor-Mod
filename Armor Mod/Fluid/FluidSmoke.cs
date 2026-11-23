@@ -124,6 +124,7 @@ namespace ArmorFragments
             public PartScript cannonPart;    // its own colliders do not block its smoke
             public bool hasGround;
             public Vector3 groundPoint, groundNormal;
+            public float shapePeak;          // the fastest part speed that went to the solver (m/s), for the log
             public float windPeak;           // the strongest ambient wind the game reported over the box (m/s), for the log
             public int diagFrames;           // frames since it began, for the first few clouds' diagnostics
             public int overlapsSeen, partsSeen, shapesSent;
@@ -363,9 +364,9 @@ namespace ArmorFragments
                         checkClouds++;
                         Cloud cc = c;
                         float splitX = cc.extent.x * 0.32f + 2.5f * cc.scale;
-                        c.sim.Inspect(splitX, (fastest, mass, bad, ahead) => ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke check, " + cc.age.ToString("F2") + " s after the shot: fastest air "
-                            + fastest.ToString("F1") + " m/s, smoke " + mass.ToString("F0") + " (" + (mass > 0 ? 100.0 * ahead / mass : 0).ToString("F0") + "% of it beyond the muzzle's end)"
-                            + (bad > 0 ? ", " + bad + " cell(s) that are not numbers" : "") + ", the wind over the box peaked at " + cc.windPeak.ToString("F1") + " m/s, quality " + Levels[cc.level].name + ", box " + cc.extent.x.ToString("F1") + " m"));
+                        c.sim.Inspect(splitX, r => ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke check, " + cc.age.ToString("F2") + " s after the shot: fastest air "
+                            + r.fastest.ToString("F1") + " m/s at cell " + r.cell.x + "," + r.cell.y + "," + r.cell.z + " of " + cc.sim.Dims.x + "x" + cc.sim.Dims.y + "x" + cc.sim.Dims.z + " (" + r.solidAround + " of its 6 neighbours are solid), smoke " + r.mass.ToString("F0") + " (" + (r.mass > 0 ? 100.0 * r.ahead / r.mass : 0).ToString("F0") + "% of it beyond the muzzle end), the fastest part moved at " + cc.shapePeak.ToString("F1") + " m/s"
+                            + (r.bad > 0 ? ", " + r.bad + " cell(s) that are not numbers" : "") + ", the wind over the box peaked at " + cc.windPeak.ToString("F1") + " m/s, quality " + Levels[cc.level].name + ", box " + cc.extent.x.ToString("F1") + " m"));
                     }
                     c.diagFrames++;
                     Material m = c.material;
@@ -602,6 +603,7 @@ namespace ArmorFragments
         {
             ShapeBuffer.Clear();
             PlaneBuffer.Clear();
+            peakSpeed = 0f;
             Matrix4x4 gridToWorld = Matrix4x4.TRS(c.origin, c.rotation, Vector3.one);
             Vector3 center = c.origin + c.rotation * (c.extent * 0.5f);
             Quaternion toGrid = Quaternion.Inverse(c.rotation);
@@ -647,6 +649,7 @@ namespace ArmorFragments
                 if (ShapeOf(col, col.GetComponentInParent<PartScript>(), c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
             }
             c.shapesSent = ShapeBuffer.Count;
+            c.shapePeak = Mathf.Max(c.shapePeak, peakSpeed);
             return ShapeBuffer;
         }
 
@@ -724,10 +727,11 @@ namespace ArmorFragments
         private const float MaxSolidSpeed = 60f;         // m/s
         private const float MaxSolidSpin = 40f;          // rad/s
         private static int rejectedVelocities;
+        private static float peakSpeed;          // the fastest part speed accepted in the current pass over the shapes
 
         private static Vector3 SafeVelocity(PartScript part, Vector3 v)
         {
-            if (!float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v.sqrMagnitude <= MaxSolidSpeed * MaxSolidSpeed) return v;
+            if (!float.IsNaN(v.x) && !float.IsNaN(v.y) && !float.IsNaN(v.z) && v.sqrMagnitude <= MaxSolidSpeed * MaxSolidSpeed) { peakSpeed = Mathf.Max(peakSpeed, v.magnitude); return v; }
             Reject(part, "speed", v);
             return Vector3.zero;
         }

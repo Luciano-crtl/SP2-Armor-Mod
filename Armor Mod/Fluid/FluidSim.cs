@@ -321,51 +321,76 @@ namespace ArmorFragments.Fluid
 
         public void NoWind() { windSet = false; }
 
-        // Diagnostics: the fastest air, the smoke left, the cells with a value that is not a number, and how much of the smoke is in the
-        // half of the box ahead of the muzzle's end (x above `splitX` metres). The answer arrives a few frames later, in `done`.
-        public void Inspect(float splitX, Action<float, double, int, double> done)
+        // Diagnostics: the fastest air, the smoke left, the cells with a value that is not a number, how much of the smoke is ahead of
+        // `splitX` metres, and where the fastest air is (its cell, and how many of its six neighbours are solid). The answer arrives a few
+        // frames later, in `done`.
+        public struct Inspection { public float fastest; public double mass, ahead; public int bad; public Vector3Int cell; public int solidAround; public Vector3 velocity; }
+
+        public void Inspect(float splitX, Action<Inspection> done)
         {
             Vector3Int d = Dims;
-            RenderTexture scalarTexture = scalA, velocityTexture = velA;
+            RenderTexture scalarTexture = scalA, velocityTexture = velA, solidTexture = levels[0].solid;
+            Inspection result = new Inspection { fastest = -1f, mass = -1 };
             AsyncGPUReadback.Request(scalarTexture, 0, 0, d.x, 0, d.y, 0, d.z, rs =>
             {
                 // The data of a readback is only valid inside its own callback, so the numbers are taken out of it before the next one.
-                double mass = 0, ahead = 0; int bad = 0;
                 try
                 {
-                    if (rs.hasError) { done(-1f, -1, 0, 0); return; }
+                    if (rs.hasError) { done(result); return; }
+                    result.mass = 0;
                     for (int z = 0; z < d.z; z++)
                     {
                         Unity.Collections.NativeArray<Vector4> ls = rs.GetData<Vector4>(z);
                         for (int i = 0; i < ls.Length; i++)
                         {
                             float density = ls[i].x;
-                            if (float.IsNaN(density) || float.IsInfinity(density)) { bad++; continue; }
-                            mass += density;
-                            if (((i % d.x) + 0.5f) * Cell > splitX) ahead += density;
+                            if (float.IsNaN(density) || float.IsInfinity(density)) { result.bad++; continue; }
+                            result.mass += density;
+                            if (((i % d.x) + 0.5f) * Cell > splitX) result.ahead += density;
                         }
                     }
                 }
-                catch (Exception e) { UnityEngine.Debug.LogError("[FluidSim] inspecting the smoke failed: " + e.Message); done(-2f, -1, 0, 0); return; }
+                catch (Exception e) { UnityEngine.Debug.LogError("[FluidSim] inspecting the smoke failed: " + e.Message); done(result); return; }
                 AsyncGPUReadback.Request(velocityTexture, 0, 0, d.x, 0, d.y, 0, d.z, rv =>
                 {
-                    float fastest = 0f;
                     try
                     {
-                        if (rv.hasError) { done(-1f, mass, bad, ahead); return; }
+                        if (rv.hasError) { done(result); return; }
+                        result.fastest = 0f;
                         for (int z = 0; z < d.z; z++)
                         {
                             Unity.Collections.NativeArray<Vector4> lv = rv.GetData<Vector4>(z);
                             for (int i = 0; i < lv.Length; i++)
                             {
                                 Vector3 v = new Vector3(lv[i].x, lv[i].y, lv[i].z);
-                                if (float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z)) { bad++; continue; }
-                                fastest = Mathf.Max(fastest, v.magnitude);
+                                if (float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z)) { result.bad++; continue; }
+                                float m = v.magnitude;
+                                if (m > result.fastest) { result.fastest = m; result.velocity = v; result.cell = new Vector3Int(i % d.x, i / d.x, z); }
                             }
                         }
                     }
-                    catch (Exception e) { UnityEngine.Debug.LogError("[FluidSim] inspecting the air failed: " + e.Message); }
-                    done(fastest, mass, bad, ahead);
+                    catch (Exception e) { UnityEngine.Debug.LogError("[FluidSim] inspecting the air failed: " + e.Message); done(result); return; }
+                    AsyncGPUReadback.Request(solidTexture, 0, 0, d.x, 0, d.y, 0, d.z, rsol =>
+                    {
+                        try
+                        {
+                            if (!rsol.hasError)
+                            {
+                                Vector3Int c = result.cell;
+                                int around = 0;
+                                int[][] offsets = { new[] { 1, 0, 0 }, new[] { -1, 0, 0 }, new[] { 0, 1, 0 }, new[] { 0, -1, 0 }, new[] { 0, 0, 1 }, new[] { 0, 0, -1 } };
+                                foreach (int[] o in offsets)
+                                {
+                                    int x = c.x + o[0], y = c.y + o[1], z = c.z + o[2];
+                                    if (x < 0 || y < 0 || z < 0 || x >= d.x || y >= d.y || z >= d.z) continue;
+                                    if (rsol.GetData<float>(z)[y * d.x + x] > 0.5f) around++;
+                                }
+                                result.solidAround = around;
+                            }
+                        }
+                        catch (Exception e) { UnityEngine.Debug.LogError("[FluidSim] inspecting the solids failed: " + e.Message); }
+                        done(result);
+                    });
                 });
             });
         }
