@@ -148,8 +148,7 @@ namespace ArmorFragments
                 Material template = VfxBundleTest.Material("smokevolume");
                 if (cs == null || template == null) return;
                 Vector3Int d = b.sim.Dims;
-                Stack<FluidSim> pool;
-                FluidSim sim = Pools.TryGetValue(d, out pool) && pool.Count > 0 ? pool.Pop() : new FluidSim(cs, d.x, d.y, d.z, b.sim.Cell);
+                FluidSim sim = Acquire(cs, d, b.sim.Cell, b.sim.IsHalf);
                 sim.Cell = b.sim.Cell;
                 sim.Clear();
                 sim.Params = b.sim.Params;
@@ -203,7 +202,7 @@ namespace ArmorFragments
                 ComputeShader cs = VfxBundleTest.Compute("fluid");
                 Material template = VfxBundleTest.Material("smokevolume");
                 if (cs == null || template == null) return;
-                int level = LevelFor(0f);
+                int level = Mathf.Max(LevelFor(0f), 1);       // the bubble is never finer than high
                 QualityLevel q = Levels[level];
                 float size = BubbleSize;
                 Vector3 target = new Vector3(size, size * 0.6f, size);
@@ -217,8 +216,7 @@ namespace ArmorFragments
                 }
                 Vector3 extent = new Vector3(d.x, d.y, d.z) * h;
 
-                Stack<FluidSim> pool;
-                FluidSim sim = Pools.TryGetValue(d, out pool) && pool.Count > 0 ? pool.Pop() : new FluidSim(cs, d.x, d.y, d.z, h);
+                FluidSim sim = Acquire(cs, d, h, q.half);
                 sim.Cell = h;
                 sim.Clear();
                 sim.Params.cycles = q.cycles;

@@ -106,6 +106,7 @@ namespace ArmorFragments.Fluid
         // For the half-precision experiment: 16-bit floats for the speed, smoke, heat and their helper textures / the texture coordinates of
         // the detail noise / the pressure of the multigrid. Read when a simulation is built.
         public static bool HalfFields, HalfPhi, HalfPressure;
+        public readonly bool IsHalf;          // built with 16-bit fields (a simulation of one kind is never reused as the other)
         public int CoarseSweeps = 10;      // red-black sweeps on the smallest multigrid level
 
         private readonly ComputeShader cs;
@@ -159,6 +160,7 @@ namespace ArmorFragments.Fluid
             kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kDisplace = cs.FindKernel("Displace"); kWind = cs.FindKernel("ApplyWind");
             kShift = cs.FindKernel("Shift"); kShiftSolid = cs.FindKernel("ShiftSolid"); kCapPhi = cs.FindKernel("CapturePhi"); kCapture = cs.FindKernel("Capture"); kCut = cs.FindKernel("Cut");
 
+            IsHalf = HalfFields;
             velA = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat);
             RenderTextureFormat fieldFormat = HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat;
             RenderTextureFormat phiFormat = HalfPhi ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat;
@@ -410,7 +412,7 @@ namespace ArmorFragments.Fluid
             Vector3Int d = Dims;
             RenderTexture scalarTexture = scalA, velocityTexture = velA, solidTexture = levels[0].solid;
             Inspection result = new Inspection { fastest = -1f, mass = -1 };
-            AsyncGPUReadback.Request(scalarTexture, 0, 0, d.x, 0, d.y, 0, d.z, rs =>
+            AsyncGPUReadback.Request(scalarTexture, 0, TextureFormat.RGBAFloat, rs =>
             {
                 // The data of a readback is only valid inside its own callback, so the numbers are taken out of it before the next one.
                 try
@@ -430,7 +432,7 @@ namespace ArmorFragments.Fluid
                     }
                 }
                 catch (Exception e) { UnityEngine.Debug.LogError("[FluidSim] inspecting the smoke failed: " + e.Message); done(result); return; }
-                AsyncGPUReadback.Request(velocityTexture, 0, 0, d.x, 0, d.y, 0, d.z, rv =>
+                AsyncGPUReadback.Request(velocityTexture, 0, TextureFormat.RGBAFloat, rv =>
                 {
                     try
                     {
