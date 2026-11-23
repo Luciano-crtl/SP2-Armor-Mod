@@ -311,7 +311,7 @@ namespace ArmorFragments
                         c.sim.Params.buoyDir = Quaternion.Inverse(c.rotation) * Vector3.up;
                         c.sim.Params.drag = c.age < 0.3f * c.timeScale ? 7f / c.timeScale : 1.5f;
                         UpdateWind(c, wind, frame);
-                        c.sim.SetObstacles(Obstacles(c));
+                        c.sim.SetObstacles(Obstacles(c), PlaneBuffer);
 
                         // A cloud past the middle of its life changes slowly: it is stepped every other frame, twice as long.
                         float step = frame;
@@ -545,6 +545,7 @@ namespace ArmorFragments
             Active.Clear();
             foreach (Stack<FluidSim> pool in Pools.Values) while (pool.Count > 0) pool.Pop().Dispose();
             Pools.Clear();
+            HullPlanes.Clear();
             if (windPositions.IsCreated) windPositions.Dispose();
             if (windResults.IsCreated) windResults.Dispose();
             LastShot.Clear();
@@ -572,6 +573,9 @@ namespace ArmorFragments
         private static readonly Collider[] Overlaps = new Collider[768];
         private static readonly List<FluidSim.Shape> ShapeBuffer = new List<FluidSim.Shape>(32);
         private static readonly List<KeyValuePair<float, int>> Candidates = new List<KeyValuePair<float, int>>(256);
+        private static readonly List<Vector4> PlaneBuffer = new List<Vector4>(1024);
+        private static readonly Dictionary<Mesh, Vector4[]> HullPlanes = new Dictionary<Mesh, Vector4[]>();      // null value = not a usable convex hull
+        private const int MaxPlanesPerShape = 64;
         private const int MaxShapes = 128;
 
         // The solid things inside the box: the parts of vehicles (the shooter's own too, except its cannon) and the ground. Each is a box,
@@ -579,6 +583,7 @@ namespace ArmorFragments
         private static List<FluidSim.Shape> Obstacles(Cloud c)
         {
             ShapeBuffer.Clear();
+            PlaneBuffer.Clear();
             Matrix4x4 gridToWorld = Matrix4x4.TRS(c.origin, c.rotation, Vector3.one);
             Vector3 center = c.origin + c.rotation * (c.extent * 0.5f);
             Quaternion toGrid = Quaternion.Inverse(c.rotation);
@@ -651,9 +656,24 @@ namespace ArmorFragments
             }
             else if (mesh != null && mesh.sharedMesh != null)
             {
-                Bounds b = mesh.sharedMesh.bounds;      // the part's own box, turned with the part: tight enough for a part
+                Bounds b = mesh.sharedMesh.bounds;
                 m = ltw * Matrix4x4.TRS(b.center, Quaternion.identity, Vector3.one);
                 half = b.extents; kind = 0;
+                // The real convex shape the physics uses, not the box around it: a sloped hull is much smaller than its box.
+                Vector4[] planes = ConvexPlanes(mesh.sharedMesh);
+                if (planes != null && PlaneBuffer.Count + planes.Length <= 16384)
+                {
+                    Vector3 hullCenterWorld = m.GetColumn(3);
+                    Vector3 hullVelocity = -c.drift, hullSpin = Vector3.zero;
+                    Assets.Scripts.Craft.IRigidBody hullBody = part.Body != null ? part.Body.RigidBody : null;
+                    if (hullBody != null && !hullBody.IsDead) { hullVelocity += hullBody.GetPointVelocity(hullCenterWorld); hullSpin = hullBody.angularVelocity; }
+                    int first = PlaneBuffer.Count;
+                    // The planes are measured from the middle of the mesh's box, which is where the shape's own space starts.
+                    for (int i = 0; i < planes.Length; i++)
+                        PlaneBuffer.Add(new Vector4(planes[i].x, planes[i].y, planes[i].z, planes[i].w + Vector3.Dot(new Vector3(planes[i].x, planes[i].y, planes[i].z), b.center)));
+                    shape = FluidSim.Shape.Convex(m.inverse * gridToWorld, half, first, planes.Length, toGrid * hullVelocity, toGrid * hullSpin, toGrid * (hullCenterWorld - c.origin));
+                    return true;
+                }
             }
             else
             {
@@ -674,6 +694,50 @@ namespace ArmorFragments
             }
             shape = FluidSim.Shape.Make(m.inverse * gridToWorld, half, kind, toGrid * velocity, toGrid * spin, toGrid * (centerWorld - c.origin));
             return true;
+        }
+
+        // The planes (outward normal, offset) that bound a convex mesh, in the mesh's own space, found once per mesh. Null when the mesh is not
+        // readable or is not convex (then the box around it stands in).
+        private static Vector4[] ConvexPlanes(Mesh mesh)
+        {
+            Vector4[] cached;
+            if (HullPlanes.TryGetValue(mesh, out cached)) return cached;
+            Vector4[] result = null;
+            try
+            {
+                if (mesh.isReadable)
+                {
+                    Vector3[] v = mesh.vertices;
+                    int[] t = mesh.triangles;
+                    Vector3 middle = Vector3.zero;
+                    for (int i = 0; i < v.Length; i++) middle += v[i];
+                    if (v.Length > 3) middle /= v.Length;
+                    List<Vector4> list = new List<Vector4>();
+                    bool convex = v.Length >= 4;
+                    for (int i = 0; i + 2 < t.Length && convex; i += 3)
+                    {
+                        Vector3 a = v[t[i]], b = v[t[i + 1]], c2 = v[t[i + 2]];
+                        Vector3 n = Vector3.Cross(b - a, c2 - a);
+                        if (n.sqrMagnitude < 1e-12f) continue;
+                        n.Normalize();
+                        float d = -Vector3.Dot(n, a);
+                        if (Vector3.Dot(n, middle) + d > 0f) { n = -n; d = -d; }      // the middle of a convex solid is on the inside
+                        bool duplicate = false;
+                        for (int k = 0; k < list.Count && !duplicate; k++)
+                            duplicate = Vector3.Dot(n, new Vector3(list[k].x, list[k].y, list[k].z)) > 0.9995f && Mathf.Abs(d - list[k].w) < 1e-3f;
+                        if (!duplicate) list.Add(new Vector4(n.x, n.y, n.z, d));
+                        if (list.Count > MaxPlanesPerShape) convex = false;
+                    }
+                    // Convex means every vertex lies behind every plane; a mesh that fails this is not what the physics uses as it is.
+                    for (int k = 0; k < list.Count && convex; k++)
+                        for (int i = 0; i < v.Length; i++)
+                            if (list[k].x * v[i].x + list[k].y * v[i].y + list[k].z * v[i].z + list[k].w > 2e-3f) { convex = false; break; }
+                    if (convex && list.Count >= 4) result = list.ToArray();
+                }
+            }
+            catch (System.Exception) { result = null; }
+            HullPlanes[mesh] = result;
+            return result;
         }
 
         // The first thing below `from` that is not part of a vehicle: the ground (the terrain, a runway, a building roof...).

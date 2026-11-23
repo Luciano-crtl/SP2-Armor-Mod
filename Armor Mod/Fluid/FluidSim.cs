@@ -46,6 +46,14 @@ namespace ArmorFragments.Fluid
             {
                 return new Shape { toLocal = toLocal, halfKind = new Vector4(half.x, half.y, half.z, kind), vel = vel, omega = omega, center = center };
             }
+
+            // A convex solid (kind 3): `half` is the half size of its box, and its `planeCount` planes start at `firstPlane` of the list given
+            // to SetObstacles (a plane is the outward normal and an offset: inside when dot(normal, local) + offset <= 0).
+            public static Shape Convex(Matrix4x4 toLocal, Vector3 half, int firstPlane, int planeCount, Vector3 vel, Vector3 omega, Vector3 center)
+            {
+                return new Shape { toLocal = toLocal, halfKind = new Vector4(half.x, half.y, half.z, 3),
+                                   vel = vel, omega = new Vector4(omega.x, omega.y, omega.z, planeCount), center = new Vector4(center.x, center.y, center.z, firstPlane) };
+            }
         }
 
         public struct Settings
@@ -84,8 +92,12 @@ namespace ArmorFragments.Fluid
 
         private readonly ComputeShader cs;
         private readonly List<Level> levels = new List<Level>();
-        private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel;
-        private ComputeBuffer blobBuffer, shapeBuffer;
+        private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel, solidPrev;
+        public static int DisplacePasses = 8;        // how far (in cells) the smoke of a covered cell can be handed on in one frame
+        public static bool DisplaceSmoke = true;     // the smoke a solid moves into is pushed aside, not deleted
+        public static int MaskMode = 0;     // 1 = leave solid cells out of the advection read, 2 = and out of the limiter (experiments)
+        private ComputeBuffer blobBuffer, shapeBuffer, planeBuffer;
+        private int planeCapacity;
         private Texture3D windTexture;      // 4 x 4 x 4 ambient velocities over the box
         private readonly Color[] windColors = new Color[64];
         private bool windSet;
@@ -95,7 +107,7 @@ namespace ArmorFragments.Fluid
         private int seed = 1;
         private bool disposed;
 
-        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind;
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace;
 
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
@@ -125,7 +137,7 @@ namespace ArmorFragments.Fluid
             kDivergence = cs.FindKernel("Divergence"); kSmooth = cs.FindKernel("Smooth"); kResidual = cs.FindKernel("Residual");
             kRestrict = cs.FindKernel("Restrict"); kProlong = cs.FindKernel("ProlongAdd"); kSubGrad = cs.FindKernel("SubGrad");
             kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
-            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kWind = cs.FindKernel("ApplyWind");
+            kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kDisplace = cs.FindKernel("Displace"); kWind = cs.FindKernel("ApplyWind");
 
             velA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             scalA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); scalB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
@@ -134,6 +146,7 @@ namespace ArmorFragments.Fluid
             phiA = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat); phiB = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             phiTmp = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
             solidVel = Make(nx, ny, nz, RenderTextureFormat.ARGBFloat);
+            solidPrev = Make(nx, ny, nz, RenderTextureFormat.RFloat);
 
             // Multigrid levels: halve every dimension while they stay even and at least 8 cells.
             Vector3Int d = Dims;
@@ -177,10 +190,11 @@ namespace ArmorFragments.Fluid
         {
             if (disposed) return;
             disposed = true;
-            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel })
+            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel, solidPrev })
                 if (rt != null) rt.Release();
             foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); L.solid.Release(); }
             if (shapeBuffer != null) shapeBuffer.Release();
+            if (planeBuffer != null) planeBuffer.Release();
             if (windTexture != null) { if (Application.isPlaying) UnityEngine.Object.Destroy(windTexture); else UnityEngine.Object.DestroyImmediate(windTexture); }
             if (blobBuffer != null) blobBuffer.Release();
         }
@@ -211,7 +225,7 @@ namespace ArmorFragments.Fluid
         }
 
         // The solid things in the box (vehicle parts, the ground). Call before stepping; null or empty clears them.
-        public void SetObstacles(IList<Shape> shapes)
+        public void SetObstacles(IList<Shape> shapes, IList<Vector4> planes = null)
         {
             int count = shapes == null ? 0 : shapes.Count;
             if (count == 0 && !hadShapes) return;
@@ -234,11 +248,39 @@ namespace ArmorFragments.Fluid
                 if (shapeBuffer == null) { shapeCapacity = 16; shapeBuffer = new ComputeBuffer(shapeCapacity, Shape.Stride); }
                 cs.SetBuffer(kObstacles, "Shapes", shapeBuffer);
             }
+            int planeCount = planes == null ? 0 : planes.Count;
+            if (planeBuffer == null || planeCapacity < planeCount)
+            {
+                if (planeBuffer != null) planeBuffer.Release();
+                planeCapacity = Mathf.Max(64, planeCount);
+                planeBuffer = new ComputeBuffer(planeCapacity, 16);
+            }
+            if (planeCount > 0)
+            {
+                Vector4[] planeArray = new Vector4[planeCount];
+                planes.CopyTo(planeArray, 0);
+                planeBuffer.SetData(planeArray);
+            }
+            cs.SetBuffer(kObstacles, "Planes", planeBuffer);
             cs.SetFloat("Hh", Cell);
             cs.SetInt("ShapeCount", count);
+            // The map of last time is kept by swapping the two textures (the new map is written over the older one in full).
+            if (DisplaceSmoke) { RenderTexture older = levels[0].solid; levels[0].solid = solidPrev; solidPrev = older; }
             cs.SetTexture(kObstacles, "SolidOut", levels[0].solid);
             cs.SetTexture(kObstacles, "SolidVelOut", solidVel);
             Dispatch(kObstacles, Dims);
+            if (DisplaceSmoke && count > 0)
+            {
+                cs.SetTexture(kDisplace, "Solid", levels[0].solid); cs.SetTexture(kDisplace, "SolidPrev", solidPrev); cs.SetTexture(kDisplace, "SolidVel", solidVel);
+                cs.SetTexture(kDisplace, "ScalIn", scalA); cs.SetTexture(kDisplace, "ScalOut", scalB);
+                for (int pass = 0; pass < DisplacePasses; pass++)
+                {
+                    cs.SetFloat("DisplaceFinal", pass == DisplacePasses - 1 ? 1f : 0f);
+                    cs.SetTexture(kDisplace, "ScalIn", scalA); cs.SetTexture(kDisplace, "ScalOut", scalB);
+                    Dispatch(kDisplace, Dims);
+                    Swap(ref scalA, ref scalB);
+                }
+            }
             for (int i = 1; i < levels.Count; i++)
             {
                 cs.SetTexture(kMaskRestrict, "SolidFine", levels[i - 1].solid);
@@ -351,7 +393,10 @@ namespace ArmorFragments.Fluid
             // Advection: velocity, then the smoke, both with the projected velocity.
             float dtdx = dt / Cell;
             cs.SetFloat("DtDx", dtdx);
+            cs.SetTexture(kAdv, "Solid", levels[0].solid); cs.SetTexture(kMac, "Solid", levels[0].solid);
+            cs.SetFloat("MaskAdv", 0f); cs.SetFloat("MaskLim", 0f);      // the speed: a solid holds the speed of the solid itself, which the gas next to it takes
             Advect(velA, velB);
+            cs.SetFloat("MaskAdv", (MaskMode & 1) != 0 ? 1f : 0f); cs.SetFloat("MaskLim", (MaskMode & 2) != 0 ? 1f : 0f);      // the smoke and the texture coordinates: only the fluid cells count
             Advect(scalA, scalB);
             AdvectPlain(ref phiA);
             AdvectPlain(ref phiB);
