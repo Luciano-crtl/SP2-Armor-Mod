@@ -519,6 +519,10 @@ namespace ArmorFragments.Fluid
         }
 
         // ---- one step ----------------------------------------------------------------------------------------------------------
+        // For measuring only: the parts of a step that are left out (1 forces, 2 pressure projection, 4 only the V-cycles of it, 8 speed advection,
+        // 16 smoke advection, 32 texture-coordinate advection, 64 damping). 0 = the whole step.
+        public int SkipParts;
+
         public void Step(float dt)
         {
             Settings s = Params;
@@ -526,6 +530,8 @@ namespace ArmorFragments.Fluid
             cs.SetFloat("Dt", dt);
 
             // Forces.
+            if ((SkipParts & 1) == 0)
+            {
             cs.SetVector("BuoyDir", s.buoyDir);
             cs.SetFloat("Buoy", s.buoyancy);
             cs.SetFloat("Weight", s.weight);
@@ -548,21 +554,21 @@ namespace ArmorFragments.Fluid
             cs.SetTexture(kVortForce, "VelIn", velA); cs.SetTexture(kVortForce, "VortIn", vort); cs.SetTexture(kVortForce, "VelOut", velB);
             Dispatch(kVortForce, Dims);
             Swap(ref velA, ref velB);
+            }
 
-            Project(s.cycles);
+            if ((SkipParts & 2) == 0) Project(s.cycles);
 
             // Advection: velocity, then the smoke, both with the projected velocity.
             float dtdx = dt / Cell;
             cs.SetFloat("DtDx", dtdx);
             cs.SetTexture(kAdv, "Solid", levels[0].solid); cs.SetTexture(kMac, "Solid", levels[0].solid);
             cs.SetFloat("MaskAdv", 0f); cs.SetFloat("MaskLim", 0f);      // the speed: a solid holds the speed of the solid itself, which the gas next to it takes
-            Advect(velA, velB);
+            if ((SkipParts & 8) == 0) Advect(velA, velB);
             cs.SetFloat("MaskAdv", (MaskMode & 1) != 0 ? 1f : 0f); cs.SetFloat("MaskLim", (MaskMode & 2) != 0 ? 1f : 0f);      // the smoke and the texture coordinates: only the fluid cells count
-            Advect(scalA, scalB);
-            AdvectPlain(ref phiA);
-            AdvectPlain(ref phiB);
-            Swap(ref velA, ref velB);
-            Swap(ref scalA, ref scalB);
+            if ((SkipParts & 16) == 0) Advect(scalA, scalB);
+            if ((SkipParts & 32) == 0) { AdvectPlain(ref phiA); AdvectPlain(ref phiB); }
+            if ((SkipParts & 8) == 0) Swap(ref velA, ref velB);
+            if ((SkipParts & 16) == 0) Swap(ref scalA, ref scalB);
 
             // Damping.
             cs.SetFloat("EdgeCells", s.edgeMeters / Cell);
@@ -577,8 +583,7 @@ namespace ArmorFragments.Fluid
             cs.SetTexture(kDamp, "Solid", levels[0].solid); cs.SetTexture(kDamp, "SolidVel", solidVel);
             cs.SetTexture(kDamp, "VelIn", velA); cs.SetTexture(kDamp, "ScalIn", scalA);
             cs.SetTexture(kDamp, "VelOut", velB); cs.SetTexture(kDamp, "ScalOut", scalB);
-            Dispatch(kDamp, Dims);
-            Swap(ref velA, ref velB); Swap(ref scalA, ref scalB);
+            if ((SkipParts & 64) == 0) { Dispatch(kDamp, Dims); Swap(ref velA, ref velB); Swap(ref scalA, ref scalB); }
 
             float before = Time;
             Time += dt;
@@ -616,7 +621,7 @@ namespace ArmorFragments.Fluid
             cs.SetTexture(kDivergence, "Solid", L0.solid); cs.SetTexture(kDivergence, "SolidVel", solidVel);
             cs.SetTexture(kDivergence, "VelIn", velA); cs.SetTexture(kDivergence, "RhsOut", L0.rhs);
             Dispatch(kDivergence, Dims);
-            for (int i = 0; i < cycles; i++) VCycle(0);
+            if ((SkipParts & 4) == 0) for (int i = 0; i < cycles; i++) VCycle(0);
             cs.SetTexture(kSubGrad, "Solid", L0.solid); cs.SetTexture(kSubGrad, "SolidVel", solidVel);
             cs.SetTexture(kSubGrad, "VelIn", velA); cs.SetTexture(kSubGrad, "PIn", L0.p); cs.SetTexture(kSubGrad, "VelOut", velB);
             Dispatch(kSubGrad, Dims);
