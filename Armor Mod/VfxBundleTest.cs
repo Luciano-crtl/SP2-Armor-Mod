@@ -6,21 +6,31 @@ using UnityEngine;
 
 namespace ArmorFragments
 {
-    // Experiment: loads the AssetBundle "armorvfx" (built in the Unity project ArmorModVFX, Unity 6000.3.20f1) and spawns its first
-    // prefab a few metres in front of the main camera. Triggered by the "Test: effect bundle" button in the panel's Tools section.
+    // Experiment: loads the AssetBundle "armorvfx" (built in the Unity project ArmorModVFX, Unity 6000.3.20f1) and hands out its prefabs.
+    // The "Test: effect bundle" button in the panel's Tools section spawns the smoke column a few metres in front of the main camera.
     // Everything it learns goes to the log with the tag [VFXBUNDLE].
     internal static class VfxBundleTest
     {
         private const string BundleFile = "armorvfx";
         private static AssetBundle bundle;
-        private static GameObject prefab;
+        private static readonly Dictionary<string, GameObject> Prefabs = new Dictionary<string, GameObject>();
         private static readonly List<GameObject> Spawned = new List<GameObject>();
+        private static bool loadFailed;
+
+        // A prefab of the bundle by its file name without the extension, lower case ("smoke", "muzzlesmoke"); null if it cannot be had.
+        public static GameObject Prefab(string name)
+        {
+            if (bundle == null && !loadFailed && !Load()) loadFailed = true;
+            GameObject prefab;
+            return Prefabs.TryGetValue(name, out prefab) ? prefab : null;
+        }
 
         public static void Spawn()
         {
             try
             {
-                if (prefab == null && !Load()) return;
+                GameObject prefab = Prefab("smoke");
+                if (prefab == null) { ArmorFragmentsPlugin.Log.LogWarning("[VFXBUNDLE] the smoke prefab is not available"); return; }
 
                 Camera cam = Camera.main;
                 if (cam == null) { ArmorFragmentsPlugin.Log.LogWarning("[VFXBUNDLE] no main camera"); return; }
@@ -35,7 +45,8 @@ namespace ArmorFragments
                 ParticleSystem[] systems = go.GetComponentsInChildren<ParticleSystem>(true);
                 foreach (ParticleSystem ps in systems)
                 {
-                    ps.gameObject.AddComponent<SmokeWind>();
+                    SmokeSim sim = ps.gameObject.AddComponent<SmokeSim>();
+                    sim.Heat = 0.6f;   // warm: it rises and swells a little and glows faintly at first
                     ps.Play();
                 }
 
@@ -58,11 +69,18 @@ namespace ArmorFragments
 
         public static void Shutdown()
         {
+            MuzzleSmoke.Shutdown();
             foreach (GameObject go in Spawned) if (go != null) Object.Destroy(go);
             Spawned.Clear();
+            Prefabs.Clear();
             if (bundle != null) bundle.Unload(true);
             bundle = null;
-            prefab = null;
+            loadFailed = false;
+        }
+
+        public static void SetLayer(GameObject go, int layer)
+        {
+            foreach (Transform t in go.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
         }
 
         private static bool Load()
@@ -80,19 +98,10 @@ namespace ArmorFragments
 
             string[] names = bundle.GetAllAssetNames();
             ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] loaded " + path + ", " + names.Length + " asset(s): " + string.Join(", ", names));
-            // The smoke prefab is the one under test; without it, the first prefab in the bundle.
-            foreach (string name in names)
+            foreach (string asset in names)
             {
-                GameObject go = bundle.LoadAsset<GameObject>(name);
-                if (go == null) continue;
-                if (prefab == null || name.Contains("smoke")) prefab = go;
-            }
-            if (prefab == null)
-            {
-                ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] the bundle holds no prefab");
-                bundle.Unload(true);
-                bundle = null;
-                return false;
+                GameObject go = bundle.LoadAsset<GameObject>(asset);
+                if (go != null) Prefabs[Path.GetFileNameWithoutExtension(asset).ToLowerInvariant()] = go;
             }
             return true;
         }
@@ -112,11 +121,6 @@ namespace ArmorFragments
             }
             ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] the file '" + BundleFile + "' was not found in: " + string.Join(" | ", folders));
             return null;
-        }
-
-        private static void SetLayer(GameObject go, int layer)
-        {
-            foreach (Transform t in go.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
         }
     }
 }
