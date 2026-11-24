@@ -359,7 +359,8 @@ namespace ArmorFragments
                 }
                 cloud.material = new Material(template) { name = "ArmorFragments fluid smoke" };
                 cloud.material.SetFloat("_UseDepth", DepthTextureAvailable() ? 1f : 0f);
-                cloud.material.SetFloat("_Extinction", 8f);
+                cloud.material.SetFloat("_Extinction", 5f);          // how opaque the smoke is (8 made a dense cloud black)
+                cloud.material.SetFloat("_AmbientScale", 1.8f);      // how much sky light the shaded side gets (1 left it nearly black)
                 cloud.material.SetFloat("_Erosion", 0.55f);
                 cloud.material.SetFloat("_NoiseScale", 1.1f / scale);
                 cloud.material.SetFloat("_UsePhi", 1f);
