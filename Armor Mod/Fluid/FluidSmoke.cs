@@ -39,7 +39,11 @@ namespace ArmorFragments
     internal static partial class FluidSmoke
     {
         public static bool Enabled = true;
-        public static int MaxActive = 4;               // simulations running at once
+        // Simulations of shots running at once (Smoke/MaxClouds; 0 = no limit). Past it the oldest cloud is made to fade away quickly and the new
+        // one is made at once.
+        public static int MaxActive { get { int v = ArmorFragmentsPlugin.SmokeMaxClouds != null ? ArmorFragmentsPlugin.SmokeMaxClouds.Value : 6; return v <= 0 ? 100000 : v; } }
+        public const float EvictSeconds = 0.9f;        // how long the oldest cloud takes to vanish when a new one needs its place
+        private const int MaxFading = 3;               // clouds fading out because of a new one, at most (their memory is still in use)
         // The brake on the air (per second), set in the config (section Smoke): the first BlastSeconds are braked hard so the blast pushes the air
         // aside and stops; after that the smoke only has to keep drifting. At 1.5 it was almost still after 3 s, at 0.4 it still moves at 0.7 m/s
         // after 6 s.
@@ -177,6 +181,8 @@ namespace ArmorFragments
             public bool isTail;              // smoke the bubble left behind: an ordinary cloud that stays where it was released
             public float lastPeakSpeed;      // the fastest part speed the last time the solids were measured
             public int solidFrame;
+            public bool evicted;             // fading out fast because the limit of clouds was reached and a newer one took its place
+            public float evictFade, evictEnd;
             public bool isBubble;            // the small box that follows the player's vehicle (PlayerBubble.cs)
             public readonly Dictionary<AircraftScript, Bounds> crafts = new Dictionary<AircraftScript, Bounds>();     // vehicles with a part in the box, and where
             public Material material;
@@ -266,7 +272,7 @@ namespace ArmorFragments
                 // A young cloud right here takes the shot as one more blast.
                 foreach (Cloud c in Active)
                 {
-                    if (c.age > MergeSeconds) continue;
+                    if (c.age > MergeSeconds || c.evicted) continue;
                     Vector3 local = Quaternion.Inverse(c.rotation) * (tip - c.origin);
                     float margin = 1.2f * c.scale;
                     bool inside = local.x > margin && local.y > margin && local.z > margin
@@ -289,9 +295,21 @@ namespace ArmorFragments
                     }
                 }
 
-                int shotClouds = 0;
-                foreach (Cloud existing in Active) if (!existing.isBubble && !existing.isOverflow && !existing.isTail) shotClouds++;
-                if (shotClouds >= MaxActive) return;
+                int shotClouds = 0, fading = 0;
+                Cloud oldest = null;
+                foreach (Cloud existing in Active)
+                {
+                    if (existing.isBubble || existing.isOverflow || existing.isTail) continue;
+                    if (existing.evicted) { fading++; continue; }
+                    shotClouds++;
+                    if (oldest == null || existing.age > oldest.age) oldest = existing;
+                }
+                if (shotClouds >= MaxActive)
+                {
+                    // The limit is reached: the oldest cloud vanishes (quickly) and the new one is made. Not when too many are already vanishing.
+                    if (oldest == null || fading >= MaxFading) return;
+                    EvictCloud(oldest);
+                }
                 LastShot[id] = now;
 
                 int level = LevelFor(distance);
@@ -406,6 +424,24 @@ namespace ArmorFragments
             c.box.transform.SetPositionAndRotation(c.origin + c.rotation * (c.extent * 0.5f), c.rotation);
             c.box.transform.localScale = c.extent;
             c.material.SetMatrix("_WorldToGrid", Matrix4x4.TRS(c.origin, c.rotation, Vector3.one).inverse);
+        }
+
+        // The cloud's opacity: it fades out over its last FadeSeconds; one that was sent away for a newer cloud fades from where it was to nothing in EvictSeconds.
+        private static float FadeOf(Cloud c)
+        {
+            if (c.evicted) return c.evictFade * Mathf.Clamp01((c.evictEnd - c.age) / EvictSeconds);
+            return Mathf.Clamp01((c.end - c.age) / (FadeSeconds * c.timeScale));
+        }
+
+        private static void EvictCloud(Cloud c)
+        {
+            if (c.evicted) return;
+            c.evictFade = FadeOf(c);
+            c.evicted = true;
+            c.evictEnd = c.age + EvictSeconds;
+            c.end = Mathf.Min(c.end, c.evictEnd);
+            ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke: the limit of " + (ArmorFragmentsPlugin.SmokeMaxClouds != null && ArmorFragmentsPlugin.SmokeMaxClouds.Value > 0 ? ArmorFragmentsPlugin.SmokeMaxClouds.Value.ToString() : "clouds")
+                + " was reached: the oldest cloud (" + c.age.ToString("F1") + " s old) fades out in " + EvictSeconds.ToString("F1") + " s");
         }
 
         // Called every frame while a cloud lives.
@@ -548,7 +584,7 @@ namespace ArmorFragments
                     }
                     Vector2 w = c.sim.PhiWeights;
                     m.SetVector("_PhiWeights", new Vector4(w.x, w.y, 0f, 0f));
-                    m.SetFloat("_Fade", Mathf.Clamp01((c.end - c.age) / (FadeSeconds * c.timeScale)));
+                    m.SetFloat("_Fade", FadeOf(c));
                     // Fewer ray steps for far clouds.
                     float distance = cam != null ? (cam.transform.position - c.box.transform.position).magnitude : 0f;
                     m.SetFloat("_Steps", Levels[c.level].steps * (distance > 120f ? 0.75f : 1f));

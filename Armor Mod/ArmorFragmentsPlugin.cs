@@ -58,6 +58,7 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> SmokeFlash;               // local: the light of the blast
         internal static ConfigEntry<float> SmokeFlashIntensity;     // local: how bright it is
         internal static ConfigEntry<bool> SmokeGroundDust;          // local: the dust has the colour of the ground
+        internal static ConfigEntry<int> SmokeMaxClouds;            // local: how many shots' smoke may exist at once (0 = no limit)
         internal static ConfigEntry<float> SmokeJetSpeed;           // local: how fast the blast is thrown forward
         internal static ConfigEntry<float> SmokeDensity;            // local: how much smoke and heat each shot makes
         internal static ConfigEntry<float> SmokeLifetime;           // local: how long a cloud lives (75 mm)
@@ -362,6 +363,9 @@ namespace ArmorFragments
                     new AcceptableValueRange<float>(0f, 4f)));
             SmokeGroundDust = Config.Bind("Smoke", "GroundDust", true,
                 "Cannon smoke: the dust the blast lifts has the colour of the ground it comes from (the texture under the blast), not always brown.");
+            SmokeMaxClouds = Config.Bind("Smoke", "MaxClouds", 6,
+                new ConfigDescription("Cannon smoke: how many clouds of smoke (each one a shot, or a burst of shots from one place) may exist at the same time. 0 = no limit (every cloud takes memory on the graphics card: hundreds of megabytes each in high quality, so a long burst from many guns can fill it). When the limit is reached the oldest cloud fades out in a second and the new one is made.",
+                    new AcceptableValueRange<int>(0, 40)));
             SmokeJetSpeed = Config.Bind("Smoke", "JetSpeed", 0.65f,
                 new ConfigDescription("Cannon smoke: how fast the fireball and the smoke are thrown forward from the muzzle (1 = the old, too long tube of smoke). Applies to the next shot.",
                     new AcceptableValueRange<float>(0.2f, 1.5f)));

@@ -745,6 +745,8 @@ namespace ArmorFragments.UI
                 "How bright the flash of light is.", 0.1f, "");
             ToggleSetting(ArmorFragmentsPlugin.SmokeGroundDust, "Dust has the ground's colour",
                 "The dust the blast lifts takes the colour of the ground under it. Applies to the next shot.");
+            IntSetting(ArmorFragmentsPlugin.SmokeMaxClouds, "Most smoke clouds (0 = unlimited)",
+                "How many clouds of smoke may exist at once. 0 = no limit, which can fill the graphics memory in a long burst. At the limit the oldest cloud fades out quickly and the new one is made.");
             FloatSetting(ArmorFragmentsPlugin.SmokeJetSpeed, "Blast speed forward",
                 "How fast the fireball and the smoke are thrown forward: lower = a rounder, shorter puff instead of a long tube.", 0.05f, "x");
             FloatSetting(ArmorFragmentsPlugin.SmokeDensity, "Smoke amount",
