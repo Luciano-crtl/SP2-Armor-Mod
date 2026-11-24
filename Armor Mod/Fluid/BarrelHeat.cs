@@ -30,6 +30,7 @@ namespace ArmorFragments
             public float scale;           // calibre / 75 mm
             public float timeConstant;    // s
             public float carry;           // emission not yet turned into whole particles
+            public float emberCarry;      // the same for the glowing specks
             public Vector3 wind;
             public float windAt;
             public bool loggedWarm, loggedHot;
@@ -139,9 +140,20 @@ namespace ArmorFragments
                 Camera cam = Camera.main;
                 if (cam != null && (cam.transform.position - tip).sqrMagnitude > 250f * 250f) continue;
                 // A small gun (a machine gun) lets go of much less than a big one: the amount follows the calibre.
-                s.carry += 9f * intensity * (0.15f + 0.85f * Mathf.Pow(s.scale, 0.7f)) * strength * dt;
-                int count = Mathf.Min((int)s.carry, 6);
+                s.carry += 24f * intensity * (0.15f + 0.85f * Mathf.Pow(s.scale, 0.7f)) * strength * dt;
+                int count = Mathf.Min((int)s.carry, 14);
                 s.carry -= Mathf.Floor(s.carry);
+                // A hot barrel also sheds a few glowing specks (from about a third of the way to red hot).
+                if (s.heat > 0.3f)
+                {
+                    s.emberCarry += 5f * Mathf.Clamp01((s.heat - 0.3f) / 0.5f) * (0.3f + 0.7f * Mathf.Pow(s.scale, 0.7f)) * strength * dt;
+                    int specks = Mathf.Min((int)s.emberCarry, 3);
+                    s.emberCarry -= Mathf.Floor(s.emberCarry);
+                    for (int e = 0; e < specks; e++)
+                        ImpactEffects.Ember(tip + s.cannon.transform.forward * 0.05f + Random.insideUnitSphere * 0.02f,
+                                            Vector3.up * Random.Range(0.2f, 0.7f) + Random.insideUnitSphere * 0.2f, Random.Range(0.015f, 0.03f), Random.Range(0.6f, 1.6f),
+                                            new Color(1f, Random.Range(0.45f, 0.7f), 0.2f, 1f));
+                }
                 if (count <= 0) continue;
                 if (Time.time >= s.windAt) { s.wind = WindAt(tip); s.windAt = Time.time + 0.5f; }
                 Vector3 forward = s.cannon.transform.forward;
@@ -153,12 +165,15 @@ namespace ArmorFragments
                 float fine = 0.5f + 0.5f * s.scale;
                 for (int i = 0; i < count; i++)
                 {
-                    float rise = Mathf.Clamp(0.45f + 0.5f * s.heat, 0.4f, 1.2f);
+                    float rise = Mathf.Clamp(0.5f + 1.1f * s.heat, 0.5f, 2.0f);       // hot gas climbs faster
                     Vector3 velocity = muzzleVelocity + s.wind * 0.6f + Vector3.up * (rise * Random.Range(0.7f, 1.3f)) + forward * Random.Range(0.1f, 0.5f) * (0.3f + 0.7f * s.boost / 2f)
                                        + Random.insideUnitSphere * 0.12f;
-                    float alpha = Mathf.Clamp(0.06f + 0.07f * intensity, 0.06f, 0.26f);
-                    ImpactEffects.Wisp(tip + forward * 0.04f + Random.insideUnitSphere * (0.012f * fine), velocity, Random.Range(0.04f, 0.09f) * fine, Random.Range(2f, 4.5f),
-                                       new Color(0.34f, 0.33f, 0.32f, alpha));
+                    float alpha = Mathf.Clamp(0.12f + 0.10f * intensity, 0.12f, 0.45f);
+                    // The hotter the barrel the warmer and paler the smoke (a hint of orange where it leaves the muzzle).
+                    float warm = Mathf.Clamp01(s.heat * 1.3f);
+                    Color tint = Color.Lerp(new Color(0.38f, 0.37f, 0.36f), new Color(0.78f, 0.6f, 0.44f), warm);
+                    ImpactEffects.Wisp(tip + forward * 0.04f + Random.insideUnitSphere * (0.02f * fine), velocity, Random.Range(0.10f, 0.22f) * fine, Random.Range(2.5f, 5f),
+                                       new Color(tint.r, tint.g, tint.b, alpha));
                 }
             }
             foreach (int id in Gone) States.Remove(id);

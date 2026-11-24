@@ -197,6 +197,13 @@ namespace ArmorFragments
             smoke.Emit(new ParticleSystem.EmitParams { position = position, velocity = velocity, startSize = size, startLifetime = lifetime, startColor = color }, 1);
         }
 
+        // A glowing speck that comes off a very hot barrel: an ember of the embers system, drifting up slowly.
+        public static void Ember(Vector3 position, Vector3 velocity, float size, float lifetime, Color color)
+        {
+            if (!EnsureSystems()) return;
+            embers.Emit(new ParticleSystem.EmitParams { position = position, velocity = velocity, startSize = size, startLifetime = lifetime, startColor = color }, 1);
+        }
+
         // The fine matter of a muzzle blast: sparks and burning grains that fly forward (and out to the sides through a muzzle brake), slower
         // embers that hang and drift, and dark flecks of soot. `size` is the calibre / 75 mm, `amount` how much this shot burns (0..1.4), `strength`
         // the Smoke/MuzzleSparks setting; `vehicle` is the speed of the vehicle that fired.
@@ -414,7 +421,7 @@ namespace ArmorFragments
                               Curve(1f, 0.8f, 0.2f), Fade(new Color(1f, 0.8f, 0.35f), new Color(0.8f, 0.15f, 0.05f)));
                 dust = Make("dust", litMaterial ?? puffMaterial, ParticleSystemRenderMode.Billboard, 400, 0.25f, 1.6f, 0.9f,
                             Curve(0.6f, 1f, 1.5f), Fade(Color.white, Color.white));
-                smoke = Make("smoke", litMaterial ?? puffMaterial, ParticleSystemRenderMode.Billboard, 300, -0.02f, 1.4f, 0.9f,
+                smoke = Make("smoke", litMaterial ?? puffMaterial, ParticleSystemRenderMode.Billboard, 1200, -0.02f, 1.4f, 0.9f,
                              Curve(0.45f, 1f, 1.6f), Fade(Color.white, Color.white));
                 ArmorFragmentsPlugin.Log.LogInfo("[FX] impact effects ready: flash, sparks and embers glow with '" + shader.name + "'; smoke and dust use '" +
                                                  (litMaterial != null ? litMaterial.shader.name + "' (lit by the scene)" : shader.name + "' (not lit)"));
