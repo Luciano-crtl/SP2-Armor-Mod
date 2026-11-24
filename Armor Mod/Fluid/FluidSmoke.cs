@@ -67,11 +67,13 @@ namespace ArmorFragments
         public static float HeatHazeStrength { get { return ArmorFragmentsPlugin.SmokeHeatHaze != null ? ArmorFragmentsPlugin.SmokeHeatHaze.Value : 1f; } }
         public static bool BfeccAdvection { get { return ArmorFragmentsPlugin.SmokeBfecc != null && ArmorFragmentsPlugin.SmokeBfecc.Value; } }
         public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
-        public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.8f; } }
+        public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.45f; } }
         private static void ReadBlastSettings()
         {
             if (ArmorFragmentsPlugin.SmokeJetFocus != null) SmokeBlast.Focus = ArmorFragmentsPlugin.SmokeJetFocus.Value;
             if (ArmorFragmentsPlugin.SmokeMuzzleBrake != null) SmokeBlast.MuzzleBrake = ArmorFragmentsPlugin.SmokeMuzzleBrake.Value;
+            if (ArmorFragmentsPlugin.SmokeJetSpeed != null) SmokeBlast.JetSpeed = ArmorFragmentsPlugin.SmokeJetSpeed.Value;
+            if (ArmorFragmentsPlugin.SmokeDensity != null) SmokeBlast.Density = ArmorFragmentsPlugin.SmokeDensity.Value;
             if (ArmorFragmentsPlugin.SmokeBlastDust != null) SmokeBlast.BlastDust = ArmorFragmentsPlugin.SmokeBlastDust.Value;
             if (ArmorFragmentsPlugin.SmokeShockWave != null) SmokeBlast.ShockWave = ArmorFragmentsPlugin.SmokeShockWave.Value;
             if (ArmorFragmentsPlugin.SmokeResidualHeat != null) SmokeBlast.ResidualHeat = Mathf.Clamp(ArmorFragmentsPlugin.SmokeResidualHeat.Value, 0f, 0.35f);
@@ -79,8 +81,8 @@ namespace ArmorFragments
         public static bool ShowSolid;                  // debugging view: paint what the smoke treats as solid (the parts of vehicles, the ground)
         public static void ToggleShowSolid() { ShowSolid = !ShowSolid; }
         public static float MinInterval = 0.1f;        // seconds between the shots one cannon adds
-        public static float Lifetime = 9f;             // seconds, for a 75 mm gun (scaled by the gun's time scale)
-        public static float MaxLifetime = 16f;
+        public static float Lifetime { get { return ArmorFragmentsPlugin.SmokeLifetime != null ? ArmorFragmentsPlugin.SmokeLifetime.Value : 6.5f; } }   // seconds, for a 75 mm gun (scaled by the gun's time scale)
+        public static float MaxLifetime { get { return Lifetime * 1.8f; } }
         public static float FadeSeconds = 2.2f;
         public static float DriftShare = 0.7f;         // how much of the mean wind the box drifts with once the shot is over
         public static float MaxCameraDistance = 400f;  // farther than this: no cloud
@@ -641,6 +643,7 @@ namespace ArmorFragments
                     BlastGround.height = shot.height;
                     BlastGround.foot = inverse * (shot.footWorld - c.origin);
                     BlastGround.count = shot.dustCount;
+                    BlastGround.dustScale = shot.hasColor ? 1f : UnknownGroundDust;
                     for (int i = 0; i < shot.dustCount; i++)
                     {
                         BlastGround.points[i] = inverse * (shot.dustWorld[i] - c.origin);
@@ -1134,12 +1137,15 @@ namespace ArmorFragments
             return shot;
         }
 
-        // The colour of the dust: the ground's own colour, a little paler (a warm brown when the ground cannot be read).
+        // Ground whose colour cannot be read (a runway, a road, a building) lifts little dust, and what there is is pale grey.
+        private const float UnknownGroundDust = 0.3f;
+
+        // The colour of the dust: the ground's own colour, a little paler (a light grey when the ground cannot be read).
         private static Color DustColor(Cloud c)
         {
             foreach (Shot shot in c.shots)
                 if (shot.hasColor) return GroundColor.DustFrom(shot.groundColor);
-            return new Color(0.62f, 0.50f, 0.38f, 1f);
+            return new Color(0.66f, 0.64f, 0.61f, 1f);
         }
 
         // The calibre of a cannon in millimetres (75 when the game does not say).

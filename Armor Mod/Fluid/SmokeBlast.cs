@@ -12,6 +12,8 @@ namespace ArmorFragments.Fluid
         public static float Focus = 0.7f;           // 0 = the old round fireball, 1 = a narrow jet that shoots along the barrel
         public static float MuzzleBrake = 0.3f;     // 0..1: how much of the gas leaves sideways, as through a muzzle brake
         public static float BlastDust = 1f;         // multiplier of the dust the blast lifts
+        public static float JetSpeed = 0.65f;       // multiplier of how fast the fireball and the smoke are thrown forward (a long tube of smoke comes of too much)
+        public static float Density = 0.65f;        // multiplier of the smoke and the heat of every shot (the smoke of a smokeless powder is thin)
         public static float ShockWave = 1f;         // 0..2: the ring of dust that runs out over the ground and the quick push of the air around the barrel
         public static float ResidualHeat = 0.3f;    // 0..0.35: the temperature of the propellant smoke (what makes it rise; above 0.37 it also glows)
 
@@ -23,6 +25,7 @@ namespace ArmorFragments.Fluid
             public float height;                    // the muzzle's height above it (m)
             public Vector3 foot;                    // the point of the ground under the muzzle
             public int count;                       // dust spots along the line of fire
+            public float dustScale = 1f;            // how much dust this kind of ground lifts (less when it is not known to be loose earth)
             public readonly Vector3[] points = new Vector3[8];
             public readonly float[] amounts = new float[8];
         }
@@ -34,6 +37,8 @@ namespace ArmorFragments.Fluid
         {
             float focus = Mathf.Clamp01(Focus), brake = Mathf.Clamp01(MuzzleBrake * brakeScale);
             float fire = 0.12f * T, smoke = 1.2f * T, dust = 0.35f * T;
+            float amountAll = amount;                  // the dust keeps its own scale
+            amount *= Density;
 
             // The fireball: a chain of balls along the barrel. Focused, the balls are narrower, fly faster and push the air forward more than
             // outward, so the front of the jet rolls up into a vortex instead of a sphere that blows up evenly.
@@ -48,7 +53,7 @@ namespace ArmorFragments.Fluid
                         center = muzzle + new Vector3((0.7f + 0.9f * k) * s, 0, 0),
                         radius = Mathf.Lerp(0.9f + 0.25f * k, 0.75f + 0.3f * k, focus) * s,
                         rho = 0.9f * amount, temp = Mathf.Lerp(1f, 0.6f + 0.08f * k, focus),      // focused: the tail is cooler, the head is hot
-                        vel = new Vector3(Mathf.Lerp(14f, 20f, focus) * T * fade, 0, 0) * push,
+                        vel = new Vector3(Mathf.Lerp(14f, 20f, focus) * JetSpeed * T * fade, 0, 0) * push,
                         radial = Mathf.Lerp(10f, 5f, focus) * T * fade * push,
                         noise = 0.15f, falloff = 1.3f,
                         swirl = Mathf.Lerp(6f, 4f, focus) * T * fade, swirlFreq = 0.9f / s,
@@ -103,7 +108,7 @@ namespace ArmorFragments.Fluid
                     center = muzzle + new Vector3(0.9f * s, 0, 0),
                     radius = Mathf.Lerp(1.3f, 1.0f, focus) * s,
                     rho = 1.7f * fade * amount, temp = ResidualHeat * fade * amount,
-                    vel = new Vector3(Mathf.Lerp(4f, 8f, focus) * T * fade, 0, 0) * push,
+                    vel = new Vector3(Mathf.Lerp(4f, 8f, focus) * JetSpeed * T * fade, 0, 0) * push,
                     radial = 1.0f * T, noise = 0.15f, falloff = 1.1f,
                     swirl = 3f * T * fade, swirlFreq = 0.7f / s,
                 });
@@ -136,7 +141,7 @@ namespace ArmorFragments.Fluid
                     {
                         center = ground.points[i] + up * (0.3f * s),
                         radius = (1.5f + 0.35f * i) * s,
-                        rho = 0f, temp = 0.05f, dust = Mathf.Min(ground.amounts[i] * BlastDust, 1.2f) * amount,
+                        rho = 0f, temp = 0.05f, dust = Mathf.Min(ground.amounts[i] * BlastDust * ground.dustScale, 1.2f) * amountAll,
                         vel = (up * 3f + along * 2f) * T * fade,
                         radial = 7f * T * fade, noise = 0.25f, falloff = 1.1f,
                         swirl = 5f * T * fade, swirlFreq = 0.9f / s,
@@ -157,7 +162,7 @@ namespace ArmorFragments.Fluid
                         {
                             center = ground.foot + direction * travel + up * (0.25f * s),
                             radius = 0.9f * s + 0.1f * travel,
-                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * shockWave * amount * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
+                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * ground.dustScale * shockWave * amountAll * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
                             vel = direction * (6f * T * fade) + up * (1.5f * T * fade),
                             radial = 0f, noise = 0.3f, falloff = 1.2f,
                             swirl = 2f * T * fade, swirlFreq = 0.8f / s,

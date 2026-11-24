@@ -58,6 +58,9 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> SmokeFlash;               // local: the light of the blast
         internal static ConfigEntry<float> SmokeFlashIntensity;     // local: how bright it is
         internal static ConfigEntry<bool> SmokeGroundDust;          // local: the dust has the colour of the ground
+        internal static ConfigEntry<float> SmokeJetSpeed;           // local: how fast the blast is thrown forward
+        internal static ConfigEntry<float> SmokeDensity;            // local: how much smoke and heat each shot makes
+        internal static ConfigEntry<float> SmokeLifetime;           // local: how long a cloud lives (75 mm)
         internal static ConfigEntry<float> SmokeBlastDust;          // local: how much dust the blast lifts
         internal static ConfigEntry<bool> SmokeShadows;             // local: the smoke casts shadows on the scene
         internal static ConfigEntry<float> SmokeShadowStrength;     // local: how dark those shadows are
@@ -359,12 +362,21 @@ namespace ArmorFragments
                     new AcceptableValueRange<float>(0f, 4f)));
             SmokeGroundDust = Config.Bind("Smoke", "GroundDust", true,
                 "Cannon smoke: the dust the blast lifts has the colour of the ground it comes from (the texture under the blast), not always brown.");
+            SmokeJetSpeed = Config.Bind("Smoke", "JetSpeed", 0.65f,
+                new ConfigDescription("Cannon smoke: how fast the fireball and the smoke are thrown forward from the muzzle (1 = the old, too long tube of smoke). Applies to the next shot.",
+                    new AcceptableValueRange<float>(0.2f, 1.5f)));
+            SmokeDensity = Config.Bind("Smoke", "Density", 0.65f,
+                new ConfigDescription("Cannon smoke: how much smoke and heat each shot makes (1 = the old amount, which was too thick for smokeless powder). The dust is separate. Applies to the next shot.",
+                    new AcceptableValueRange<float>(0.1f, 2f)));
+            SmokeLifetime = Config.Bind("Smoke", "Lifetime", 6.5f,
+                new ConfigDescription("Cannon smoke: how many seconds a cloud lasts for a 75 mm gun (more for big guns, less for small ones).",
+                    new AcceptableValueRange<float>(2f, 20f)));
             SmokeBlastDust = Config.Bind("Smoke", "BlastDust", 1f,
                 new ConfigDescription("Cannon smoke: how much dust the blast lifts from the ground: spots along the line of fire and a fan that runs out from under the muzzle, stronger the lower the barrel is. 0 for none.",
                     new AcceptableValueRange<float>(0f, 2f)));
             SmokeShadows = Config.Bind("Smoke", "Shadows", true,
                 "Cannon smoke: the smoke casts shadows on the ground and on vehicles (only the sun's shadow, and only inside the game's shadow distance).");
-            SmokeShadowStrength = Config.Bind("Smoke", "ShadowStrength", 0.8f,
+            SmokeShadowStrength = Config.Bind("Smoke", "ShadowDarkness", 0.45f,
                 new ConfigDescription("Cannon smoke: how dark the shadow of dense smoke is (0 = none, 1 = as dark as any shadow).",
                     new AcceptableValueRange<float>(0f, 1f)));
             SmokeBuoyancy = Config.Bind("Smoke", "Buoyancy", 10f,

@@ -745,6 +745,12 @@ namespace ArmorFragments.UI
                 "How bright the flash of light is.", 0.1f, "");
             ToggleSetting(ArmorFragmentsPlugin.SmokeGroundDust, "Dust has the ground's colour",
                 "The dust the blast lifts takes the colour of the ground under it. Applies to the next shot.");
+            FloatSetting(ArmorFragmentsPlugin.SmokeJetSpeed, "Blast speed forward",
+                "How fast the fireball and the smoke are thrown forward: lower = a rounder, shorter puff instead of a long tube.", 0.05f, "x");
+            FloatSetting(ArmorFragmentsPlugin.SmokeDensity, "Smoke amount",
+                "How much smoke and heat each shot makes. Applies to the next shot.", 0.05f, "x");
+            FloatSetting(ArmorFragmentsPlugin.SmokeLifetime, "Cloud lifetime",
+                "Seconds a cloud lasts for a 75 mm gun.", 0.5f, " s");
             FloatSetting(ArmorFragmentsPlugin.SmokeBlastDust, "Blast dust",
                 "How much dust the blast lifts from the ground (spots along the line of fire and a fan from under the muzzle). 0 for none. Applies to the next shot.", 0.05f, "");
             ToggleSetting(ArmorFragmentsPlugin.SmokeShadows, "Smoke casts shadows",
