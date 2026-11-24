@@ -554,6 +554,8 @@ namespace ArmorFragments
                     m.SetFloat("_Cubic", ArmorFragmentsPlugin.SmokeCubicGrid == null || ArmorFragmentsPlugin.SmokeCubicGrid.Value ? 1f : 0f);
                     m.SetFloat("_FogOn", ArmorFragmentsPlugin.SmokeFog == null || ArmorFragmentsPlugin.SmokeFog.Value ? 1f : 0f);
                     m.SetFloat("_MultiScatter", 0.6f);
+                    m.SetFloat("_NoiseRotate", 1f);       // the detail noise: three turned octaves, so its tile does not repeat in a line
+                    m.SetFloat("_ThinSoft", 1f);          // thin smoke is carved less, so a thin haze does not show the noise
                     m.SetFloat("_LightEvery", fast ? 2f : 1f);
                     m.SetFloat("_ShowSolid", ShowSolid ? 1f : 0f);
                     // The flash of the latest shot lights the smoke, and the shadow the smoke casts on the scene.
