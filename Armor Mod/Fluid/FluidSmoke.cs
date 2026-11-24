@@ -178,12 +178,10 @@ namespace ArmorFragments
             public bool probing;
             public bool useHeight;           // the ground is a height map (Terrain.cs)
             public float groundAt;
-            public bool isTail;              // smoke the bubble left behind: an ordinary cloud that stays where it was released
             public float lastPeakSpeed;      // the fastest part speed the last time the solids were measured
             public int solidFrame;
             public bool evicted;             // fading out fast because the limit of clouds was reached and a newer one took its place
             public float evictFade, evictEnd;
-            public bool isBubble;            // the small box that follows the player's vehicle (PlayerBubble.cs)
             public readonly Dictionary<AircraftScript, Bounds> crafts = new Dictionary<AircraftScript, Bounds>();     // vehicles with a part in the box, and where
             public Material material;
             public Vector3 origin;          // world position of the box corner
@@ -299,7 +297,7 @@ namespace ArmorFragments
                 Cloud oldest = null;
                 foreach (Cloud existing in Active)
                 {
-                    if (existing.isBubble || existing.isOverflow || existing.isTail) continue;
+                    if (existing.isOverflow) continue;
                     if (existing.evicted) { fading++; continue; }
                     shotClouds++;
                     if (oldest == null || existing.age > oldest.age) oldest = existing;
@@ -459,8 +457,6 @@ namespace ArmorFragments
             Watch.Restart();
             try { UpdateOverflow(frame); }
             catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] smoke overflow failed and is off: " + e); if (ArmorFragmentsPlugin.SmokeOverflow != null) ArmorFragmentsPlugin.SmokeOverflow.Value = false; }
-            try { UpdateBubble(frame); }
-            catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] player bubble failed and is off: " + e); if (ArmorFragmentsPlugin.SmokePlayerBubble != null) ArmorFragmentsPlugin.SmokePlayerBubble.Value = false; DropBubble("it failed"); }
             for (int i = Active.Count - 1; i >= 0; i--)
             {
                 Cloud c = Active[i];
@@ -483,7 +479,7 @@ namespace ArmorFragments
                         UpdateWind(c, wind, frame);
                         RefreshGround(c);
                         // The solids: every frame, or every second frame when the cloud is past its blast and nothing near it moves.
-                        bool skipSolids = FastSolids && !c.isBubble && c.sim.HasSolids && c.age > 1.6f * c.timeScale && c.lastPeakSpeed < 0.5f && ((c.solidFrame++ & 1) == 1);
+                        bool skipSolids = FastSolids && c.sim.HasSolids && c.age > 1.6f * c.timeScale && c.lastPeakSpeed < 0.5f && ((c.solidFrame++ & 1) == 1);
                         if (!skipSolids)
                         {
                             c.sim.SetObstacles(Obstacles(c), PlaneBuffer);
@@ -493,7 +489,7 @@ namespace ArmorFragments
                         // A cloud past the middle of its life changes slowly: it is stepped every other frame, twice as long.
                         float step = frame;
                         bool run = true;
-                        if (c.age > 0.45f * c.end && !c.isBubble)
+                        if (c.age > 0.45f * c.end)
                         {
                             c.accumulated += frame;
                             c.frameCounter++;
@@ -605,7 +601,7 @@ namespace ArmorFragments
             if (Active.Count > 0) { cpuMsSum += (float)Watch.Elapsed.TotalMilliseconds; cpuMsCount++; }
         }
 
-        // Overlapping boxes (a cloud and its overflow, the bubble) are drawn from the farthest to the nearest: the order Unity picks by itself
+        // Overlapping boxes (a cloud and its overflow) are drawn from the farthest to the nearest: the order Unity picks by itself
         // is by the distance of each box's middle, which is wrong for a small box inside a big one.
         private static readonly List<KeyValuePair<float, Cloud>> SortList = new List<KeyValuePair<float, Cloud>>();
         private static void SortBoxes(Camera cam)
@@ -716,7 +712,7 @@ namespace ArmorFragments
 
             float ramp = Mathf.SmoothStep(0f, 1f, (c.age - 1.0f * c.timeScale) / (0.8f * c.timeScale));
             Vector3 target = mean * (DriftShare * ramp);
-            c.drift = c.isBubble ? Vector3.zero : Vector3.Lerp(c.drift, target, 1f - Mathf.Exp(-frame / 0.4f));
+            c.drift = Vector3.Lerp(c.drift, target, 1f - Mathf.Exp(-frame / 0.4f));
 
             Quaternion toGrid = Quaternion.Inverse(c.rotation);
             for (int i = 0; i < 64; i++)
@@ -825,7 +821,6 @@ namespace ArmorFragments
 
         private static void Retire(Cloud c)
         {
-            if (c == bubble) bubble = null;
             foreach (Cloud other in Active) if (other.parent == c) other.parent = null;
             if (c.box != null) Object.Destroy(c.box);
             if (c.material != null) Object.Destroy(c.material);
@@ -842,7 +837,6 @@ namespace ArmorFragments
                 if (c.sim != null) c.sim.Dispose();
             }
             Active.Clear();
-            bubble = null;
             BarrelHeat.Shutdown();
             try
             {

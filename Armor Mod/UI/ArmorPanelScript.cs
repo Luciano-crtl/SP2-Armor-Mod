@@ -727,12 +727,6 @@ namespace ArmorFragments.UI
                 "After the blast, when nothing near the cloud moves, vehicles and ground are measured every second frame.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeHalfPrecision, "16-bit smoke fields (ultra, high and medium)",
                 "The ultra, high and medium levels use half the memory and about 40% of the time per step with the same look. Applies to the next cloud.");
-            ToggleSetting(ArmorFragmentsPlugin.SmokePlayerBubble, "Box that follows my vehicle",
-                "A small box follows your vehicle while smoke reaches it and takes the smoke inside it, so smoke you drive through or drag along travels with you.");
-            ToggleSetting(ArmorFragmentsPlugin.SmokePlayerBubbleTail, "Leave a trail of smoke behind",
-                "The smoke the following box leaves behind as you drive on becomes a new cloud that stays on the road and thins out.");
-            FloatSetting(ArmorFragmentsPlugin.SmokePlayerBubbleSize, "Following box width",
-                "How wide the box around your vehicle is, in metres. Applies the next time it is made.", 1f, " m");
             FloatSetting(ArmorFragmentsPlugin.SmokeBoxSize, "Simulation box size",
                 "How big the box the smoke is simulated in is (1 = standard). Smoke that leaves it vanishes; a bigger box has coarser cells because the cell count is fixed by the quality level. Applies to the next shot.", 0.1f, " x");
             FloatSetting(ArmorFragmentsPlugin.SmokeJetFocus, "Jet focus",

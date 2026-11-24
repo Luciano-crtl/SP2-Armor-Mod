@@ -67,7 +67,7 @@ namespace ArmorFragments
             for (int i = Active.Count - 1; i >= 0; i--)
             {
                 Cloud c = Active[i];
-                if (c.sim == null || c.isBubble || c.isTail || c.isOverflow || c.age < 0.4f * c.timeScale || c.age >= c.end) continue;
+                if (c.sim == null || c.isOverflow || c.age < 0.4f * c.timeScale || c.age >= c.end) continue;
                 ProbeFaces(c, frame);
                 for (int face = 0; face < 6 && overflowCount < MaxOverflow; face++)
                     if ((c.faceMask & (1 << face)) != 0 && (c.children & (1 << face)) == 0)

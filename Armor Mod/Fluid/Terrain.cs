@@ -50,7 +50,7 @@ namespace ArmorFragments
         {
             if (!WorldSolids) { if (c.useHeight) { c.sim.SetGround(null, 0, 0, 0, Vector3.zero); c.useHeight = false; } return; }
             if (Time.time < c.groundAt) return;
-            c.groundAt = Time.time + (c.isBubble ? 0.25f : 1.5f);
+            c.groundAt = Time.time + 1.5f;
             if (!groundCommands.IsCreated)
             {
                 groundCommands = new NativeArray<RaycastCommand>(GroundN * GroundN, Allocator.Persistent);
