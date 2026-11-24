@@ -32,7 +32,7 @@ namespace ArmorFragments
         private static GameObject root;
         private static ParticleSystem sparks, flash, smoke, dust, embers;
         private static Material puffMaterial, sparkMaterial, litMaterial;
-        private static Texture2D puffTexture, sparkTexture;
+        private static Texture2D puffTexture, sparkTexture, smokeTexture;
         private static bool failed;
 
         // ---- Asking for an effect ---------------------------------------------------------------------
@@ -194,7 +194,9 @@ namespace ArmorFragments
         public static void Wisp(Vector3 position, Vector3 velocity, float size, float lifetime, Color color)
         {
             if (!EnsureSystems()) return;
-            smoke.Emit(new ParticleSystem.EmitParams { position = position, velocity = velocity, startSize = size, startLifetime = lifetime, startColor = color }, 1);
+            // Each puff is turned at random and turns slowly: with the same round shape every time they would read as pearls on a string.
+            smoke.Emit(new ParticleSystem.EmitParams { position = position, velocity = velocity, startSize = size, startLifetime = lifetime, startColor = color,
+                                                       rotation = Random.Range(0f, 6.2832f), angularVelocity = Random.Range(-0.5f, 0.5f) }, 1);
         }
 
         // A glowing speck that comes off a very hot barrel: an ember of the embers system, drifting up slowly.
@@ -405,6 +407,7 @@ namespace ArmorFragments
                 }
                 puffTexture = SoftDisc(48, 1.6f);
                 sparkTexture = SoftDisc(16, 3.5f);
+                smokeTexture = CloudDisc(128);
                 puffMaterial = new Material(shader) { name = "ArmorFragments puff", mainTexture = puffTexture };
                 sparkMaterial = new Material(shader) { name = "ArmorFragments spark", mainTexture = sparkTexture };
                 litMaterial = MakeLitMaterial();   // smoke and dust: lit by the scene (null = they use the plain see-through one)
@@ -453,7 +456,7 @@ namespace ArmorFragments
                 if (shader == null || !shader.isSupported) continue;
                 Material material = new Material(shader) { name = "ArmorFragments puff (lit)" };
                 if (!material.HasProperty("_BaseMap")) { Object.Destroy(material); continue; }
-                material.SetTexture("_BaseMap", puffTexture);
+                material.SetTexture("_BaseMap", smokeTexture != null ? smokeTexture : puffTexture);
                 material.SetColor("_BaseColor", Color.white);   // the color comes from each particle
                 if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
                 if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0f);
@@ -492,6 +495,47 @@ namespace ArmorFragments
             texture.SetPixels32(pixels);
             texture.Apply(false, true);
             return texture;
+        }
+
+        // A puff of smoke: a soft disc whose edge and inside are broken up by noise (three octaves of value noise), so it is not a clean round
+        // blob. Dust and smoke particles use it.
+        private static Texture2D CloudDisc(int size)
+        {
+            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, name = "ArmorFragments cloud disc" };
+            Color32[] pixels = new Color32[size * size];
+            float half = (size - 1) * 0.5f;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float d = Mathf.Sqrt((x - half) * (x - half) + (y - half) * (y - half)) / half;
+                    float u = x / (float)size, v = y / (float)size;
+                    float n = 0.5f * ValueNoise2(u * 4f, v * 4f, 1) + 0.3f * ValueNoise2(u * 9f, v * 9f, 2) + 0.2f * ValueNoise2(u * 19f, v * 19f, 3);
+                    float a = Mathf.Pow(Mathf.Clamp01(1f - d), 1.1f) * (0.25f + 1.5f * n);
+                    a *= Mathf.Clamp01((1f - d) * 4f);
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(Mathf.Clamp01(a) * 255f));
+                }
+            }
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            return texture;
+        }
+
+        private static float Hash2(int x, int y, int seed)
+        {
+            uint h = (uint)(x * 73856093) ^ (uint)(y * 19349663) ^ (uint)(seed * 83492791);
+            h ^= h >> 13; h *= 1274126177u; h ^= h >> 16;
+            return (h & 0xFFFFFF) / 16777216f;
+        }
+
+        private static float ValueNoise2(float x, float y, int seed)
+        {
+            int ix = Mathf.FloorToInt(x), iy = Mathf.FloorToInt(y);
+            float fx = x - ix, fy = y - iy;
+            fx = fx * fx * (3f - 2f * fx); fy = fy * fy * (3f - 2f * fy);
+            float a = Mathf.Lerp(Hash2(ix, iy, seed), Hash2(ix + 1, iy, seed), fx);
+            float b = Mathf.Lerp(Hash2(ix, iy + 1, seed), Hash2(ix + 1, iy + 1, seed), fx);
+            return Mathf.Lerp(a, b, fy);
         }
 
         private static AnimationCurve Curve(float start, float middle, float end)
@@ -575,9 +619,10 @@ namespace ArmorFragments
             if (litMaterial != null) Object.Destroy(litMaterial);
             litMaterial = null;
             if (puffTexture != null) Object.Destroy(puffTexture);
+            if (smokeTexture != null) Object.Destroy(smokeTexture);
             if (sparkTexture != null) Object.Destroy(sparkTexture);
             puffMaterial = sparkMaterial = null;
-            puffTexture = sparkTexture = null;
+            puffTexture = sparkTexture = smokeTexture = null;
         }
     }
 }

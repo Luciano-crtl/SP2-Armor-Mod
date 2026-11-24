@@ -140,8 +140,8 @@ namespace ArmorFragments
                 Camera cam = Camera.main;
                 if (cam != null && (cam.transform.position - tip).sqrMagnitude > 250f * 250f) continue;
                 // A small gun (a machine gun) lets go of much less than a big one: the amount follows the calibre.
-                s.carry += 24f * intensity * (0.15f + 0.85f * Mathf.Pow(s.scale, 0.7f)) * strength * dt;
-                int count = Mathf.Min((int)s.carry, 14);
+                s.carry += 60f * intensity * (0.15f + 0.85f * Mathf.Pow(s.scale, 0.7f)) * strength * dt;
+                int count = Mathf.Min((int)s.carry, 30);
                 s.carry -= Mathf.Floor(s.carry);
                 // A hot barrel also sheds a few glowing specks (from about a third of the way to red hot).
                 if (s.heat > 0.3f)
@@ -168,11 +168,11 @@ namespace ArmorFragments
                     float rise = Mathf.Clamp(0.5f + 1.1f * s.heat, 0.5f, 2.0f);       // hot gas climbs faster
                     Vector3 velocity = muzzleVelocity + s.wind * 0.6f + Vector3.up * (rise * Random.Range(0.7f, 1.3f)) + forward * Random.Range(0.1f, 0.5f) * (0.3f + 0.7f * s.boost / 2f)
                                        + Random.insideUnitSphere * 0.12f;
-                    float alpha = Mathf.Clamp(0.12f + 0.10f * intensity, 0.12f, 0.45f);
+                    float alpha = Mathf.Clamp(0.07f + 0.05f * intensity, 0.07f, 0.22f);
                     // The hotter the barrel the warmer and paler the smoke (a hint of orange where it leaves the muzzle).
                     float warm = Mathf.Clamp01(s.heat * 1.3f);
-                    Color tint = Color.Lerp(new Color(0.38f, 0.37f, 0.36f), new Color(0.78f, 0.6f, 0.44f), warm);
-                    ImpactEffects.Wisp(tip + forward * 0.04f + Random.insideUnitSphere * (0.02f * fine), velocity, Random.Range(0.10f, 0.22f) * fine, Random.Range(2.5f, 5f),
+                    Color tint = Color.Lerp(new Color(0.38f, 0.37f, 0.36f), new Color(0.72f, 0.60f, 0.50f), warm);
+                    ImpactEffects.Wisp(tip + forward * 0.04f + Random.insideUnitSphere * (0.02f * fine), velocity, Random.Range(0.16f, 0.34f) * fine, Random.Range(2.5f, 5f),
                                        new Color(tint.r, tint.g, tint.b, alpha));
                 }
             }
