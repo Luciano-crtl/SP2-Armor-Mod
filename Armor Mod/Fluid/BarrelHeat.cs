@@ -48,7 +48,7 @@ namespace ArmorFragments
 
         public static bool Enabled { get { return ArmorFragmentsPlugin.SmokeBarrelHeat == null || ArmorFragmentsPlugin.SmokeBarrelHeat.Value; } }
         private static float HeatScale { get { return ArmorFragmentsPlugin.SmokeBarrelHeatScale != null ? ArmorFragmentsPlugin.SmokeBarrelHeatScale.Value : 6f; } }
-        private static float SmokeStrength { get { return ArmorFragmentsPlugin.SmokeBarrelSmoke != null ? ArmorFragmentsPlugin.SmokeBarrelSmoke.Value : 1f; } }
+        private const float SmokeStrength = 1f;
 
         public static string Status
         {

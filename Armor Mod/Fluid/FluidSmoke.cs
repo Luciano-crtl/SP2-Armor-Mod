@@ -47,9 +47,9 @@ namespace ArmorFragments
         // The brake on the air (per second), set in the config (section Smoke): the first BlastSeconds are braked hard so the blast pushes the air
         // aside and stops; after that the smoke only has to keep drifting. At 1.5 it was almost still after 3 s, at 0.4 it still moves at 0.7 m/s
         // after 6 s.
-        public static float BlastBrake { get { return ArmorFragmentsPlugin.SmokeBlastBrake != null ? ArmorFragmentsPlugin.SmokeBlastBrake.Value : 7f; } }
-        public static float BlastSeconds { get { return ArmorFragmentsPlugin.SmokeBlastSeconds != null ? ArmorFragmentsPlugin.SmokeBlastSeconds.Value : 0.3f; } }
-        public static float LateBrake { get { return ArmorFragmentsPlugin.SmokeLateBrake != null ? ArmorFragmentsPlugin.SmokeLateBrake.Value : 0.4f; } }
+        public const float BlastBrake = 7f;
+        public const float BlastSeconds = 0.3f;
+        public const float LateBrake = 0.4f;
         public static bool SmokeGroundDust { get { return ArmorFragmentsPlugin.SmokeGroundDust == null || ArmorFragmentsPlugin.SmokeGroundDust.Value; } }
         // How much bigger (or smaller) than the standard the box of a new cloud is, in every direction. The number of cells is limited by the
         // quality level, so a bigger box has coarser cells.
@@ -62,24 +62,21 @@ namespace ArmorFragments
         // Balancing the smoke by calibre (Smoke/SizeThinning, Smoke/SizeCooling): a small gun makes a thin puff (the less gas, the shorter the
         // path the light takes through it and the less opaque it is), and its heat is lost faster (the smaller the puff, the faster it mixes
         // with the air), so it does not rise as far or last as long as a big gun's. The scale is calibre / 75 mm.
-        public static float SizeThinning { get { return ArmorFragmentsPlugin.SmokeSizeThinning != null ? ArmorFragmentsPlugin.SmokeSizeThinning.Value : 0.45f; } }
-        public static float SizeCooling { get { return ArmorFragmentsPlugin.SmokeSizeCooling != null ? ArmorFragmentsPlugin.SmokeSizeCooling.Value : 0.8f; } }
+        public const float SizeThinning = 0.45f;
+        public const float SizeCooling = 0.8f;
         public static float CaliberAmount(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.05f), SizeThinning), 0.1f, 1.4f); }
         public static float CaliberLoss(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.2f), -SizeCooling), 0.6f, 5f); }
         public static string LastProfileText = "no shot yet";      // how the last new cloud's cannon shaped its smoke (shown in the panel)
-        public static float MuzzleSparksStrength { get { return ArmorFragmentsPlugin.SmokeMuzzleSparks != null ? ArmorFragmentsPlugin.SmokeMuzzleSparks.Value : 1f; } }
+        public const float MuzzleSparksStrength = 1f;
         public static float HeatHazeStrength { get { return ArmorFragmentsPlugin.SmokeHeatHaze != null ? ArmorFragmentsPlugin.SmokeHeatHaze.Value : 1f; } }
-        public static bool BfeccAdvection { get { return ArmorFragmentsPlugin.SmokeBfecc != null && ArmorFragmentsPlugin.SmokeBfecc.Value; } }
         public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
         public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.45f; } }
         private static void ReadBlastSettings()
         {
             if (ArmorFragmentsPlugin.SmokeJetFocus != null) SmokeBlast.Focus = ArmorFragmentsPlugin.SmokeJetFocus.Value;
-            if (ArmorFragmentsPlugin.SmokeMuzzleBrake != null) SmokeBlast.MuzzleBrake = ArmorFragmentsPlugin.SmokeMuzzleBrake.Value;
             if (ArmorFragmentsPlugin.SmokeJetSpeed != null) SmokeBlast.JetSpeed = ArmorFragmentsPlugin.SmokeJetSpeed.Value;
             if (ArmorFragmentsPlugin.SmokeDensity != null) SmokeBlast.Density = ArmorFragmentsPlugin.SmokeDensity.Value;
             if (ArmorFragmentsPlugin.SmokeBlastDust != null) SmokeBlast.BlastDust = ArmorFragmentsPlugin.SmokeBlastDust.Value;
-            if (ArmorFragmentsPlugin.SmokeShockWave != null) SmokeBlast.ShockWave = ArmorFragmentsPlugin.SmokeShockWave.Value;
             if (ArmorFragmentsPlugin.SmokeResidualHeat != null) SmokeBlast.ResidualHeat = Mathf.Clamp(ArmorFragmentsPlugin.SmokeResidualHeat.Value, 0f, 0.35f);
         }
         public static bool ShowSolid;                  // debugging view: paint what the smoke treats as solid (the parts of vehicles, the ground)
@@ -471,11 +468,10 @@ namespace ArmorFragments
                         // Heat that makes the smoke rise and the weak, endless swirling of the air (see the settings in section Smoke).
                         if (ArmorFragmentsPlugin.SmokeBuoyancy != null) c.sim.Params.buoyancy = ArmorFragmentsPlugin.SmokeBuoyancy.Value;
                         float loss = CaliberLoss(c.scale);
-                        if (ArmorFragmentsPlugin.SmokeHeatCooling != null) c.sim.Params.cool = ArmorFragmentsPlugin.SmokeHeatCooling.Value * loss;
+                        c.sim.Params.cool = 0.3f * loss;
                         c.sim.Params.dissipate = 0.04f * loss;
-                        if (ArmorFragmentsPlugin.SmokeTurbulence != null) c.sim.Params.turbulence = ArmorFragmentsPlugin.SmokeTurbulence.Value;
                         if (ArmorFragmentsPlugin.SmokeDustWeight != null) c.sim.Params.dustWeight = ArmorFragmentsPlugin.SmokeDustWeight.Value;
-                        if (ArmorFragmentsPlugin.SmokeDetail != null) c.sim.Params.detail = ArmorFragmentsPlugin.SmokeDetail.Value;
+                        c.sim.Params.detail = 0.6f;
                         UpdateWind(c, wind, frame);
                         RefreshGround(c);
                         // The solids: every frame, or every second frame when the cloud is past its blast and nothing near it moves.
@@ -557,8 +553,7 @@ namespace ArmorFragments
                     m.SetFloat("_SoftContact", ArmorFragmentsPlugin.SmokeSoftContact != null ? ArmorFragmentsPlugin.SmokeSoftContact.Value : 0.35f);
                     m.SetFloat("_Cubic", ArmorFragmentsPlugin.SmokeCubicGrid == null || ArmorFragmentsPlugin.SmokeCubicGrid.Value ? 1f : 0f);
                     m.SetFloat("_FogOn", ArmorFragmentsPlugin.SmokeFog == null || ArmorFragmentsPlugin.SmokeFog.Value ? 1f : 0f);
-                    c.sim.UseBfecc = BfeccAdvection;
-                    m.SetFloat("_MultiScatter", ArmorFragmentsPlugin.SmokeMultiScatter != null ? ArmorFragmentsPlugin.SmokeMultiScatter.Value : 0.6f);
+                    m.SetFloat("_MultiScatter", 0.6f);
                     m.SetFloat("_LightEvery", fast ? 2f : 1f);
                     m.SetFloat("_ShowSolid", ShowSolid ? 1f : 0f);
                     // The flash of the latest shot lights the smoke, and the shadow the smoke casts on the scene.
@@ -690,9 +685,10 @@ namespace ArmorFragments
         // The wind of the game over the box, as the air the gas is pulled toward. It is asked on a 4 x 4 x 4 lattice (so it can differ from
         // one end of the box to the other: gusts, turbulence, thermals, the lee of a hill) and given to the solver in the box's space,
         // minus the velocity the box itself drifts at. The drift starts when the shot is over and follows most of the mean wind.
+        private const float CalmTurbulence = 0.12f;      // m/s2 of swirling in dead calm air
         private static void UpdateWind(Cloud c, WindQueryManager wind, float frame)
         {
-            if (wind == null) { c.sim.NoWind(); return; }
+            if (wind == null) { c.sim.Params.turbulence = CalmTurbulence; c.sim.NoWind(); return; }
             if (!windPositions.IsCreated)
             {
                 windPositions = new NativeArray<float3>(64, Allocator.Persistent);
@@ -709,6 +705,14 @@ namespace ArmorFragments
             Vector3 mean = Vector3.zero;
             for (int i = 0; i < 64; i++) mean += new Vector3(windResults[i].x, windResults[i].y, windResults[i].z);
             mean /= 64f;
+
+            // The turbulence of the air follows the weather: a calm day swirls a little, a windy or gusty one a lot. The wind speed and how much
+            // it differs from one end of the box to the other (gusts, thermals, the lee of a hill) both count.
+            float gust = 0f;
+            for (int i = 0; i < 64; i++) gust += (new Vector3(windResults[i].x, windResults[i].y, windResults[i].z) - mean).sqrMagnitude;
+            gust = Mathf.Sqrt(gust / 64f);
+            float weather = Mathf.Clamp(CalmTurbulence + 0.05f * mean.magnitude + 0.5f * gust, CalmTurbulence, 0.9f);
+            c.sim.Params.turbulence = Mathf.Lerp(c.sim.Params.turbulence, weather, 1f - Mathf.Exp(-frame / 1.5f));
 
             float ramp = Mathf.SmoothStep(0f, 1f, (c.age - 1.0f * c.timeScale) / (0.8f * c.timeScale));
             Vector3 target = mean * (DriftShare * ramp);

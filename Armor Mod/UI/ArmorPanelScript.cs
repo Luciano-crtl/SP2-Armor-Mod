@@ -667,28 +667,14 @@ namespace ArmorFragments.UI
                 new KeyValuePair<string, Action>("Quality", FluidSmoke.CycleQuality),
                 new KeyValuePair<string, Action>("Show solids (red)", FluidSmoke.ToggleShowSolid),
             });
-            FloatSetting(ArmorFragmentsPlugin.SmokeBlastBrake, "Blast brake",
-                "The brake on the air during the blast, per second. High stops the blast at once; low lets the fireball and the smoke fly farther. Applies to the next shot.", 0.5f, " /s");
-            FloatSetting(ArmorFragmentsPlugin.SmokeBlastSeconds, "Blast brake duration",
-                "How long the hard brake of the blast lasts, in seconds. Applies to the next shot.", 0.05f, " s");
-            FloatSetting(ArmorFragmentsPlugin.SmokeLateBrake, "Late brake",
-                "The brake on the air after the blast, per second. 1.5 stops the smoke after about 3 s; 0.4 lets it drift for many seconds; 0 never brakes it. Applies to the clouds already in the air too.", 0.05f, " /s");
             FloatSetting(ArmorFragmentsPlugin.SmokeBuoyancy, "Smoke buoyancy",
                 "How strongly heat lifts the smoke. More makes a rising column; 0 only drifts.", 1f, " m/s2");
-            FloatSetting(ArmorFragmentsPlugin.SmokeHeatCooling, "Heat loss",
-                "How fast the smoke loses its residual heat, per second. Lower: it rises for longer.", 0.05f, " /s");
             FloatSetting(ArmorFragmentsPlugin.SmokeResidualHeat, "Smoke heat",
                 "How hot the propellant smoke is after the flame (0 to 0.35). Applies to the next shot.", 0.025f, "");
-            FloatSetting(ArmorFragmentsPlugin.SmokeTurbulence, "Background turbulence",
-                "A weak endless swirling of the air so the smoke keeps billowing in calm weather. 0 = still air.", 0.025f, " m/s2");
             ToggleSetting(ArmorFragmentsPlugin.SmokeBarrelHeat, "Barrels heat up and smoke",
                 "Every shot heats the barrel, which cools by itself; gas left in the bore comes out after each shot and while the barrel is hot.");
             FloatSetting(ArmorFragmentsPlugin.SmokeBarrelHeatScale, "Barrel heating speed",
                 "How many times faster than a real barrel it heats up (1 = real, which takes hundreds of shots).", 1f, "x");
-            FloatSetting(ArmorFragmentsPlugin.SmokeBarrelSmoke, "Barrel smoke",
-                "How much thin smoke the muzzle lets go of after a shot and while the barrel is hot.", 0.1f, "");
-            FloatSetting(ArmorFragmentsPlugin.SmokeMuzzleSparks, "Sparks, embers and soot flecks",
-                "Sparks and burning grains out of the muzzle, slower embers and dark flecks of soot. 0 for none. Applies to the next shot.", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeHeatHaze, "Heat haze",
                 "The shimmer of hot air behind the muzzle. 0 for none. Uses the game's colour texture (switched on by the mod if needed).", 0.1f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeSoftContact, "Soft contact",
@@ -701,22 +687,10 @@ namespace ArmorFragments.UI
                 "The most steps a ray may take through one box (16 to 96).");
             ToggleSetting(ArmorFragmentsPlugin.SmokeCubicGrid, "Smooth smoke grid (cubic)",
                 "Read the smoke density with a cubic spline so the cloud shows no blocks along the grid; a little softer.");
-            ToggleSetting(ArmorFragmentsPlugin.SmokeBfecc, "BFECC advection (experimental)",
-                "BFECC instead of MacCormack for the movement of smoke and air: a little more accurate and softer, about 10% more time per step.");
             FloatSetting(ArmorFragmentsPlugin.SmokeCannonProfile, "Cannon settings shape the smoke",
                 "How much the cannon's own settings (energy at the muzzle, barrel length, muzzle brake, flash scale) shape its smoke on top of its calibre. 0 = only the calibre, 1 = normal, 2 = twice as strong. Applies to the next shot.", 0.1f, "");
-            FloatSetting(ArmorFragmentsPlugin.SmokeSizeThinning, "Small guns: thinner smoke",
-                "The amount of smoke, heat and dust of a shot is (calibre / 75 mm) to this power. 0 = every gun as dense as a 75 mm, 1 = proportional to the calibre. Applies to the next shot.", 0.05f, "");
-            FloatSetting(ArmorFragmentsPlugin.SmokeSizeCooling, "Small guns: smoke fades faster",
-                "How much faster the smoke of a small gun loses its heat and thins out (rates divided by (calibre / 75 mm) to this power).", 0.1f, "");
-            FloatSetting(ArmorFragmentsPlugin.SmokeShockWave, "Shock wave",
-                "The pressure wave of the shot: a ring of dust over the ground and a push of the air around the barrel. Applies to the next shot.", 0.1f, "");
-            FloatSetting(ArmorFragmentsPlugin.SmokeMultiScatter, "Multiple scattering",
-                "How much light scatters several times inside dense smoke, so its middle is lighter and softer.", 0.05f, "");
             FloatSetting(ArmorFragmentsPlugin.SmokeDustWeight, "Dust settling",
                 "How fast dust settles out of the air.", 0.25f, " m/s2");
-            FloatSetting(ArmorFragmentsPlugin.SmokeDetail, "Small eddies",
-                "Small eddies inside the smoke, as strong as the smoke is dense.", 0.1f, " m/s2");
             ToggleSetting(ArmorFragmentsPlugin.SmokeTerrain, "Terrain and walls stop the smoke",
                 "Hills, slopes, roads (a height map from rays) and still walls, buildings and rocks are solid for the smoke.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeOverflow, "Smoke goes on past the box",
@@ -731,8 +705,6 @@ namespace ArmorFragments.UI
                 "How big the box the smoke is simulated in is (1 = standard). Smoke that leaves it vanishes; a bigger box has coarser cells because the cell count is fixed by the quality level. Applies to the next shot.", 0.1f, " x");
             FloatSetting(ArmorFragmentsPlugin.SmokeJetFocus, "Jet focus",
                 "The shape of the blast: 0 is a round fireball, 1 a narrow jet along the barrel. Applies to the next shot.", 0.05f, "");
-            FloatSetting(ArmorFragmentsPlugin.SmokeMuzzleBrake, "Muzzle brake",
-                "How much of the gas leaves sideways, as through a muzzle brake. 0 for a bare barrel. Applies to the next shot.", 0.05f, "");
             ToggleSetting(ArmorFragmentsPlugin.SmokeFlash, "Flash of light",
                 "The blast lights up the smoke and, if the game's render pipeline draws extra lights, the ground and the vehicle.");
             FloatSetting(ArmorFragmentsPlugin.SmokeFlashIntensity, "Flash brightness",

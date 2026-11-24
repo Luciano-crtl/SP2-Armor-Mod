@@ -50,11 +50,7 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> ImpactCameraXRay;
         // RELEASE-STRIP-BEGIN
         internal static ConfigEntry<bool> PerfSceneReport;          // local: every 15 s, a [PERF] line with the frame time and what is in the scene
-        internal static ConfigEntry<float> SmokeBlastBrake;         // local: the brake on the air of a gun's smoke during the blast (per second)
-        internal static ConfigEntry<float> SmokeBlastSeconds;       // local: how long that hard brake lasts (seconds)
-        internal static ConfigEntry<float> SmokeLateBrake;          // local: the brake on the air after the blast (per second)
         internal static ConfigEntry<float> SmokeJetFocus;           // local: 0 round fireball .. 1 narrow jet along the barrel
-        internal static ConfigEntry<float> SmokeMuzzleBrake;        // local: how much of the gas leaves sideways, as through a muzzle brake
         internal static ConfigEntry<bool> SmokeFlash;               // local: the light of the blast
         internal static ConfigEntry<float> SmokeFlashIntensity;     // local: how bright it is
         internal static ConfigEntry<bool> SmokeGroundDust;          // local: the dust has the colour of the ground
@@ -66,27 +62,17 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> SmokeShadows;             // local: the smoke casts shadows on the scene
         internal static ConfigEntry<float> SmokeShadowStrength;     // local: how dark those shadows are
         internal static ConfigEntry<float> SmokeBuoyancy;           // local: how strongly heat lifts the smoke (m/s^2 per unit of temperature)
-        internal static ConfigEntry<float> SmokeHeatCooling;        // local: how fast the residual heat is lost (per second)
         internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
-        internal static ConfigEntry<float> SmokeTurbulence;         // local: weak endless swirling of the air (m/s^2)
         internal static ConfigEntry<bool> SmokeBarrelHeat;          // local: barrels heat up with every shot and let go of smoke
         internal static ConfigEntry<float> SmokeBarrelHeatScale;    // local: how much faster than real a barrel heats up
-        internal static ConfigEntry<float> SmokeBarrelSmoke;        // local: how much smoke a hot barrel lets go of
-        internal static ConfigEntry<float> SmokeMuzzleSparks;       // local: sparks, embers and flecks of soot at the muzzle
         internal static ConfigEntry<float> SmokeHeatHaze;           // local: the shimmer of hot air
         internal static ConfigEntry<float> SmokeSoftContact;        // local: smoke fades out near surfaces (m)
         internal static ConfigEntry<bool> SmokeFog;                 // local: the scene's fog hides the smoke too
         internal static ConfigEntry<float> SmokeRayStepCells;       // local: the longest step of a ray through the smoke, in cells
         internal static ConfigEntry<int> SmokeRayStepMax;           // local: the most steps a ray takes through one box
         internal static ConfigEntry<bool> SmokeCubicGrid;           // local: the smoke grid is read with a cubic B-spline
-        internal static ConfigEntry<bool> SmokeBfecc;               // local: BFECC advection instead of MacCormack
         internal static ConfigEntry<float> SmokeCannonProfile;      // local: how much the cannon's own settings shape its smoke
-        internal static ConfigEntry<float> SmokeSizeThinning;       // local: how much thinner a small gun's smoke is (exponent of calibre / 75 mm)
-        internal static ConfigEntry<float> SmokeSizeCooling;        // local: how much faster a small gun's smoke loses its heat and thins out
-        internal static ConfigEntry<float> SmokeShockWave;          // local: the ring of dust and the push of the blast around the muzzle
-        internal static ConfigEntry<float> SmokeMultiScatter;       // local: light scattered several times inside dense smoke
         internal static ConfigEntry<float> SmokeDustWeight;         // local: how fast dust settles
-        internal static ConfigEntry<float> SmokeDetail;             // local: small eddies inside the smoke
         internal static ConfigEntry<bool> SmokeTerrain;             // local: the terrain and the things standing on it stop the smoke
         internal static ConfigEntry<bool> SmokeOverflow;            // local: smoke that reaches the edge of its box goes on into a bigger box
         internal static ConfigEntry<bool> SmokeFastDrawing;         // local: skip empty blocks and look up the sun and shadow less often
@@ -338,20 +324,8 @@ namespace ArmorFragments
             PerfSceneReport = Config.Bind("Debug", "PerfSceneReport", false,
                 "If true, every 15 s a [PERF] line in the log gives the frame time next to how many renderers, particle systems, decals... " +
                 "are in the scene (to find out what slows the game down). Counting them costs about 10 ms each time, so it is off.");
-            SmokeBlastBrake = Config.Bind("Smoke", "BlastBrake", 7f,
-                new ConfigDescription("Cannon smoke: the brake on the air during the blast, per second (the air loses that much of its speed, as a rate). High values stop the blast at once; low ones let the fireball and the smoke fly farther.",
-                    new AcceptableValueRange<float>(0f, 20f)));
-            SmokeBlastSeconds = Config.Bind("Smoke", "BlastSeconds", 0.3f,
-                new ConfigDescription("Cannon smoke: how long the hard brake of the blast lasts, in seconds (bigger guns last a little longer). After it the late brake takes over.",
-                    new AcceptableValueRange<float>(0.05f, 1.5f)));
-            SmokeLateBrake = Config.Bind("Smoke", "LateBrake", 0.4f,
-                new ConfigDescription("Cannon smoke: the brake on the air after the blast, per second. 1.5 stops the smoke after about 3 s; 0.4 lets it keep drifting for many seconds; 0 never brakes it (it only stops by thinning out).",
-                    new AcceptableValueRange<float>(0f, 3f)));
             SmokeJetFocus = Config.Bind("Smoke", "JetFocus", 0.7f,
                 new ConfigDescription("Cannon smoke: the shape of the blast. 0 is a round fireball that grows evenly in every direction; 1 is a narrow jet that shoots along the barrel and rolls up at its front.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-            SmokeMuzzleBrake = Config.Bind("Smoke", "MuzzleBrake", 0.3f,
-                new ConfigDescription("Cannon smoke: how much of the gas leaves sideways, left and right of the end of the barrel, as through a muzzle brake. 0 for a bare barrel.",
                     new AcceptableValueRange<float>(0f, 1f)));
             SmokeFlash = Config.Bind("Smoke", "FlashLight", true,
                 "Cannon smoke: the blast lights up its surroundings for a moment: a warm flash on the smoke and, if the game's render pipeline draws extra lights, on the ground and the vehicle (the log says whether it does).");
@@ -383,26 +357,14 @@ namespace ArmorFragments
             SmokeBuoyancy = Config.Bind("Smoke", "Buoyancy", 10f,
                 new ConfigDescription("Cannon smoke: how strongly heat lifts the smoke, in m/s^2 per unit of temperature (the propellant smoke has up to 0.35). 10 lifts a puff about 2 m in 5 s; with more, the smoke rises as a column and spreads at the top; with 0 it only drifts.",
                     new AcceptableValueRange<float>(0f, 30f)));
-            SmokeHeatCooling = Config.Bind("Smoke", "HeatCooling", 0.3f,
-                new ConfigDescription("Cannon smoke: how fast the residual heat of the smoke is lost, per second (the flame itself always burns out in about a second). Lower = the smoke keeps rising for longer.",
-                    new AcceptableValueRange<float>(0f, 3f)));
             SmokeResidualHeat = Config.Bind("Smoke", "ResidualHeat", 0.3f,
                 new ConfigDescription("Cannon smoke: how hot the propellant smoke is after the flame (0 to 0.35; above that it also glows orange). Applies to the next shot.",
                     new AcceptableValueRange<float>(0f, 0.35f)));
-            SmokeTurbulence = Config.Bind("Smoke", "Turbulence", 0.2f,
-                new ConfigDescription("Cannon smoke: a weak, endless swirling of the air in the whole box (m/s^2), so the smoke keeps rolling and billowing in calm weather instead of freezing. 0 = perfectly still air.",
-                    new AcceptableValueRange<float>(0f, 1f)));
             SmokeBarrelHeat = Config.Bind("Smoke", "BarrelHeat", true,
                 "Cannon smoke: every shot heats the barrel (5% of the muzzle energy over the heat of the steel, from the game's own mass of the cannon) and it cools by itself (a time constant of 40 s for a .50, more for bigger guns). The gas left in the bore comes out as a puff after each shot and as a thread of thin smoke from the muzzle for as long as the barrel is hot, and a hot bore makes up to 40% more smoke on the next shot.");
             SmokeBarrelHeatScale = Config.Bind("Smoke", "BarrelHeatScale", 6f,
                 new ConfigDescription("Cannon smoke: how many times faster than a real barrel the barrel heats up (real ones take hundreds of shots to get hot). 1 = real.",
                     new AcceptableValueRange<float>(0.1f, 50f)));
-            SmokeBarrelSmoke = Config.Bind("Smoke", "BarrelSmoke", 1f,
-                new ConfigDescription("Cannon smoke: how much thin smoke the muzzle lets go of after the shot and while the barrel is hot. 0 for none.",
-                    new AcceptableValueRange<float>(0f, 3f)));
-            SmokeMuzzleSparks = Config.Bind("Smoke", "MuzzleSparks", 1f,
-                new ConfigDescription("Cannon smoke: sparks and burning grains thrown out of the muzzle, slower embers that drift, and dark flecks of soot. 0 for none, 2 for twice as many. Applies to the next shot.",
-                    new AcceptableValueRange<float>(0f, 2f)));
             SmokeHeatHaze = Config.Bind("Smoke", "HeatHaze", 1f,
                 new ConfigDescription("Cannon smoke: the shimmer of hot air behind the muzzle, which bends the picture of what is behind it. 0 for none. It needs the game's colour texture; the mod switches it on if it is off (the log says so).",
                     new AcceptableValueRange<float>(0f, 3f)));
@@ -419,29 +381,12 @@ namespace ArmorFragments
                     new AcceptableValueRange<int>(16, 96)));
             SmokeCubicGrid = Config.Bind("Smoke", "CubicGrid", true,
                 "Cannon smoke: the density grid is read with a cubic B-spline (8 reads) instead of the straight blend between cells, so the cloud shows no blocks along the grid. A little softer; costs a few more reads when drawing.");
-            SmokeBfecc = Config.Bind("Smoke", "BfeccAdvection", false,
-                "Cannon smoke: BFECC advection instead of MacCormack. In the lab: 12 to 30% less error in a standard test and a slightly softer picture, for 10% more time per step (the two advections cost 40% more).");
             SmokeCannonProfile = Config.Bind("Smoke", "CannonProfile", 1f,
                 new ConfigDescription("Cannon smoke: how much the cannon's own settings shape its smoke on top of its calibre: the energy at the muzzle (projectile mass and velocity: more smoke, harder jets, a bigger fireball), the length of the barrel in calibres (a short barrel has a bigger flash and a stronger blast), the muzzle brake (plumes to the sides, a weaker jet ahead) and the flash scale. 0 = only the calibre counts, 1 = normal, 2 = twice as strong. Applies to the next shot.",
                     new AcceptableValueRange<float>(0f, 2f)));
-            SmokeSizeThinning = Config.Bind("Smoke", "SizeThinning", 0.45f,
-                new ConfigDescription("Cannon smoke: how much thinner and cooler the smoke of a small gun is. The amount of smoke, heat and dust of a shot is (calibre / 75 mm) to this power: 0 makes every gun's smoke as dense as a 75 mm's, 1 makes it proportional to the calibre. A .50 (12.7 mm, scale 0.2 at most) gives about 48% at 0.45. Applies to the next shot.",
-                    new AcceptableValueRange<float>(0f, 1.5f)));
-            SmokeSizeCooling = Config.Bind("Smoke", "SizeCooling", 0.8f,
-                new ConfigDescription("Cannon smoke: how much faster the smoke of a small gun loses its heat and thins out. The rates are divided by (calibre / 75 mm) to this power (at most 5 times faster): 0 makes every gun's smoke last and rise the same, 1 makes it proportional to the size.",
-                    new AcceptableValueRange<float>(0f, 2f)));
-            SmokeShockWave = Config.Bind("Smoke", "ShockWave", 1f,
-                new ConfigDescription("Cannon smoke: the pressure wave of the shot: a ring of dust that runs out over the ground from under the muzzle, stronger in front, and a quick push of the air outward around the barrel. 0 for none. Applies to the next shot.",
-                    new AcceptableValueRange<float>(0f, 2f)));
-            SmokeMultiScatter = Config.Bind("Smoke", "MultiScatter", 0.6f,
-                new ConfigDescription("Cannon smoke: how much of the sunlight is scattered several times inside dense smoke, which makes its middle lighter and softer instead of black. 0 = only direct light.",
-                    new AcceptableValueRange<float>(0f, 1f)));
             SmokeDustWeight = Config.Bind("Smoke", "DustWeight", 2f,
                 new ConfigDescription("Cannon smoke: how fast dust settles, in m/s^2 of sinking per unit of dust (heat lifts the smoke, dust falls out of the air). 0 = dust floats like the smoke.",
                     new AcceptableValueRange<float>(0f, 10f)));
-            SmokeDetail = Config.Bind("Smoke", "DetailTurbulence", 0.6f,
-                new ConfigDescription("Cannon smoke: small eddies inside the smoke, as strong as the smoke is dense, which the grid is too coarse to make by itself (m/s^2). 0 = none.",
-                    new AcceptableValueRange<float>(0f, 3f)));
             SmokeTerrain = Config.Bind("Smoke", "Terrain", true,
                 "Cannon smoke: hills, slopes and roads under the smoke (found with a grid of rays) and walls, buildings and rocks that stand still stop the smoke, as vehicle parts do. Off: the ground is a flat plane under the muzzle and only vehicles are solid.");
             SmokeOverflow = Config.Bind("Smoke", "Overflow", true,
