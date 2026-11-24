@@ -34,10 +34,13 @@ namespace ArmorFragments.Fluid
         // Adds to `list` the sources of a shot `t` seconds after it was fired. `s` is the size of the blast (calibre / 75 mm), `T` its time scale,
         // `muzzle` the end of the barrel. `amount` (0..1.4) is how much smoke, heat and dust this shot makes compared with a 75 mm gun's (a
         // small gun's puff is thin and cool), `push` how hard its jets push the air (less for each shot of a burst).
-        public static void Build(List<FluidSim.Blob> list, float t, float s, float T, Vector3 muzzle, Ground ground, float amount = 1f, float push = 1f, float shock = 1f, float brakeScale = 1f)
+        public static void Build(List<FluidSim.Blob> list, float t, float s, float T, Vector3 muzzle, Ground ground, float amount = 1f, float push = 1f, float shock = 1f, float brakeScale = 1f, int seed = 0)
         {
             float focus = Mathf.Clamp01(Focus), brake = Mathf.Clamp01(MuzzleBrake * brakeScale);
             float fire = 0.12f * T, smoke = 1.2f * T, dust = 0.35f * T;
+            // Every shot has its own seed (the same for all the frames of that shot): the angles and the strength of the rings below are
+            // drawn from it, so the rings of two shots differ and none is a regular star.
+            System.Random rng = new System.Random(seed * 7919 + 13);
             float amountAll = amount;                  // the dust keeps its own scale
             amount *= Density;
 
@@ -86,15 +89,18 @@ namespace ArmorFragments.Fluid
             if (shockWave > 0.01f && t < 0.07f * T)
             {
                 float fade = 1f - t / (0.07f * T);
-                for (int k = 0; k < 8; k++)
+                const int air = 14;
+                float airPhase = (float)rng.NextDouble() * 6.2832f;
+                for (int k = 0; k < air; k++)
                 {
-                    float angle = k / 8f * 2f * Mathf.PI;
+                    float angle = airPhase + (k + ((float)rng.NextDouble() - 0.5f) * 0.9f) / air * 2f * Mathf.PI;
+                    float strength = 0.75f + 0.5f * (float)rng.NextDouble();
                     Vector3 around = new Vector3(0f, Mathf.Cos(angle), Mathf.Sin(angle));
                     list.Add(new FluidSim.Blob
                     {
                         center = muzzle + new Vector3(0.5f * s, 0f, 0f) + around * (1.1f * s),
-                        radius = 0.6f * s,
-                        vel = (new Vector3(3f * T * fade, 0f, 0f) + around * (16f * T * fade * shockWave)) * push,
+                        radius = 0.7f * s,
+                        vel = (new Vector3(3f * T * fade, 0f, 0f) + around * (16f * T * fade * shockWave * strength * 0.8f)) * push,
                         falloff = 1.0f,
                     });
                 }
@@ -154,16 +160,22 @@ namespace ArmorFragments.Fluid
                 {
                     // The pressure wave runs out over the ground in a ring all around the muzzle, thicker in front of the barrel.
                     float travel = Mathf.Min(7f * s, 9f * T * t + 0.8f * s);       // how far the front of the ring has run
-                    const int arc = 16;
+                    const int arc = 28;
+                    float groundPhase = (float)rng.NextDouble() * 6.2832f;
+                    float lobePhase = (float)rng.NextDouble() * 6.2832f, lobePhase2 = (float)rng.NextDouble() * 6.2832f;
+                    float circle = 2f * Mathf.PI * Mathf.Max(travel, 0.5f * s);       // the length of the ring
                     for (int j = 0; j < arc; j++)
                     {
-                        float angle = (j / (float)arc) * 2f * Mathf.PI;
+                        float angle = groundPhase + (j + ((float)rng.NextDouble() - 0.5f) * 0.9f) / arc * 2f * Mathf.PI;
+                        // the strength of the ring changes slowly round it, and by a little from one blob to the next
+                        float lobes = 1f + 0.25f * Mathf.Sin(angle * 2f + lobePhase) + 0.18f * Mathf.Sin(angle * 3f + lobePhase2);
+                        float jitter = 0.8f + 0.4f * (float)rng.NextDouble();
                         Vector3 direction = along * Mathf.Cos(angle) + across * Mathf.Sin(angle);
                         list.Add(new FluidSim.Blob
                         {
                             center = ground.foot + direction * travel + up * (0.25f * s),
-                            radius = 0.9f * s + 0.1f * travel,
-                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * DustBase * ground.dustScale * shockWave * amountAll * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
+                            radius = Mathf.Max(0.9f * s + 0.1f * travel, 0.8f * circle / arc),     // neighbours overlap: no gaps between spokes
+                            rho = 0f, temp = 0.03f, dust = (16f / arc) * 0.8f * low * BlastDust * DustBase * ground.dustScale * shockWave * amountAll * lobes * jitter * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
                             vel = direction * (6f * T * fade) + up * (1.5f * T * fade),
                             radial = 0f, noise = 0.3f, falloff = 1.2f,
                             swirl = 2f * T * fade, swirlFreq = 0.8f / s,

@@ -145,6 +145,7 @@ namespace ArmorFragments
         {
             public Vector3 muzzleWorld;      // where the muzzle was: the sources stay there while the box may drift
             public float start;
+            public int seed;                 // draws the angles of this shot's rings (the same for all its frames)
             public Vector3 flashWorld;       // where the flash of light is (a little ahead of the muzzle)
             public bool hasGround;
             public Vector3 groundNormal = Vector3.up;
@@ -681,7 +682,7 @@ namespace ArmorFragments
                         BlastGround.amounts[i] = shot.dustAmount[i];
                     }
                 }
-                SmokeBlast.Build(list, t, s * shot.size, T, muzzle, BlastGround, shot.amount, shot.push, shot.shock, shot.brake);
+                SmokeBlast.Build(list, t, s * shot.size, T, muzzle, BlastGround, shot.amount, shot.push, shot.shock, shot.brake, shot.seed);
             }
             return list;
         }
@@ -1139,7 +1140,7 @@ namespace ArmorFragments
         // One shot: its muzzle in the box's space, and where its blast meets the ground (if the ground is close).
         private static Shot MakeShot(Vector3 tip, float start, Vector3 forward, float scale, CannonScript cannon)
         {
-            Shot shot = new Shot { muzzleWorld = tip, start = start, flashWorld = tip + forward * (1.2f * scale) };
+            Shot shot = new Shot { seed = UnityEngine.Random.Range(1, 1000000), muzzleWorld = tip, start = start, flashWorld = tip + forward * (1.2f * scale) };
             RaycastHit hit;
             // The ground under the muzzle: where the blast starts to run along the ground, and how low the barrel is.
             if (FindGround(tip, cannon.PartScript, out hit))
