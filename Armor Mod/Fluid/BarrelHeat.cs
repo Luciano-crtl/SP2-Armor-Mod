@@ -84,6 +84,8 @@ namespace ArmorFragments
             {
                 state = new State { cannon = cannon };
                 States[id] = state;
+                ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] barrel heat: a new barrel is followed: part '" + cannon.PartScript.name + "' (" + data.CaliberInMilimeters.ToString("F0") + " mm) at "
+                    + cannon.TipPosition.ToString("F1") + ", " + States.Count + " barrel(s) in all");
             }
             try
             {
@@ -136,17 +138,23 @@ namespace ArmorFragments
                 Vector3 tip = s.cannon.TipPosition;
                 Camera cam = Camera.main;
                 if (cam != null && (cam.transform.position - tip).sqrMagnitude > 250f * 250f) continue;
-                s.carry += 9f * intensity * (0.4f + 0.6f * Mathf.Sqrt(s.scale)) * strength * dt;
+                // A small gun (a machine gun) lets go of much less than a big one: the amount follows the calibre.
+                s.carry += 9f * intensity * (0.15f + 0.85f * Mathf.Pow(s.scale, 0.7f)) * strength * dt;
                 int count = Mathf.Min((int)s.carry, 6);
                 s.carry -= Mathf.Floor(s.carry);
                 if (count <= 0) continue;
                 if (Time.time >= s.windAt) { s.wind = WindAt(tip); s.windAt = Time.time + 0.5f; }
                 Vector3 forward = s.cannon.transform.forward;
+                // The smoke leaves the muzzle moving as the muzzle moves (the vehicle driving or turning), and the air slows it down: with no
+                // speed of its own every wisp stopped where it was let go, and a driving vehicle left a dotted line of them along its whole path.
+                Vector3 muzzleVelocity = Vector3.zero;
+                try { if (s.cannon.PartScript.Body != null && s.cannon.PartScript.Body.RigidBody != null) muzzleVelocity = s.cannon.PartScript.Body.RigidBody.GetPointVelocity(tip); } catch (System.Exception) { }
+                if (muzzleVelocity.sqrMagnitude > 60f * 60f) muzzleVelocity = muzzleVelocity.normalized * 60f;
                 float fine = 0.5f + 0.5f * s.scale;
                 for (int i = 0; i < count; i++)
                 {
                     float rise = Mathf.Clamp(0.45f + 0.5f * s.heat, 0.4f, 1.2f);
-                    Vector3 velocity = s.wind * 0.6f + Vector3.up * (rise * Random.Range(0.7f, 1.3f)) + forward * Random.Range(0.1f, 0.5f) * (0.3f + 0.7f * s.boost / 2f)
+                    Vector3 velocity = muzzleVelocity + s.wind * 0.6f + Vector3.up * (rise * Random.Range(0.7f, 1.3f)) + forward * Random.Range(0.1f, 0.5f) * (0.3f + 0.7f * s.boost / 2f)
                                        + Random.insideUnitSphere * 0.12f;
                     float alpha = Mathf.Clamp(0.06f + 0.07f * intensity, 0.06f, 0.26f);
                     ImpactEffects.Wisp(tip + forward * 0.04f + Random.insideUnitSphere * (0.012f * fine), velocity, Random.Range(0.04f, 0.09f) * fine, Random.Range(2f, 4.5f),
