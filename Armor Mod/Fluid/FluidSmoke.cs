@@ -470,7 +470,7 @@ namespace ArmorFragments
                         float loss = CaliberLoss(c.scale);
                         c.sim.Params.cool = 0.3f * loss;
                         c.sim.Params.dissipate = 0.04f * loss;
-                        if (ArmorFragmentsPlugin.SmokeDustWeight != null) c.sim.Params.dustWeight = ArmorFragmentsPlugin.SmokeDustWeight.Value;
+                        if (ArmorFragmentsPlugin.SmokeDustWeight != null) c.sim.Params.dustWeight = ArmorFragmentsPlugin.SmokeDustWeight.Value * 2f;     // dust settles twice as fast as the setting says (it hung in the air as a disc)
                         c.sim.Params.detail = 0.6f;
                         UpdateWind(c, wind, frame);
                         RefreshGround(c);

@@ -14,6 +14,7 @@ namespace ArmorFragments.Fluid
         public static float BlastDust = 1f;         // multiplier of the dust the blast lifts
         public static float JetSpeed = 0.65f;       // multiplier of how fast the fireball and the smoke are thrown forward (a long tube of smoke comes of too much)
         public static float Density = 0.65f;        // multiplier of the smoke and the heat of every shot (the smoke of a smokeless powder is thin)
+        public static float DustBase = 0.45f;       // the blast dust is this share of what it was (a 100 mm shot buried the vehicle in an opaque disc)
         public static float ShockWave = 1f;         // 0..2: the ring of dust that runs out over the ground and the quick push of the air around the barrel
         public static float ResidualHeat = 0.3f;    // 0..0.35: the temperature of the propellant smoke (what makes it rise; above 0.37 it also glows)
 
@@ -141,7 +142,7 @@ namespace ArmorFragments.Fluid
                     {
                         center = ground.points[i] + up * (0.3f * s),
                         radius = (1.5f + 0.35f * i) * s,
-                        rho = 0f, temp = 0.05f, dust = Mathf.Min(ground.amounts[i] * BlastDust * ground.dustScale, 1.2f) * amountAll,
+                        rho = 0f, temp = 0.05f, dust = Mathf.Min(ground.amounts[i] * BlastDust * DustBase * ground.dustScale, 1.2f) * amountAll,
                         vel = (up * 3f + along * 2f) * T * fade,
                         radial = 7f * T * fade, noise = 0.25f, falloff = 1.1f,
                         swirl = 5f * T * fade, swirlFreq = 0.9f / s,
@@ -152,7 +153,7 @@ namespace ArmorFragments.Fluid
                 if (low > 0.02f && shockWave > 0.01f)
                 {
                     // The pressure wave runs out over the ground in a ring all around the muzzle, thicker in front of the barrel.
-                    float travel = Mathf.Min(10f * s, 12f * T * t + 0.8f * s);       // how far the front of the ring has run
+                    float travel = Mathf.Min(7f * s, 9f * T * t + 0.8f * s);       // how far the front of the ring has run
                     const int arc = 16;
                     for (int j = 0; j < arc; j++)
                     {
@@ -162,7 +163,7 @@ namespace ArmorFragments.Fluid
                         {
                             center = ground.foot + direction * travel + up * (0.25f * s),
                             radius = 0.9f * s + 0.1f * travel,
-                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * ground.dustScale * shockWave * amountAll * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
+                            rho = 0f, temp = 0.03f, dust = 0.8f * low * BlastDust * DustBase * ground.dustScale * shockWave * amountAll * (0.55f + 0.45f * Mathf.Max(0f, Mathf.Cos(angle))),
                             vel = direction * (6f * T * fade) + up * (1.5f * T * fade),
                             radial = 0f, noise = 0.3f, falloff = 1.2f,
                             swirl = 2f * T * fade, swirlFreq = 0.8f / s,
