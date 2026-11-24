@@ -550,6 +550,9 @@ namespace ArmorFragments
                     // Fewer ray steps for far clouds.
                     float distance = cam != null ? (cam.transform.position - c.box.transform.position).magnitude : 0f;
                     m.SetFloat("_Steps", Levels[c.level].steps * (distance > 120f ? 0.75f : 1f));
+                    float stepCells = ArmorFragmentsPlugin.SmokeRayStepCells != null ? ArmorFragmentsPlugin.SmokeRayStepCells.Value : 1.5f;
+                    m.SetFloat("_StepMeters", stepCells * c.sim.Cell);
+                    m.SetFloat("_StepMax", ArmorFragmentsPlugin.SmokeRayStepMax != null ? ArmorFragmentsPlugin.SmokeRayStepMax.Value : 64);
                 }
                 catch (System.Exception e)
                 {

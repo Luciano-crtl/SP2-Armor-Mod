@@ -72,6 +72,8 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeHeatHaze;           // local: the shimmer of hot air
         internal static ConfigEntry<float> SmokeSoftContact;        // local: smoke fades out near surfaces (m)
         internal static ConfigEntry<bool> SmokeFog;                 // local: the scene's fog hides the smoke too
+        internal static ConfigEntry<float> SmokeRayStepCells;       // local: the longest step of a ray through the smoke, in cells
+        internal static ConfigEntry<int> SmokeRayStepMax;           // local: the most steps a ray takes through one box
         internal static ConfigEntry<bool> SmokeCubicGrid;           // local: the smoke grid is read with a cubic B-spline
         internal static ConfigEntry<bool> SmokeBfecc;               // local: BFECC advection instead of MacCormack
         internal static ConfigEntry<float> SmokeCannonProfile;      // local: how much the cannon's own settings shape its smoke
@@ -396,6 +398,12 @@ namespace ArmorFragments
                     new AcceptableValueRange<float>(0f, 2f)));
             SmokeFog = Config.Bind("Smoke", "Fog", true,
                 "Cannon smoke: the scene's fog (if it has any) hides distant smoke as it does everything else.");
+            SmokeRayStepCells = Config.Bind("Smoke", "RayStepCells", 1.5f,
+                new ConfigDescription("Cannon smoke: the longest step a ray takes through the smoke, in cells of the simulation (0 = always the same number of steps through the whole box, however big it is). A ray through a big box (the boxes the smoke flows into are up to 120 m) with a fixed number of steps jumps metres at a time and the detail noise turns into grain.",
+                    new AcceptableValueRange<float>(0f, 6f)));
+            SmokeRayStepMax = Config.Bind("Smoke", "RayStepMax", 64,
+                new ConfigDescription("Cannon smoke: the most steps a ray may take through one box when the step length above asks for more. More steps = smoother smoke and more time per frame.",
+                    new AcceptableValueRange<int>(16, 96)));
             SmokeCubicGrid = Config.Bind("Smoke", "CubicGrid", true,
                 "Cannon smoke: the density grid is read with a cubic B-spline (8 reads) instead of the straight blend between cells, so the cloud shows no blocks along the grid. A little softer; costs a few more reads when drawing.");
             SmokeBfecc = Config.Bind("Smoke", "BfeccAdvection", false,

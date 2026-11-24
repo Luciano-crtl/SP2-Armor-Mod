@@ -695,6 +695,10 @@ namespace ArmorFragments.UI
                 "The distance over which smoke fades out before it meets a surface.", 0.05f, " m");
             ToggleSetting(ArmorFragmentsPlugin.SmokeFog, "Scene fog hides the smoke",
                 "The scene's own fog also hides distant smoke.");
+            FloatSetting(ArmorFragmentsPlugin.SmokeRayStepCells, "Longest ray step (cells)",
+                "The longest step a ray takes through the smoke, in cells. Smaller = less grain in big clouds, more time per frame. 0 = a fixed number of steps per box.", 0.25f, "");
+            IntSetting(ArmorFragmentsPlugin.SmokeRayStepMax, "Most ray steps per box",
+                "The most steps a ray may take through one box (16 to 96).");
             ToggleSetting(ArmorFragmentsPlugin.SmokeCubicGrid, "Smooth smoke grid (cubic)",
                 "Read the smoke density with a cubic spline so the cloud shows no blocks along the grid; a little softer.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeBfecc, "BFECC advection (experimental)",
