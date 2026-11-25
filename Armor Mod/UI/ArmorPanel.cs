@@ -13,6 +13,46 @@ namespace ArmorFragments.UI
         // The path the game "loads" for the panel. UiPatches hands out our own XML for it.
         public const string PanelXmlPath = "Mods/ArmorFragments/Panel";
         public const string ButtonId = "armor-fragments-menu-button";
+        public const string MouseAimXmlPath = "Mods/ArmorFragments/MouseAimPanel";
+        public const string MouseAimButtonId = "armor-fragments-mouse-aim-button";
+
+        private static ArmorPanelScript aimPanel;
+        private static ButtonWidget aimMenuButton;
+
+        public static bool MouseAimOpen
+        {
+            get { return aimPanel != null && !aimPanel.IsClosed; }
+        }
+
+        // The Mouse aim panel: the same window, with only the mouse aim's settings (the advanced ones folded away).
+        public static void ToggleMouseAim()
+        {
+            if (MouseAimOpen)
+            {
+                aimPanel.Close();
+                return;
+            }
+            try
+            {
+                ArmorPanelScript.OpeningMouseAim = true;
+                aimPanel = Assets.Scripts.Game.Instance.UserInterface.CreateDialog<ArmorPanelScript>(MouseAimXmlPath);
+                aimPanel.Closed += (Assets.Scripts.UI.IDialog d) =>
+                {
+                    aimPanel = null;
+                    UpdateButtonColor();
+                };
+            }
+            catch (Exception e)
+            {
+                ArmorFragmentsPlugin.Log.LogError("Couldn't open the Mouse aim panel: " + e);
+                aimPanel = null;
+            }
+            finally
+            {
+                ArmorPanelScript.OpeningMouseAim = false;
+            }
+            UpdateButtonColor();
+        }
 
         private const string ButtonColor = "#E8903A";
         private const string ButtonColorActive = "#B8651A";
@@ -40,8 +80,20 @@ namespace ArmorFragments.UI
             ButtonWidget button = (ButtonWidget)menu.Context.CreateWidget(element, menu, menu.Stylesheet);
             button.Clicked += (Widget w) => Toggle();
 
+            // The Mouse aim panel's button, right under it.
+            XElement aimElement = new XElement("Button",
+                new XAttribute("id", MouseAimButtonId),
+                new XAttribute("class", "btn btn-default menu-tooltip"),
+                new XAttribute("color", ButtonColor),
+                new XAttribute("tooltip", "Mouse aim for tank and ship guns: keys, sensitivity, zoom and the turret control."),
+                new XElement("Text", new XAttribute("text", "Mouse aim")));
+            ButtonWidget aimButton = (ButtonWidget)menu.Context.CreateWidget(aimElement, menu, menu.Stylesheet);
+            aimButton.Clicked += (Widget w) => ToggleMouseAim();
+
             menuButton = button;
+            aimMenuButton = aimButton;
             panel = null;   // a new flight scene means any old panel is gone
+            aimPanel = null;
             UpdateButtonColor();
         }
 
@@ -70,6 +122,13 @@ namespace ArmorFragments.UI
             if (open != null && !open.IsClosed) open.Close();
 
             if (button != null) button.Destroy();
+
+            ButtonWidget aimButton = aimMenuButton;
+            aimMenuButton = null;
+            ArmorPanelScript openAim = aimPanel;
+            aimPanel = null;
+            if (openAim != null && !openAim.IsClosed) openAim.Close();
+            if (aimButton != null) aimButton.Destroy();
         }
         // RELEASE-STRIP-END
 
@@ -103,6 +162,8 @@ namespace ArmorFragments.UI
         {
             if (menuButton != null)
                 menuButton.SetStyle("color", IsOpen ? ButtonColorActive : ButtonColor);
+            if (aimMenuButton != null)
+                aimMenuButton.SetStyle("color", MouseAimOpen ? ButtonColorActive : ButtonColor);
         }
 
         // A bare vertical list. It brings the game's control styles ("Xml/Styles") with it,
@@ -121,7 +182,7 @@ namespace ArmorFragments.UI
         }
 
         // The panel layout. Single quotes keep the C# string readable.
-        public static XElement BuildLayout()
+        public static XElement BuildLayout(string title = "Armor Fragments")
         {
             string xml = @"
 <Xml>
@@ -151,7 +212,7 @@ namespace ArmorFragments.UI
       </Instance>
    </Widgets>
 </Xml>";
-            return XElement.Parse(xml.Replace("{SCRIPT}", typeof(ArmorPanelScript).FullName));
+            return XElement.Parse(xml.Replace("{SCRIPT}", typeof(ArmorPanelScript).FullName).Replace("title='Armor Fragments'", "title='" + title + "'"));
         }
     }
 }

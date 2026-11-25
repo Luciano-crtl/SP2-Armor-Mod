@@ -94,6 +94,19 @@ namespace ArmorFragments
         // Writes to the log why the tint of the selected per-face block is not drawn, once each time the reason
         // changes (null: it is drawn).
         private static string reported;
+        // A flight is what is on screen: the flight scene is running and the designer's own camera is not drawing. The game can keep a flight loaded
+        // behind the designer (the designer opened from a flight) and the designer loaded behind a flight, so whichever camera draws decides.
+        internal static bool FlightShowing()
+        {
+            Assets.Scripts.Flight.FlightSceneScript flight = Assets.Scripts.Flight.FlightSceneScript.Instance;
+            if (flight == null || !flight.isActiveAndEnabled) return false;
+            Assets.Scripts.Design.Designer designer = Assets.Scripts.Design.Designer.Instance;
+            Camera designerCamera = null;
+            try { designerCamera = designer != null && designer.CameraController != null ? designer.CameraController.Camera : null; }
+            catch (Exception) { }
+            return designerCamera == null || !designerCamera.isActiveAndEnabled;
+        }
+
         private static void Report(string reason)
         {
             if (reason == reported) return;
@@ -118,7 +131,7 @@ namespace ArmorFragments
             // Whether the block is hidden is the game's own flag for the part (PartMaterialScript.Visible), not its
             // hull renderer: the game also switches that renderer off when it draws the part as part of a combined
             // mesh, or while it rebuilds the mesh, and the block is still on screen then.
-            if (Assets.Scripts.Flight.FlightSceneScript.Instance != null)
+            if (FlightShowing())
             {
                 Report("a flight is loaded");
                 return;

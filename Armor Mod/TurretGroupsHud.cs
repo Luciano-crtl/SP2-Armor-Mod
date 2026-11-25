@@ -28,7 +28,7 @@ namespace ArmorFragments
     {
         private const string IdPrefix = "af-groups-";
         private const float RightMargin = 15f;     // like the game's row of buttons (position "-15 15")
-        private const float FirstBottom = 95f;     // above the row (50 high; 75 for the buttons that only show on a catapult or an elevator)
+        private const float FirstBottom = 95f + MouseAimButton.Height;   // above the row (50 high; 75 for the buttons that only show on a catapult or an elevator) and the mouse aim button
         private const float OptionHeight = 32f;     // as high as the bar: the button's corner radius then reads as the pills' rounded rectangle (24 high it was an oval)
         private const float Gap = 4f;              // between the two options
         private const float BarHeight = 32f;
@@ -81,7 +81,7 @@ namespace ArmorFragments
             try
             {
                 TurretAim.GetGroups(groups);
-                if (groups.Count < 1)
+                if (groups.Count < 2)   // one set (a tank, or every gun in the main set): nothing to switch
                 {
                     if (pills.Count > 0) Clear();
                     return;

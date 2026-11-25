@@ -36,6 +36,8 @@ namespace ArmorFragments
             public Transform LayerSource;   // the object whose layer the part is drawn on
             public string Signature;
             public float[] Mm;              // the armor's thickness under each vertex of Mesh
+            public Vector3[] Vertices;      // Mesh's vertices (Frame's space) and its outer surface's triangles, for the hover readout
+            public int[] Outer;
         }
 
         // The thicknesses on the craft, thinnest first (whole millimeters), and their colors: ranked from the lightest
@@ -200,8 +202,10 @@ namespace ArmorFragments
             try
             {
                 Designer designer = Designer.Instance;
-                if (!On || designer == null || Assets.Scripts.Flight.FlightSceneScript.Instance != null)
+                if (!On || designer == null || FaceHighlight.FlightShowing())
                 {
+                    if (On && designer != null) Report("a flight is showing");
+                    hoverShown = false;
                     if (Parts.Count > 0) Clear();
                     return;
                 }
@@ -210,7 +214,9 @@ namespace ArmorFragments
                     nextRefresh = Time.unscaledTime + RefreshInterval;
                     Refresh(designer);
                 }
+                Report(Parts.Count == 0 ? "no armored part found" : null);
                 Draw();
+                UpdateHover(designer);
             }
             catch (Exception e)
             {
@@ -218,6 +224,17 @@ namespace ArmorFragments
                 warned = true;
                 Clear();
             }
+        }
+
+        // Why the armor view (switched on) draws nothing, said once in the log each time the reason changes.
+        private static string reported;
+
+        private static void Report(string reason)
+        {
+            if (reason == reported) return;
+            if (reason != null) ArmorFragmentsPlugin.Log.LogInfo("[ARMORVIEW] Armor view not drawn: " + reason);
+            else if (reported != null) ArmorFragmentsPlugin.Log.LogInfo("[ARMORVIEW] Armor view drawn again");
+            reported = reason;
         }
 
         // Each armored part's tint is made again only when its armor or shape changed; parts gone are dropped.
@@ -249,6 +266,11 @@ namespace ArmorFragments
                     List<float> mm = new List<float>();
                     entry.Mesh = FaceHighlight.BuildMesh(part, sources, UI.DesignerSection.AllFaces, out frame, mm);
                     entry.Mm = mm.ToArray();
+                    if (entry.Mesh != null)
+                    {
+                        entry.Vertices = entry.Mesh.vertices;
+                        entry.Outer = entry.Mesh.GetTriangles(0);
+                    }
                     entry.Frame = frame;
                     entry.LayerSource = sources.Count > 0 && sources[0].Value != null ? sources[0].Value : part.transform;
                     Parts[part] = entry;
@@ -353,9 +375,11 @@ namespace ArmorFragments
 
         internal static void OnGui()
         {
-            if (!On || Legend.Count == 0 || Designer.Instance == null) return;
-            if (Assets.Scripts.Flight.FlightSceneScript.Instance != null) return;
+            if (!On || Designer.Instance == null) return;
+            if (FaceHighlight.FlightShowing()) return;
             if (Event.current.type != EventType.Repaint) return;
+            DrawHover();
+            if (Legend.Count == 0) return;
 
             float scale = Mathf.Max(1f, Screen.height / 1080f);
             float row = 22f * scale, swatch = 22f * scale, width = 78f * scale;
@@ -381,6 +405,165 @@ namespace ArmorFragments
                     Legend[i].ToString("0", System.Globalization.CultureInfo.InvariantCulture) + " mm", legendText);
             }
             GUI.color = Color.white;
+        }
+
+
+        // ---- The hover readout -------------------------------------------------------------------------------------
+        // With the armor view on, the armored surface under the mouse, found by a ray from the camera through the mouse: the armor there, the
+        // angle that ray meets the surface at (from its normal), and the thickness a shot along it would go through (the armor over the cosine of
+        // that angle). Hidden over the game's menus, while a mouse button is held and after a click until the mouse moves on (so it does not
+        // cover the part being picked).
+
+        private static bool hoverShown;
+        private static float hoverMm, hoverAngle, hoverEffective;
+        private static Vector2 hoverAt;              // the mouse (GUI pixels, y down)
+        private static Vector2 hiddenAt;             // where a click hid it (screen pixels)
+        private static bool hiddenByClick;
+        private const float HideMoveDistance = 12f;  // pixels the mouse moves after a click before it shows again
+
+        private static void UpdateHover(Designer designer)
+        {
+            hoverShown = false;
+            UnityEngine.InputSystem.Mouse mouse = UnityEngine.InputSystem.Mouse.current;
+            if (mouse == null || Parts.Count == 0) return;
+            Vector2 screen = mouse.position.ReadValue();
+            bool held = mouse.leftButton.isPressed || mouse.rightButton.isPressed || mouse.middleButton.isPressed;
+            if (held || mouse.leftButton.wasReleasedThisFrame)
+            {
+                hiddenByClick = true;
+                hiddenAt = screen;
+                return;
+            }
+            if (hiddenByClick)
+            {
+                if ((screen - hiddenAt).magnitude < HideMoveDistance) return;
+                hiddenByClick = false;
+            }
+            if (!OverDesignerView(designer, screen)) return;   // over the game's menus and panels
+
+            Camera cam = null;
+            try { cam = designer.CameraController != null ? designer.CameraController.Camera : null; } catch (Exception) { }
+            if (cam == null || !cam.isActiveAndEnabled) return;
+            Ray ray = cam.ScreenPointToRay(new Vector3(screen.x, screen.y, 0f));
+
+            float best = float.PositiveInfinity;
+            float bestMm = 0f;
+            Vector3 bestNormal = Vector3.zero;
+            foreach (KeyValuePair<PartScript, Entry> pair in Parts)
+            {
+                Entry entry = pair.Value;
+                if (!Shown(pair.Key, entry) || entry.Vertices == null || entry.Outer == null || entry.Mm == null) continue;
+                // The ray in the frame's space (the mesh's own), so the vertices need no transforming.
+                Matrix4x4 toLocal = entry.Frame.worldToLocalMatrix;
+                Vector3 origin = toLocal.MultiplyPoint3x4(ray.origin);
+                Vector3 dir = toLocal.MultiplyVector(ray.direction);
+                Vector3[] v = entry.Vertices;
+                int[] t = entry.Outer;
+                for (int i = 0; i + 2 < t.Length; i += 3)
+                {
+                    float along;
+                    if (!RayTriangle(origin, dir, v[t[i]], v[t[i + 1]], v[t[i + 2]], out along)) continue;
+                    Vector3 world = entry.Frame.TransformPoint(origin + dir * along);
+                    float distance = Vector3.Dot(world - ray.origin, ray.direction);
+                    if (distance <= 0f || distance >= best) continue;
+                    best = distance;
+                    int vi = t[i];
+                    bestMm = vi < entry.Mm.Length ? entry.Mm[vi] : 0f;
+                    bestNormal = entry.Frame.TransformDirection(Vector3.Cross(v[t[i + 1]] - v[t[i]], v[t[i + 2]] - v[t[i]])).normalized;
+                }
+            }
+            if (float.IsInfinity(best) || bestMm <= 0f) return;
+
+            float cos = Mathf.Abs(Vector3.Dot(bestNormal, ray.direction));
+            hoverMm = bestMm;
+            hoverAngle = Mathf.Acos(Mathf.Clamp01(cos)) * Mathf.Rad2Deg;
+            hoverEffective = cos > 0.01f ? bestMm / cos : float.PositiveInfinity;
+            hoverAt = new Vector2(screen.x, Screen.height - screen.y);
+            hoverShown = true;
+        }
+
+        // The designer's 3D view is itself a full-screen UI element (its screen input): the mouse is over the view when that is the topmost
+        // UI element under it, not a panel or menu on top.
+        private static readonly List<UnityEngine.EventSystems.RaycastResult> uiHits = new List<UnityEngine.EventSystems.RaycastResult>();
+
+        private static bool OverDesignerView(Designer designer, Vector2 screen)
+        {
+            UnityEngine.EventSystems.EventSystem events = UnityEngine.EventSystems.EventSystem.current;
+            if (events == null) return true;
+            GameObject view = null;
+            try
+            {
+                Assets.Scripts.Design.UI.Input.DesignerScreenInputScript input = designer.DesignerScript != null && designer.DesignerScript.DesignerUI != null
+                    ? designer.DesignerScript.DesignerUI.ScreenInput : null;
+                view = input != null ? input.gameObject : null;
+            }
+            catch (Exception) { }
+            uiHits.Clear();
+            events.RaycastAll(new UnityEngine.EventSystems.PointerEventData(events) { position = screen }, uiHits);
+            if (uiHits.Count == 0) return true;
+            GameObject top = uiHits[0].gameObject;
+            return view != null && top != null && (top == view || top.transform.IsChildOf(view.transform));
+        }
+
+        // Moller-Trumbore: does the ray meet the triangle (either side), and how far along it.
+        private static bool RayTriangle(Vector3 origin, Vector3 dir, Vector3 a, Vector3 b, Vector3 c, out float along)
+        {
+            along = 0f;
+            Vector3 e1 = b - a, e2 = c - a;
+            Vector3 p = Vector3.Cross(dir, e2);
+            float det = Vector3.Dot(e1, p);
+            if (Mathf.Abs(det) < 1e-12f) return false;
+            float inv = 1f / det;
+            Vector3 s = origin - a;
+            float u = Vector3.Dot(s, p) * inv;
+            if (u < 0f || u > 1f) return false;
+            Vector3 q = Vector3.Cross(s, e1);
+            float w = Vector3.Dot(dir, q) * inv;
+            if (w < 0f || u + w > 1f) return false;
+            along = Vector3.Dot(e2, q) * inv;
+            return along > 0f;
+        }
+
+        private static GUIStyle hoverTitle, hoverBig, hoverRow, hoverValue;
+
+        private static void DrawHover()
+        {
+            if (!hoverShown) return;
+            float scale = Mathf.Max(1f, Screen.height / 1080f);
+            if (hoverTitle == null)
+            {
+                hoverTitle = new GUIStyle(GUI.skin.label);
+                hoverBig = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+                hoverRow = new GUIStyle(GUI.skin.label);
+                hoverValue = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleRight };
+            }
+            hoverTitle.fontSize = Mathf.RoundToInt(13f * scale);
+            hoverBig.fontSize = Mathf.RoundToInt(24f * scale);
+            hoverRow.fontSize = hoverValue.fontSize = Mathf.RoundToInt(13f * scale);
+            hoverTitle.normal.textColor = hoverRow.normal.textColor = new Color(0.78f, 0.80f, 0.83f, 1f);
+            hoverBig.normal.textColor = hoverValue.normal.textColor = Color.white;
+
+            float width = 170f * scale, line = 20f * scale, pad = 10f * scale, big = 34f * scale;
+            float height = pad * 2f + line + big + line * 2f;
+            float x = hoverAt.x + 18f * scale, y = hoverAt.y + 18f * scale;
+            if (x + width > Screen.width) x = hoverAt.x - 18f * scale - width;    // kept on the screen
+            if (y + height > Screen.height) y = hoverAt.y - 18f * scale - height;
+
+            GUI.color = new Color(0.12f, 0.14f, 0.17f, 0.92f);
+            GUI.DrawTexture(new Rect(x, y, width, height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;
+            float top = y + pad, inner = width - 2f * pad;
+            GUI.Label(new Rect(x + pad, top, inner, line), "Effective armor", hoverTitle);
+            top += line;
+            string effective = float.IsInfinity(hoverEffective) || hoverEffective > 9999f ? "grazing" : hoverEffective.ToString("0.0", inv) + " mm";
+            GUI.Label(new Rect(x + pad, top, inner, big), effective, hoverBig);
+            top += big;
+            GUI.Label(new Rect(x + pad, top, inner, line), "Angle", hoverRow);
+            GUI.Label(new Rect(x + pad, top, inner, line), hoverAngle.ToString("0.0", inv) + " deg", hoverValue);
+            top += line;
+            GUI.Label(new Rect(x + pad, top, inner, line), "Armor", hoverRow);
+            GUI.Label(new Rect(x + pad, top, inner, line), hoverMm.ToString("0", inv) + " mm", hoverValue);
         }
 
         private static void Draw()

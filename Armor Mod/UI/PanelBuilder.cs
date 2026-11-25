@@ -86,13 +86,13 @@ namespace ArmorFragments.UI
 
         // A row with a label and a box where text can be typed (the game's own "control-spinner-input-label" with a plain text box). changed runs
         // when the typing is finished (Enter, or the box loses the focus), with the text as typed.
-        public TMPro.TMP_InputField TextInput(string label, string tooltip, string value, int maxLength, Action<string> changed)
+        public TMPro.TMP_InputField TextInput(string label, string tooltip, string value, int maxLength, Action<string> changed, string placeholder = null)
         {
             List<XAttribute> attributes = new List<XAttribute>
             {
                 new XAttribute("label", label),
                 new XAttribute("contentType", "Standard"),
-                new XAttribute("placeholderText", "Enter a name..."),
+                new XAttribute("placeholderText", placeholder ?? "Enter a name..."),
             };
             if (!string.IsNullOrEmpty(tooltip)) attributes.Add(new XAttribute("tooltip", tooltip));
             Widget row = Parent.Context.CreateWidgetFromTemplate("control-spinner-input-label", Parent, attributes);

@@ -38,8 +38,13 @@ namespace ArmorFragments.UI
             get { return false; }
         }
 
+        // Set while the Mouse aim panel is being created: that copy of the window shows only the mouse aim's settings.
+        internal static bool OpeningMouseAim;
+        private bool mouseAimOnly;
+
         public override void OnWidgetInitialized(Widget widget)
         {
+            mouseAimOnly = OpeningMouseAim;
             base.OnWidgetInitialized(widget);
 
             widget.FindWidget("armor-close-button").Clicked += (Widget w) => Close();
@@ -60,12 +65,26 @@ namespace ArmorFragments.UI
             builtLocked = NetSync.GlobalLocked;
             builtHost = NetSync.IsHost;
 
+            if (mouseAimOnly)
+            {
+                try
+                {
+                    BuildMouseAim();
+                }
+                catch (Exception e)
+                {
+                    ArmorFragmentsPlugin.Log.LogError("Couldn't build the Mouse aim panel: " + e);
+                }
+                RefreshLive();
+                nextRefresh = Time.unscaledTime + RefreshInterval;
+                return;
+            }
+
             try
             {
                 BuildStatus();
                 BuildSimulation();
                 BuildMultiplayer();
-                BuildMouseAim();
                 BuildAmmoDisplay();
                 BuildImpactCamera();
                 BuildXRayPerformance();
@@ -287,31 +306,30 @@ namespace ArmorFragments.UI
                 "The bars show the percent of the rack that is left instead of the rounds left. A click on any bar does the same.");
         }
 
-        // Mouse aim for turrets (TurretAim.cs): rotators marked Turret and cannons marked Pointer in the designer follow the circle on the screen.
+        // Mouse aim for tank and ship guns (TurretAim.cs): the guns marked Mouse aim in the designer follow the reticle. The everyday settings first;
+        // the turret control's tuning is folded away under Advanced.
         private void BuildMouseAim()
         {
-            builder.Header("Mouse aim", collapsed: true);
+            builder.Header("Mouse aim");
             Live("Status", () => TurretAim.Status);
             builder.Buttons(new List<KeyValuePair<string, Action>>
             {
-                new KeyValuePair<string, Action>("Mouse aim on / off", TurretAim.Toggle),
+                new KeyValuePair<string, Action>("Mouse aim on / off", TurretAim.ToggleByHand),
             });
-            // RELEASE-STRIP-BEGIN
-            Live("Recording", () => TurretAim.RecordStatus);
-            builder.Buttons(new List<KeyValuePair<string, Action>>
-            {
-                new KeyValuePair<string, Action>("Record turret data (CSV)", TurretAim.ToggleRecording),
-            });
-            // RELEASE-STRIP-END
-            Live("Aim key", () => TurretAim.KeyText(ArmorFragmentsPlugin.TurretAimKey));
+            builder.Note("How to", "Designer: select a cannon, turn on Mouse aim, pick its Traverse (the ring) and Elevation (the gun's hinge). In flight it switches on by itself. " +
+                "Mouse: aim. Left click: fire (or each gun's own key). Wheel: zoom. Right button: zoom more. Shift: gun sight (the scope; the wheel zooms it 2x to 32x, the mouse moves the scope and each gun's ring follows it; put the target's range mark on the target). V: next sight. C: look around. Alt or an open menu: cursor (click the mouse button at the bottom right to switch the aim off).");
+            ToggleSetting(ArmorFragmentsPlugin.TurretAutoStart, "Switch on by itself",
+                "Mouse aim switches on when you spawn a vehicle that has Mouse aim guns.");
+            Live("Aim on/off key", () => TurretAim.KeyText(ArmorFragmentsPlugin.TurretAimKey));
             Live("Free look key", () => TurretAim.KeyText(ArmorFragmentsPlugin.TurretLookKey));
             Live("Sight key", () => TurretAim.KeyText(ArmorFragmentsPlugin.TurretSightKey));
+            Live("Next sight key", () => TurretAim.KeyText(ArmorFragmentsPlugin.TurretNextSightKey));
             Live("Next group key", () => TurretAim.KeyText(ArmorFragmentsPlugin.TurretGroupKey));
             Live("Fire mouse button", () => ArmorFragmentsPlugin.TurretFireMouseButton.Value.ToString());
-            Live("Fire key", () => TurretAim.KeyText(ArmorFragmentsPlugin.TurretFireKey));
+            Live("Default fire key", () => TurretAim.KeyText(ArmorFragmentsPlugin.TurretFireKey));
             builder.Buttons(new List<KeyValuePair<string, Action>>
             {
-                new KeyValuePair<string, Action>("Change aim key", () => TurretAim.CaptureKey(ArmorFragmentsPlugin.TurretAimKey)),
+                new KeyValuePair<string, Action>("Change on/off key", () => TurretAim.CaptureKey(ArmorFragmentsPlugin.TurretAimKey)),
                 new KeyValuePair<string, Action>("Change free look key", () => TurretAim.CaptureKey(ArmorFragmentsPlugin.TurretLookKey)),
                 new KeyValuePair<string, Action>("Change sight key", () => TurretAim.CaptureKey(ArmorFragmentsPlugin.TurretSightKey)),
             });
@@ -319,21 +337,53 @@ namespace ArmorFragments.UI
             {
                 new KeyValuePair<string, Action>("Change fire mouse button", () =>
                     ArmorFragmentsPlugin.TurretFireMouseButton.Value = ArmorFragmentsPlugin.TurretFireMouseButton.Value == TurretFireMouse.Left ? TurretFireMouse.Middle : TurretFireMouse.Left),
-                new KeyValuePair<string, Action>("Change fire key", () => TurretAim.CaptureKey(ArmorFragmentsPlugin.TurretFireKey)),
+                new KeyValuePair<string, Action>("Change default fire key", () => TurretAim.CaptureKey(ArmorFragmentsPlugin.TurretFireKey)),
                 new KeyValuePair<string, Action>("Change next group key", () => TurretAim.CaptureKey(ArmorFragmentsPlugin.TurretGroupKey)),
+                new KeyValuePair<string, Action>("Change next sight key", () => TurretAim.CaptureKey(ArmorFragmentsPlugin.TurretNextSightKey)),
             });
+            FloatSetting(ArmorFragmentsPlugin.TurretSightSensitivity, "Sight sensitivity",
+                "Degrees the aim turns for each mouse count through the sight (less when zoomed in).", 0.005f, " deg");
+            FloatSetting(ArmorFragmentsPlugin.TurretZoom, "Zoom",
+                "How many times the right mouse button zooms in (held: gradually in, let go: gradually out).", 0.5f, " x");
+            FloatSetting(ArmorFragmentsPlugin.TurretCameraHeight, "Camera pivot height",
+                "The point the camera turns around (where it sits at full zoom) is centered on the vehicle and this many meters above its highest point.", 0.1f, " m");
+            ToggleSetting(ArmorFragmentsPlugin.TurretFreeCursor, "Free cursor",
+                "In the orbit view the ring is moved by the mouse over the screen and the camera follows softly once it is some way off the middle. Off = the ring stays in the middle and the mouse turns the camera.");
             ToggleSetting(ArmorFragmentsPlugin.TurretGroupsHudEnabled, "Show turret groups on the flight screen",
-                "A bar for each turret group at the bottom right of the flight screen (above the camera buttons): lit = follows the mouse aim, dark = holds. Click one (Alt frees the cursor) to switch it; several can be controlled together.");
-            ToggleSetting(ArmorFragmentsPlugin.TurretTestSingle, "Control only one turret (test)",
-                "Only one turret of the active group is controlled and fires; the others hold where they are. Pick it with the buttons below. For finding out whether a swing comes from one turret or from many on one hull.");
-            Live("Turret under test", () => TurretAim.TestStatus);
+                "With guns in two or more groups: a bar for each group at the bottom right (above the mouse aim button). Lit = follows the reticle. Click one (Alt frees the cursor) to switch it.");
+
+            builder.Header("Mouse aim: advanced", collapsed: true);
+            // RELEASE-STRIP-BEGIN
+            Live("Recording", () => TurretAim.RecordStatus);
             builder.Buttons(new List<KeyValuePair<string, Action>>
             {
-                new KeyValuePair<string, Action>("<  Previous turret", () => TurretAim.TestStep(-1)),
-                new KeyValuePair<string, Action>("Next turret  >", () => TurretAim.TestStep(1)),
+                new KeyValuePair<string, Action>("Record turret data (CSV)", TurretAim.ToggleRecording),
             });
-            // Five saved sets of the control's gains (direct control, response, braking, damping, shared hull...): pick one to load it, Save to
-            // write the numbers in use into the picked one.
+            // RELEASE-STRIP-END
+            FloatSetting(ArmorFragmentsPlugin.TurretFreeCursorZone, "Free cursor: zone",
+                "How far from the middle the ring can go before the camera starts to follow, in percent of half the view's height.", 1f, " %");
+            FloatSetting(ArmorFragmentsPlugin.TurretFreeCursorFollow, "Free cursor: camera follow time",
+                "How quickly the camera closes the distance to the ring once it is outside the zone. Smaller is tighter.", 0.05f, " s");
+            FloatSetting(ArmorFragmentsPlugin.TurretFreeCursorRecenter, "Free cursor: recenter when the mouse is still",
+                "When the mouse has been still for about half a second the camera slowly turns until the ring is back at the middle (the aim does not change). 0 = the ring stays where it is.", 0.5f, " s");
+            FloatSetting(ArmorFragmentsPlugin.TurretFreeCursorSensitivity, "Free cursor: sensitivity",
+                "Degrees the ring moves per count of the mouse (less when zoomed in).", 0.005f, " deg");
+            ToggleSetting(ArmorFragmentsPlugin.TurretFireOnTarget, "Fire only guns on target",
+                "A gun fires only when it points within the tolerance of the reticle. Guns still turning, or stopped at their limit, hold fire while the others shoot. Guns with no Traverse or Elevation always fire.");
+            FloatSetting(ArmorFragmentsPlugin.TurretFireTolerance, "On-target tolerance",
+                "How far off the reticle a gun may be and still fire.", 0.1f, " deg");
+            FloatSetting(ArmorFragmentsPlugin.TurretFireStagger, "Salvo ripple",
+                "A salvo fires one gun at a time with this many seconds between them. 0 = all at once.", 0.01f, " s");
+            ToggleSetting(ArmorFragmentsPlugin.TurretLineOfFire, "Hold fire into own vehicle",
+                "A gun does not fire while its barrel points at a part of its own vehicle within 20 meters.");
+            ToggleSetting(ArmorFragmentsPlugin.TurretTestSingle, "Control only one gun (test)",
+                "Only one gun of the active group is controlled and fires; the others hold where they are. Pick it with the buttons below.");
+            Live("Gun under test", () => TurretAim.TestStatus);
+            builder.Buttons(new List<KeyValuePair<string, Action>>
+            {
+                new KeyValuePair<string, Action>("<  Previous gun", () => TurretAim.TestStep(-1)),
+                new KeyValuePair<string, Action>("Next gun  >", () => TurretAim.TestStep(1)),
+            });
             builder.Note("Control profiles", "Pick a profile to load its gains (direct control and its ramp, gain, braking and dead band; response, braking, damping; shared hull; gap smoothing; start stagger). " +
                 "Change the sliders below as you like and press Save to keep them in the picked profile.");
             Live("Control profile", () => TurretProfiles.Status);
@@ -349,91 +399,62 @@ namespace ArmorFragments.UI
                 TurretProfiles.NameOf(TurretProfiles.Selected), TurretProfiles.MaxNameLength, text =>
                 {
                     TurretProfiles.Rename(TurretProfiles.Selected, text);
-                    // The buttons carry the names; rebuilding destroys the box being edited, so wait for Update.
                     rebuildRequested = true;
                 });
             builder.Buttons(new List<KeyValuePair<string, Action>>
             {
                 new KeyValuePair<string, Action>("Save gains to the picked profile", TurretProfiles.Save),
             });
-            ToggleSetting(ArmorFragmentsPlugin.TurretShareHull, "Slow turrets sharing a hull",
-                "Each turret's gain is divided by the number of turrets of the group on the same hull body: many turrets pushing one hull together made it rock. Off for turrets on a heavy hull that does not move.");
-            FloatSetting(ArmorFragmentsPlugin.TurretShareStrength, "Turrets at full gain per hull",
-                "How many turrets of the group can work at full gain on one hull; with more, each one's gain is this number divided by the number of turrets (14 turrets: a seventh).", 0.1f, "");
-            FloatSetting(ArmorFragmentsPlugin.TurretErrorFilter, "Gap smoothing (many turrets)",
-                "When several turrets share a hull, the gap each is closing is smoothed over this many seconds, so a rocking hull is not chased (which rocked it more). 0 = off. A single turret is never smoothed.", 0.05f, " s");
-            ToggleSetting(ArmorFragmentsPlugin.TurretFreeCursor, "Free cursor",
-                "In the orbit view the ring is moved by the mouse over the screen and the camera follows softly once it is some way off the middle (no hard edge). Off = the ring stays at the middle and the mouse turns the camera.");
-            FloatSetting(ArmorFragmentsPlugin.TurretFreeCursorZone, "Free cursor: zone",
-                "How far from the middle the ring can go before the camera starts to follow, in percent of half the view's height (the camera starts a little inside it and follows fully a little outside it).", 1f, " %");
-            FloatSetting(ArmorFragmentsPlugin.TurretFreeCursorFollow, "Free cursor: camera follow time",
-                "How quickly the camera closes the distance to the ring once it is outside the zone. Smaller is tighter.", 0.05f, " s");
-            FloatSetting(ArmorFragmentsPlugin.TurretFreeCursorRecenter, "Free cursor: recenter when the mouse is still",
-                "When the mouse has been still for about half a second the camera slowly turns until the ring is back at the middle of the screen (the aim does not change). The time it takes to cover most of the distance; 0 = the ring stays where it is.", 0.5f, " s");
-            FloatSetting(ArmorFragmentsPlugin.TurretFreeCursorSensitivity, "Free cursor: sensitivity",
-                "Degrees the ring moves per count of the mouse (less when zoomed in).", 0.005f, " deg");
-            ToggleSetting(ArmorFragmentsPlugin.TurretAutoReach, "Automatic aim: prefer targets the turrets can reach",
-                "A group on automatic aim picks the target that the most of its turrets can point at within their arcs, not just the nearest one. The group bar shows how many can reach it.");
             ToggleSetting(ArmorFragmentsPlugin.TurretDirect, "Direct control",
-                "Aims by moving each rotator along a speed profile from the rotator's own top speed and the angle still to go, instead of closing a fraction of the gap each step. The hull stabilizer, " +
-                "the shared-hull gain division and the gap smoothing are not used. Compare it with the recording button. Off = the gain-based control.");
+                "Aims by moving each rotator along a speed profile from the rotator's own top speed and the angle still to go, instead of closing a fraction of the gap each step. Off = the gain-based control.");
             FloatSetting(ArmorFragmentsPlugin.TurretDirectRamp, "Direct control: ramp",
                 "Time a rotator takes to go from rest to its top speed, and back to rest. A longer ramp is gentler on a shared hull.", 0.05f, " s");
             FloatSetting(ArmorFragmentsPlugin.TurretDirectGain, "Direct control: gain near the aim",
-                "Near the aim a rotator turns at this many times the angle still to go, per second. Lower is calmer (a springy joint that rings stops being chased) and slower to settle.", 0.5f, " /s");
+                "Near the aim a rotator turns at this many times the angle still to go, per second. Lower is calmer and slower to settle.", 0.5f, " /s");
             FloatSetting(ArmorFragmentsPlugin.TurretDirectBrake, "Direct control: braking (several turrets)",
-                "With two or more turrets on one hull, the gap is reduced by the gun's own speed times this many seconds, which keeps the turrets and the hull from pushing each other into a swing. A lone turret does not use it.", 0.01f, " s");
+                "With two or more turrets on one hull, the gap is reduced by the gun's own speed times this many seconds. A lone turret does not use it.", 0.01f, " s");
             FloatSetting(ArmorFragmentsPlugin.TurretDirectDeadband, "Direct control: dead band",
                 "A rotator whose angle still to go is smaller than this rests.", 0.01f, " deg");
-            ToggleSetting(ArmorFragmentsPlugin.TurretFireOnTarget, "Fire only turrets on target",
-                "A turret fires only when its gun points within the tolerance of the cursor. Turrets still turning, or stopped at their limit, hold fire while the others shoot.");
-            FloatSetting(ArmorFragmentsPlugin.TurretFireTolerance, "On-target tolerance",
-                "How far off the cursor a turret's gun may be and still fire.", 0.1f, " deg");
-            FloatSetting(ArmorFragmentsPlugin.TurretFireStagger, "Salvo ripple",
-                "A salvo fires one cannon at a time with this many seconds between them. 0 = all at once.", 0.01f, " s");
-            ToggleSetting(ArmorFragmentsPlugin.TurretLineOfFire, "Hold fire into own vehicle",
-                "A cannon does not fire while its barrel points at a part of its own vehicle within 20 meters.");
+            ToggleSetting(ArmorFragmentsPlugin.TurretShareHull, "Slow turrets sharing a hull",
+                "Each turret's gain is divided by the number of turrets on the same hull body: many turrets pushing one hull together made it rock.");
+            FloatSetting(ArmorFragmentsPlugin.TurretShareStrength, "Turrets at full gain per hull",
+                "How many turrets can work at full gain on one hull; with more, each one's gain is this number divided by the number of turrets.", 0.1f, "");
+            FloatSetting(ArmorFragmentsPlugin.TurretErrorFilter, "Gap smoothing (many turrets)",
+                "When several turrets share a hull, the gap each is closing is smoothed over this many seconds, so a rocking hull is not chased. 0 = off.", 0.05f, " s");
             FloatSetting(ArmorFragmentsPlugin.TurretMoveStagger, "Turret start stagger",
-                "The turrets of a group start following the cursor one after another, each this many seconds after the one before, so they don't all push the hull at once. 0 = together.", 0.005f, " s");
-            builder.Note("Automatic aim", "The Ground and Air buttons under a turret group's bar (with both lit the group takes both) make the group aim and fire by itself at the nearest target it can reach. A vehicle of a player counts as air above the height or speed below, otherwise as ground; the game's own NPC aircraft, ground vehicles and ships say what they are.");
-            ToggleSetting(ArmorFragmentsPlugin.TurretAutoFire, "Automatic groups fire",
-                "A group on automatic aim fires by itself, one cannon at a time, when its gun is on the target (within the on-target tolerance), clear of its own vehicle and the target is in range. Off: it only aims.");
-            FloatSetting(ArmorFragmentsPlugin.TurretAutoRange, "Automatic aim range",
-                "Targets further than this many meters from the group's lead turret are left alone.", 50f, " m");
-            ToggleSetting(ArmorFragmentsPlugin.TurretAutoLead, "Lead moving targets",
-                "Aim ahead of a moving target, allowing for the vehicle's own speed too. Off: aim at where the target is now.");
-            ToggleSetting(ArmorFragmentsPlugin.TurretAutoDrop, "Allow for shell drop",
-                "Aim above the target by as much as the shell falls on the way (gravity and the shell's drag, as the game's physics does it). Off: the barrel points straight at the target.");
-            ToggleSetting(ArmorFragmentsPlugin.TurretAutoClearView, "Only targets in clear view",
-                "Leave out targets hidden behind the ground, so the turrets don't shoot at a hill.");
-            ToggleSetting(ArmorFragmentsPlugin.TurretAutoSkipFriendly, "Skip friendly targets",
-                "Leave out targets of your own team and friendly NPCs. Off: every vehicle but your own is a target (also other players').");
-            FloatSetting(ArmorFragmentsPlugin.TurretAutoAirAgl, "Player vehicle is air above",
-                "A vehicle of a player higher than this above the ground counts as air (the game does not say what it is).", 1f, " m");
-            FloatSetting(ArmorFragmentsPlugin.TurretAutoAirSpeed, "Player vehicle is air above speed",
-                "A vehicle of a player faster than this and more than 3 meters above the ground counts as air, however low it flies.", 5f, " m/s");
+                "The turrets of a group start following the reticle one after another, each this many seconds after the one before. 0 = together.", 0.005f, " s");
+            FloatSetting(ArmorFragmentsPlugin.TurretResponse, "Turret response",
+                "Seconds the turret takes to close the gap to the reticle. Smaller is snappier; if the gun swings back and forth, raise it.", 0.01f, " s");
+            FloatSetting(ArmorFragmentsPlugin.TurretDerivative, "Turret braking",
+                "The turret brakes in proportion to how fast the gun moves (the derivative): this many seconds of its speed are taken off the gap. 0 = off.", 0.01f, " s");
+            FloatSetting(ArmorFragmentsPlugin.TurretDamping, "Turret damping",
+                "The turret aims from where the gun will be this many seconds from now, so it does not overshoot. 0 = off.", 0.01f, " s");
             ToggleSetting(ArmorFragmentsPlugin.TurretObstacleStop, "Stop rotators at obstacles",
-                "A rotator blocked by something (a barrel on the deck, a turret on another) stops pushing and may only turn away from it; it tries again after the wait below. Without it the joint keeps pushing harder and harder.");
+                "A rotator blocked by something (a barrel on the deck, a turret on another) stops pushing and may only turn away from it; it tries again after the wait below.");
             Live("Obstacle guard", () => TurretAim.ObstacleStatus);
             FloatSetting(ArmorFragmentsPlugin.TurretObstacleDegrees, "Obstacle: degrees ahead",
-                "A rotator counts as blocked when the angle it asks for is this far ahead of the part and the part is not catching up. Lower stops sooner; too low can stop a heavy turret that is only following.", 0.5f, " deg");
+                "A rotator counts as blocked when the angle it asks for is this far ahead of the part and the part is not catching up.", 0.5f, " deg");
             FloatSetting(ArmorFragmentsPlugin.TurretObstacleRetry, "Obstacle: wait before trying again",
-                "How long a blocked rotator waits before turning further again (it also tries again at once if it backs off 2 degrees).", 0.5f, " s");
-            FloatSetting(ArmorFragmentsPlugin.TurretZoom, "Zoom",
-                "How many times the right mouse button zooms in (held: gradually in, let go: gradually out).", 0.5f, " x");
-            FloatSetting(ArmorFragmentsPlugin.TurretSightZoom, "Sight zoom",
-                "How many times the right mouse button zooms in through the sight camera.", 0.5f, " x");
-            FloatSetting(ArmorFragmentsPlugin.TurretSightSensitivity, "Sight sensitivity",
-                "Degrees the aim turns for each mouse count through the sight (less when zoomed in).", 0.005f, " deg");
-            FloatSetting(ArmorFragmentsPlugin.TurretResponse, "Turret response",
-                "Seconds the turret takes to close the gap to the circle. Smaller is snappier; if the gun swings back and forth around the circle, raise it.", 0.01f, " s");
-            FloatSetting(ArmorFragmentsPlugin.TurretDerivative, "Turret braking",
-                "The turret brakes in proportion to how fast the gun moves in the world (the derivative): this many seconds of its speed are taken off the gap. It keeps a ship's turrets from shaking the hull and swinging together. 0 = off. Raise it if the turrets still swing.", 0.01f, " s");
-            FloatSetting(ArmorFragmentsPlugin.TurretDamping, "Turret damping",
-                "The turret aims from where the gun will be this many seconds from now, so it does not overshoot and swing around the circle. 0 = off. Raise it if the gun still swings; too much makes it sluggish.", 0.01f, " s");
-            FloatSetting(ArmorFragmentsPlugin.TurretCameraHeight, "Camera pivot height",
-                "The point the camera turns around (where it sits at full zoom) is centered on the vehicle and this many meters above its highest point.", 0.1f, " m");
-            builder.Note("How to", "Designer: Turret on the rotators; on a cannon, Create turret group (add more turrets, fixed cannons, a sight camera, and what each fires with). Alt: cursor. Free look key: orbit the camera. Sight key: a turret's sight camera. Group key: next turret group. Right: zoom. Mouse button / fire key: fire.");
+                "How long a blocked rotator waits before turning further again.", 0.5f, " s");
+            builder.Note("Automatic aim", "With guns in groups, the Ground and Air buttons under a group's bar make it aim and fire by itself at the nearest target it can reach.");
+            ToggleSetting(ArmorFragmentsPlugin.TurretAutoFire, "Automatic groups fire",
+                "A group on automatic aim fires by itself when its gun is on the target, clear of its own vehicle and in range. Off: it only aims.");
+            ToggleSetting(ArmorFragmentsPlugin.TurretAutoReach, "Automatic aim: prefer targets the turrets can reach",
+                "A group on automatic aim picks the target that the most of its turrets can point at within their arcs, not just the nearest one.");
+            FloatSetting(ArmorFragmentsPlugin.TurretAutoRange, "Automatic aim range",
+                "Targets further than this many meters from the group's lead gun are left alone.", 50f, " m");
+            ToggleSetting(ArmorFragmentsPlugin.TurretAutoLead, "Lead moving targets",
+                "Aim ahead of a moving target, allowing for the vehicle's own speed too.");
+            ToggleSetting(ArmorFragmentsPlugin.TurretAutoDrop, "Allow for shell drop",
+                "Aim above the target by as much as the shell falls on the way.");
+            ToggleSetting(ArmorFragmentsPlugin.TurretAutoClearView, "Only targets in clear view",
+                "Leave out targets hidden behind the ground.");
+            ToggleSetting(ArmorFragmentsPlugin.TurretAutoSkipFriendly, "Skip friendly targets",
+                "Leave out targets of your own team and friendly NPCs.");
+            FloatSetting(ArmorFragmentsPlugin.TurretAutoAirAgl, "Player vehicle is air above",
+                "A vehicle of a player higher than this above the ground counts as air.", 1f, " m");
+            FloatSetting(ArmorFragmentsPlugin.TurretAutoAirSpeed, "Player vehicle is air above speed",
+                "A vehicle of a player faster than this and more than 3 meters above the ground counts as air.", 5f, " m/s");
         }
 
         private void BuildImpactCamera()

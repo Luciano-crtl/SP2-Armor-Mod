@@ -89,6 +89,7 @@ namespace ArmorFragments
             Step("turret aim", TurretAim.Shutdown);
             Step("ammo display", AmmoHud.Shutdown);
             Step("turret groups display", TurretGroupsHud.Shutdown);
+            Step("mouse aim button", MouseAimButton.Shutdown);
             Step("impact camera", ImpactCamera.Stop);
             Step("x-ray view", XRayView.Shutdown);
             Step("rays and bubbles", RayDrawer.Shutdown);
