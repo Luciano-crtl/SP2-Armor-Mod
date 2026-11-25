@@ -719,6 +719,12 @@ namespace ArmorFragments.UI
             builder.Buttons(qualities, FluidSmoke.QualityIndex);
             IntSetting(ArmorFragmentsPlugin.SmokeMaxClouds, "Most smoke clouds (0 = unlimited)",
                 "How many clouds of smoke may exist at once. 0 = no limit, which can fill the graphics memory in a long burst. At the limit the oldest cloud fades out quickly and the new one is made.");
+            TextControl benchText = builder.Text("Benchmark", "");
+            refreshers.Add(() => benchText.ValueText.Text = SmokeBenchmark.Status);
+            builder.Buttons(new List<KeyValuePair<string, Action>>
+            {
+                new KeyValuePair<string, Action>("Measure smoke cost", SmokeBenchmark.Start),
+            });
 
             // RELEASE-STRIP-BEGIN
             builder.BeginSubsection("Developer");

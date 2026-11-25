@@ -243,7 +243,7 @@ namespace ArmorFragments
 
         public static void OnShot(CannonScript cannon)
         {
-            if (!Enabled || cannon == null) return;
+            if (!Enabled || cannon == null || SmokeBenchmark.Frozen) return;
             try
             {
                 float heatBefore = BarrelHeat.HeatOf(cannon);
@@ -441,6 +441,45 @@ namespace ArmorFragments
                 + " was reached: the oldest cloud (" + c.age.ToString("F1") + " s old) fades out in " + EvictSeconds.ToString("F1") + " s");
         }
 
+        // ---- For the benchmark (SmokeBenchmark) ---------------------------------------------------------
+        public static FluidSim MakeForBenchmark(float caliber, int level)
+        {
+            ComputeShader cs = VfxBundleTest.Compute("fluid");
+            if (cs == null) return null;
+            Sizing size = SizeFor(caliber, level);
+            FluidSim sim = Acquire(cs, size.dims, size.cell, Levels[level].half);
+            sim.Cell = size.cell;
+            sim.Clear();
+            sim.Params.cycles = Levels[level].cycles;
+            sim.Params.drag = LateBrake;
+            sim.Params.turbulence = 0.2f;
+            sim.Params.detail = 0.6f;
+            sim.UseBfecc = true;
+            sim.CoarseSweeps = 10;
+            return sim;
+        }
+
+        public static float YoungestShotAge()
+        {
+            float age = float.MaxValue;
+            foreach (Cloud c in Active) if (!c.isOverflow && !c.evicted) age = Mathf.Min(age, c.age);
+            return age;
+        }
+
+        public static RenderTexture AnyScalars()
+        {
+            return Active.Count > 0 && Active[0].sim != null ? Active[0].sim.Scalars : null;
+        }
+
+        public static void LiveText(System.Action<string> line)
+        {
+            Camera cam = Camera.main;
+            foreach (Cloud c in Active)
+                line((c.isOverflow ? "box it flowed into" : "cloud") + ": " + Levels[c.level].name + ", " + c.extent.x.ToString("F0") + " x " + c.extent.y.ToString("F0") + " x " + c.extent.z.ToString("F0")
+                    + " m, " + c.sim.Dims.x + "x" + c.sim.Dims.y + "x" + c.sim.Dims.z + " cells of " + (c.sim.Cell * 100f).ToString("F0") + " cm, " + c.overlapsSeen + " colliders, " + c.shapesSent + " solids"
+                    + (cam != null ? ", camera " + (cam.transform.position - c.box.transform.position).magnitude.ToString("F0") + " m from its corner" : ""));
+        }
+
         // Called every frame while a cloud lives.
         private static void Tick()
         {
@@ -454,7 +493,8 @@ namespace ArmorFragments
             WindQueryManager wind = WindQueryManager.Instance;
             Camera cam = Camera.main;
             Watch.Restart();
-            try { UpdateOverflow(frame); }
+            bool bench = SmokeBenchmark.Frozen;
+            try { if (!bench) UpdateOverflow(frame); }
             catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] smoke overflow failed and is off: " + e); overflowFailed = true; }
             for (int i = Active.Count - 1; i >= 0; i--)
             {
@@ -476,20 +516,27 @@ namespace ArmorFragments
                         c.sim.UseBfecc = true;
                         if (ArmorFragmentsPlugin.SmokeDustWeight != null) c.sim.Params.dustWeight = ArmorFragmentsPlugin.SmokeDustWeight.Value * 2f;     // dust settles twice as fast as the setting says (it hung in the air as a disc)
                         c.sim.Params.detail = 0.6f;
+                        SmokeBenchmark.CpuStart();
                         UpdateWind(c, wind, frame);
                         RefreshGround(c);
+                        SmokeBenchmark.CpuLap(0);
                         // The solids: every frame, or every second frame when the cloud is past its blast and nothing near it moves.
                         bool skipSolids = FastSolids && c.sim.HasSolids && c.age > 1.6f * c.timeScale && c.lastPeakSpeed < 0.5f && ((c.solidFrame++ & 1) == 1);
+                        if (bench) skipSolids = !SmokeBenchmark.SolidsOn;
                         if (!skipSolids)
                         {
-                            c.sim.SetObstacles(Obstacles(c), PlaneBuffer);
+                            List<FluidSim.Shape> shapes = Obstacles(c);
+                            SmokeBenchmark.CpuLap(1);
+                            c.sim.SetObstacles(shapes, PlaneBuffer);
+                            SmokeBenchmark.CpuLap(2);
                             c.lastPeakSpeed = peakSpeed;
                         }
 
                         // A cloud past the middle of its life changes slowly: it is stepped every other frame, twice as long.
                         float step = frame;
                         bool run = true;
-                        if (c.age > 0.45f * c.end)
+                        if (bench) run = SmokeBenchmark.StepOn;
+                        else if (c.age > 0.45f * c.end)
                         {
                             c.accumulated += frame;
                             c.frameCounter++;
@@ -510,10 +557,11 @@ namespace ArmorFragments
                                 c.sim.Step(dt);
                             }
                         }
-                        c.age += frame;
+                        SmokeBenchmark.CpuLap(3);
+                        if (!bench) c.age += frame;
 
                         // Once the shot is over the box drifts with the wind (the smoke inside it moves with the box).
-                        if (wind != null && c.drift.sqrMagnitude > 1e-6f)
+                        if (!bench && wind != null && c.drift.sqrMagnitude > 1e-6f)
                         {
                             c.origin += c.drift * frame;
                             Place(c);
@@ -544,18 +592,20 @@ namespace ArmorFragments
                     m.SetTexture("_PhiB", c.sim.PhiB);
                     m.SetTexture("_Solid", c.sim.Solid);
                     bool fast = FastDrawing;
+                    SmokeBenchmark.CpuStart();
                     if (fast)
                     {
-                        c.sim.UpdateOccupancy();
+                        if (!bench || SmokeBenchmark.DrawOn) c.sim.UpdateOccupancy();
+                        SmokeBenchmark.CpuLap(4);
                         m.SetTexture("_Occ", c.sim.Occupancy);
                         Vector3Int od = c.sim.OccupancyDims;
                         m.SetVector("_OccDim", new Vector4(od.x, od.y, od.z, 0f));
                     }
                     m.SetFloat("_UseOcc", fast ? 1f : 0f);
-                    float haze = HeatHazeStrength;
+                    float haze = bench && !SmokeBenchmark.HazeOn ? 0f : HeatHazeStrength;
                     m.SetFloat("_Distort", haze > 0.01f && OpaqueTextureAvailable() ? haze : 0f);
                     m.SetFloat("_SoftContact", ArmorFragmentsPlugin.SmokeSoftContact != null ? ArmorFragmentsPlugin.SmokeSoftContact.Value : 0.35f);
-                    m.SetFloat("_Cubic", ArmorFragmentsPlugin.SmokeCubicGrid == null || ArmorFragmentsPlugin.SmokeCubicGrid.Value ? 1f : 0f);
+                    m.SetFloat("_Cubic", bench && !SmokeBenchmark.CubicOn ? 0f : ArmorFragmentsPlugin.SmokeCubicGrid == null || ArmorFragmentsPlugin.SmokeCubicGrid.Value ? 1f : 0f);
                     m.SetFloat("_FogOn", 1f);
                     m.SetFloat("_MultiScatter", 0.6f);
                     m.SetFloat("_NoiseRotate", 1f);       // the detail noise: three turned octaves, so its tile does not repeat in a line
@@ -573,7 +623,8 @@ namespace ArmorFragments
                     else m.SetVector("_FlashPos", Vector4.zero);
                     m.SetColor("_FlashColor", new Color(1f, 0.62f, 0.3f, 1f));
                     m.SetFloat("_FlashRange", 3f * c.scale);
-                    bool shadows = SmokeShadows;
+                    bool shadows = SmokeShadows && (!bench || SmokeBenchmark.ShadowOn);
+                    if (c.boxRenderer != null && c.boxRenderer.enabled != (!bench || SmokeBenchmark.DrawOn)) c.boxRenderer.enabled = !bench || SmokeBenchmark.DrawOn;
                     m.SetFloat("_ShadowStrength", shadows ? ShadowStrength : 0f);
                     if (c.boxRenderer != null)
                     {
@@ -587,8 +638,9 @@ namespace ArmorFragments
                     float distance = cam != null ? (cam.transform.position - c.box.transform.position).magnitude : 0f;
                     m.SetFloat("_Steps", Levels[c.level].steps * (distance > 120f ? 0.75f : 1f));
                     float stepCells = ArmorFragmentsPlugin.SmokeRayStepCells != null ? ArmorFragmentsPlugin.SmokeRayStepCells.Value : 1.5f;
-                    m.SetFloat("_StepMeters", stepCells * c.sim.Cell);
+                    m.SetFloat("_StepMeters", bench && !SmokeBenchmark.LongRays ? 0f : stepCells * c.sim.Cell);
                     m.SetFloat("_StepMax", ArmorFragmentsPlugin.SmokeRayStepMax != null ? ArmorFragmentsPlugin.SmokeRayStepMax.Value : 64);
+                    SmokeBenchmark.CpuLap(5);
                 }
                 catch (System.Exception e)
                 {

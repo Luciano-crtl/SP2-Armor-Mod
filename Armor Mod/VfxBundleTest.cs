@@ -34,6 +34,7 @@ namespace ArmorFragments
 
         public static void Shutdown()
         {
+            SmokeBenchmark.Stop("not run");
             FluidSmoke.Shutdown();
             Materials.Clear();
             Computes.Clear();
