@@ -93,9 +93,7 @@ namespace ArmorFragments.UI
                 BuildRicochet();
                 BuildRays();
                 BuildTools();
-                // RELEASE-STRIP-BEGIN
                 BuildFluidSmoke();
-                // RELEASE-STRIP-END
                 BuildDamageMaps();
                 BuildLog();
             }
@@ -671,7 +669,6 @@ namespace ArmorFragments.UI
             });
         }
 
-        // RELEASE-STRIP-BEGIN
         // The smoke of the cannons: a real fluid simulation on the GPU. Its look is the host's; only the performance is each player's own.
         private void BuildFluidSmoke()
         {
@@ -723,6 +720,7 @@ namespace ArmorFragments.UI
             IntSetting(ArmorFragmentsPlugin.SmokeMaxClouds, "Most smoke clouds (0 = unlimited)",
                 "How many clouds of smoke may exist at once. 0 = no limit, which can fill the graphics memory in a long burst. At the limit the oldest cloud fades out quickly and the new one is made.");
 
+            // RELEASE-STRIP-BEGIN
             builder.BeginSubsection("Developer");
             TextControl heatText = builder.Text("Barrel heat", "");
             refreshers.Add(() => heatText.ValueText.Text = BarrelHeat.Status);
@@ -769,6 +767,7 @@ namespace ArmorFragments.UI
                 "After the blast, when nothing near the cloud moves, vehicles and ground are measured every second frame.");
             ToggleSetting(ArmorFragmentsPlugin.SmokeHalfPrecision, "16-bit smoke fields (ultra, high and medium)",
                 "The ultra, high and medium levels use half the memory and about 40% of the time per step with the same look. Applies to the next cloud.");
+            // RELEASE-STRIP-END
             builder.EndSubsection();
 
             builder.Buttons(new List<KeyValuePair<string, Action>>
@@ -776,7 +775,6 @@ namespace ArmorFragments.UI
                 new KeyValuePair<string, Action>("Reset smoke to defaults", () => ResetSettings("Smoke")),
             });
         }
-        // RELEASE-STRIP-END
 
         private void BuildLog()
         {

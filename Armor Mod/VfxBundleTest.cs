@@ -1,4 +1,3 @@
-// RELEASE-STRIP-BEGIN
 using System.Collections.Generic;
 using System.IO;
 using BepInEx;
@@ -50,13 +49,28 @@ namespace ArmorFragments
 
         private static bool Load()
         {
-            string path = FindBundle();
-            if (path == null) return false;
-
-            bundle = AssetBundle.LoadFromFile(path);
+            // The bundle is inside the DLL. A file in BepInEx/scripts (development) goes before it.
+            string path = Path.Combine(Path.Combine(Paths.BepInExRootPath, "scripts"), BundleFile);
+            if (File.Exists(path)) bundle = AssetBundle.LoadFromFile(path);
+            else
+            {
+                path = "the copy inside the DLL";
+                using (Stream stream = typeof(VfxBundleTest).Assembly.GetManifestResourceStream("ArmorFragments.armorvfx"))
+                {
+                    if (stream == null)
+                    {
+                        ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] this build of the DLL has no effects in it");
+                        return false;
+                    }
+                    byte[] data = new byte[stream.Length];
+                    int read = 0, n;
+                    while (read < data.Length && (n = stream.Read(data, read, data.Length - read)) > 0) read += n;
+                    bundle = AssetBundle.LoadFromMemory(data);
+                }
+            }
             if (bundle == null)
             {
-                ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] AssetBundle.LoadFromFile returned null for " + path
+                ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] the AssetBundle could not be loaded: " + path
                     + ". The usual cause is a bundle built with another Unity version than the game's (6000.3.20f1 was used).");
                 return false;
             }
@@ -73,23 +87,5 @@ namespace ArmorFragments
             }
             return true;
         }
-
-        private static string FindBundle()
-        {
-            string[] folders =
-            {
-                Path.Combine(Paths.BepInExRootPath, "scripts"),
-                Path.Combine(Paths.PluginPath, "ArmorFragments"),
-                Paths.PluginPath,
-            };
-            foreach (string folder in folders)
-            {
-                string candidate = Path.Combine(folder, BundleFile);
-                if (File.Exists(candidate)) return candidate;
-            }
-            ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] the file '" + BundleFile + "' was not found in: " + string.Join(" | ", folders));
-            return null;
-        }
     }
 }
-// RELEASE-STRIP-END

@@ -1,4 +1,3 @@
-// RELEASE-STRIP-BEGIN
 using Assets.Scripts.Craft.Parts.Modifiers;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
 using UnityEngine;
@@ -87,4 +86,3 @@ namespace ArmorFragments
         }
     }
 }
-// RELEASE-STRIP-END

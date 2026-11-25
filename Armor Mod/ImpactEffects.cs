@@ -190,7 +190,6 @@ namespace ArmorFragments
 
         // ---- The pieces -------------------------------------------------------------------------------
 
-        // RELEASE-STRIP-BEGIN
         // One wisp of thin smoke (the smoke that comes out of a hot barrel): a particle of the smoke system, lit by the scene, rising slowly.
         public static void Wisp(Vector3 position, Vector3 velocity, float size, float lifetime, Color color)
         {
@@ -264,7 +263,6 @@ namespace ArmorFragments
                 smoke.Emit(e, 1);
             }
         }
-        // RELEASE-STRIP-END
 
         private static Vector3 Scatter(Vector3 axis, float coneDegrees)
         {
@@ -409,9 +407,7 @@ namespace ArmorFragments
                 }
                 puffTexture = SoftDisc(48, 1.6f);
                 sparkTexture = SoftDisc(16, 3.5f);
-        // RELEASE-STRIP-BEGIN
                 smokeTexture = CloudDisc(128);
-        // RELEASE-STRIP-END
                 puffMaterial = new Material(shader) { name = "ArmorFragments puff", mainTexture = puffTexture };
                 sparkMaterial = new Material(shader) { name = "ArmorFragments spark", mainTexture = sparkTexture };
                 litMaterial = MakeLitMaterial();   // smoke and dust: lit by the scene (null = they use the plain see-through one)
@@ -501,7 +497,6 @@ namespace ArmorFragments
             return texture;
         }
 
-        // RELEASE-STRIP-BEGIN
         // A puff of smoke: a soft disc whose edge and inside are broken up by noise (three octaves of value noise), so it is not a clean round
         // blob. Dust and smoke particles use it.
         private static Texture2D CloudDisc(int size)
@@ -542,7 +537,6 @@ namespace ArmorFragments
             float b = Mathf.Lerp(Hash2(ix, iy + 1, seed), Hash2(ix + 1, iy + 1, seed), fx);
             return Mathf.Lerp(a, b, fy);
         }
-        // RELEASE-STRIP-END
 
         private static AnimationCurve Curve(float start, float middle, float end)
         {

@@ -1,4 +1,3 @@
-// RELEASE-STRIP-BEGIN
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -768,4 +767,3 @@ namespace ArmorFragments.Fluid
         }
     }
 }
-// RELEASE-STRIP-END

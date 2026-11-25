@@ -50,6 +50,7 @@ namespace ArmorFragments
         internal static ConfigEntry<bool> ImpactCameraXRay;
         // RELEASE-STRIP-BEGIN
         internal static ConfigEntry<bool> PerfSceneReport;          // local: every 15 s, a [PERF] line with the frame time and what is in the scene
+        // RELEASE-STRIP-END
         internal static ConfigEntry<bool> SmokeEnabled;             // global: the smoke of the cannons on or off
         internal static ConfigEntry<string> SmokeQuality;           // local: Auto, Low, Medium, High or Ultra
         internal static ConfigEntry<float> SmokeJetFocus;           // local: 0 round fireball .. 1 narrow jet along the barrel
@@ -78,7 +79,6 @@ namespace ArmorFragments
         internal static ConfigEntry<float> SmokeBoxSize;            // local: the size of the box the smoke is simulated in (1 = standard)
         internal static ConfigEntry<float> SmokeWashStrength;       // local: how hard they blow
         internal static ConfigEntry<float> SmokeWakeStrength;       // local: how much of its speed that air takes
-        // RELEASE-STRIP-END
         internal static ConfigEntry<bool> ImpactCameraDamageView;   // local: the damage map drawn over the plates in the impact camera
         internal static ConfigEntry<int> DamageMapsRelief;           // local: 0 normal map, 1 bump (height) map, 2 both
         internal static ConfigEntry<bool> UseGpu;                    // local: the impact simulation on the graphics card (OpenCL), the CPU if it cannot
@@ -229,7 +229,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> CrewSwitchSeconds;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.12.2";
+        public const string Version = "0.13.0";
 
         private float attachMenuAt = -1f;
 
@@ -321,6 +321,7 @@ namespace ArmorFragments
             PerfSceneReport = Config.Bind("Debug", "PerfSceneReport", false,
                 "If true, every 15 s a [PERF] line in the log gives the frame time next to how many renderers, particle systems, decals... " +
                 "are in the scene (to find out what slows the game down). Counting them costs about 10 ms each time, so it is off.");
+            // RELEASE-STRIP-END
             // The key is "SmokeEnabled" and not "Enabled": the host's message names settings by their key alone.
             SmokeEnabled = Config.Bind("Smoke", "SmokeEnabled", true,
                 "Cannon smoke: on or off. On a server the host decides.");
@@ -390,7 +391,7 @@ namespace ArmorFragments
                 "Cannon smoke: once the blast is over and nothing near the cloud moves, the solid shapes of vehicles and ground are measured every second frame instead of every frame.");
             SmokeHalfPrecision = Config.Bind("Smoke", "HalfPrecision", true,
                 "Cannon smoke: the ultra, high and medium quality levels keep the speed, smoke and heat of the air in 16-bit numbers. That takes half the memory and about 40% of the time of a step, and the clouds look the same. A graphics card that cannot do it uses 32 bits. Applies to the next cloud.");
-            SmokeBoxSize = Config.Bind("Smoke", "BoxSize", 1f,
+            SmokeBoxSize = Config.Bind("Smoke", "BoxSize", 1.8f,
                 new ConfigDescription("Cannon smoke: how big the box the smoke is simulated in is (1 = standard, 18 x 9 x 9 m for a 75 mm gun). Smoke that leaves the box vanishes. The number of cells is fixed by the quality level, so a bigger box has coarser cells (less fine detail). Applies to the next shot.",
                     new AcceptableValueRange<float>(0.5f, 3f)));
             SmokeWashStrength = Config.Bind("Smoke", "PropWashStrength", 1f,
@@ -405,7 +406,6 @@ namespace ArmorFragments
                 SmokeEnabled, SmokeDensity, SmokeLifetime, SmokeBlastDust, SmokeFlashIntensity, SmokeShadows, SmokeShadowStrength,
                 SmokeHeatHaze, SmokeBarrelHeat, SmokeBarrelHeatScale, SmokeJetFocus, SmokeJetSpeed, SmokeBuoyancy, SmokeResidualHeat,
                 SmokeCannonProfile, SmokeDustWeight, SmokeWashStrength, SmokeWakeStrength);
-            // RELEASE-STRIP-END
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
             HideRaysOutsideViews = Config.Bind("Debug", "HideRaysOutsideViews", true,

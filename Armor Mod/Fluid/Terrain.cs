@@ -1,4 +1,3 @@
-// RELEASE-STRIP-BEGIN
 using System.Collections.Generic;
 using Assets.Scripts.Craft.Parts;
 using Assets.Scripts.Craft.Parts.Modifiers.Weapons;
@@ -116,4 +115,3 @@ namespace ArmorFragments
         }
     }
 }
-// RELEASE-STRIP-END

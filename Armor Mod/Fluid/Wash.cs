@@ -1,4 +1,3 @@
-// RELEASE-STRIP-BEGIN
 using System.Collections.Generic;
 using Assets.Scripts.Craft;
 using Assets.Scripts.Craft.Parts;
@@ -266,4 +265,3 @@ namespace ArmorFragments.Fluid
         }
     }
 }
-// RELEASE-STRIP-END

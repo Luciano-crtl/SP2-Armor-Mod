@@ -1,4 +1,3 @@
-// RELEASE-STRIP-BEGIN
 using System.Collections.Generic;
 using System.Diagnostics;
 using ArmorFragments.Fluid;
@@ -1251,4 +1250,3 @@ namespace ArmorFragments
         }
     }
 }
-// RELEASE-STRIP-END
