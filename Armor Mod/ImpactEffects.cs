@@ -32,7 +32,7 @@ namespace ArmorFragments
         private static GameObject root;
         private static ParticleSystem sparks, flash, smoke, dust, embers;
         private static Material puffMaterial, sparkMaterial, litMaterial;
-        private static Texture2D puffTexture, sparkTexture;
+        private static Texture2D puffTexture, sparkTexture, smokeTexture;
         private static bool failed;
 
         // ---- Asking for an effect ---------------------------------------------------------------------
@@ -189,6 +189,7 @@ namespace ArmorFragments
         }
 
         // ---- The pieces -------------------------------------------------------------------------------
+
 
         private static Vector3 Scatter(Vector3 axis, float coneDegrees)
         {
@@ -349,7 +350,7 @@ namespace ArmorFragments
                               Curve(1f, 0.8f, 0.2f), Fade(new Color(1f, 0.8f, 0.35f), new Color(0.8f, 0.15f, 0.05f)));
                 dust = Make("dust", litMaterial ?? puffMaterial, ParticleSystemRenderMode.Billboard, 400, 0.25f, 1.6f, 0.9f,
                             Curve(0.6f, 1f, 1.5f), Fade(Color.white, Color.white));
-                smoke = Make("smoke", litMaterial ?? puffMaterial, ParticleSystemRenderMode.Billboard, 300, -0.02f, 1.4f, 0.9f,
+                smoke = Make("smoke", litMaterial ?? puffMaterial, ParticleSystemRenderMode.Billboard, 1200, -0.02f, 1.4f, 0.9f,
                              Curve(0.45f, 1f, 1.6f), Fade(Color.white, Color.white));
                 ArmorFragmentsPlugin.Log.LogInfo("[FX] impact effects ready: flash, sparks and embers glow with '" + shader.name + "'; smoke and dust use '" +
                                                  (litMaterial != null ? litMaterial.shader.name + "' (lit by the scene)" : shader.name + "' (not lit)"));
@@ -381,7 +382,7 @@ namespace ArmorFragments
                 if (shader == null || !shader.isSupported) continue;
                 Material material = new Material(shader) { name = "ArmorFragments puff (lit)" };
                 if (!material.HasProperty("_BaseMap")) { Object.Destroy(material); continue; }
-                material.SetTexture("_BaseMap", puffTexture);
+                material.SetTexture("_BaseMap", smokeTexture != null ? smokeTexture : puffTexture);
                 material.SetColor("_BaseColor", Color.white);   // the color comes from each particle
                 if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
                 if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0f);
@@ -421,6 +422,7 @@ namespace ArmorFragments
             texture.Apply(false, true);
             return texture;
         }
+
 
         private static AnimationCurve Curve(float start, float middle, float end)
         {
@@ -503,9 +505,10 @@ namespace ArmorFragments
             if (litMaterial != null) Object.Destroy(litMaterial);
             litMaterial = null;
             if (puffTexture != null) Object.Destroy(puffTexture);
+            if (smokeTexture != null) Object.Destroy(smokeTexture);
             if (sparkTexture != null) Object.Destroy(sparkTexture);
             puffMaterial = sparkMaterial = null;
-            puffTexture = sparkTexture = null;
+            puffTexture = sparkTexture = smokeTexture = null;
         }
     }
 }

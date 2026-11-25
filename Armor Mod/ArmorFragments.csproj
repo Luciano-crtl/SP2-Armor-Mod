@@ -43,7 +43,19 @@
 			<HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
-		<!-- The turret aim's circle and marker are drawn in OnGUI, over everything (inverting what is behind them) -->
+		<Reference Include="UnityEngine.TerrainModule">
+			<HintPath>$(ManagedDir)\UnityEngine.TerrainModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="UnityEngine.TerrainPhysicsModule">
+			<HintPath>$(ManagedDir)\UnityEngine.TerrainPhysicsModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<!-- The turret aim's reticle and its texts are drawn in OnGUI, over everything -->
+		<Reference Include="UnityEngine.TextRenderingModule">
+			<HintPath>$(ManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
 		<Reference Include="UnityEngine.IMGUIModule">
 			<HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
 			<Private>False</Private>
@@ -55,6 +67,18 @@
 		</Reference>
 		<Reference Include="UnityEngine.ParticleSystemModule">
 			<HintPath>$(ManagedDir)\UnityEngine.ParticleSystemModule.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="Unity.RenderPipelines.Universal.Runtime">
+			<HintPath>$(ManagedDir)\Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="Unity.RenderPipelines.Core.Runtime">
+			<HintPath>$(ManagedDir)\Unity.RenderPipelines.Core.Runtime.dll</HintPath>
+			<Private>False</Private>
+		</Reference>
+		<Reference Include="UnityEngine.AssetBundleModule">
+			<HintPath>$(ManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
 			<Private>False</Private>
 		</Reference>
 		<!-- Fuselage section sizes (per-face armor) -->

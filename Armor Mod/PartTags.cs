@@ -78,6 +78,7 @@ namespace ArmorFragments
         public HoleTag Hole;           // null = the walls of the holes this cutter carves are no armor
         public TurretTag Turret;       // a rotator the mouse aim turns (see TurretAim.cs)
         public PointerTag Pointer;     // a cannon the mouse aim points at the cursor, with its marker on the screen
+        public SpeedTag Speed;         // a rotator or hinge with its own top speed
     }
 
     // Rotator (turret ring, gun elevation) that the mouse aim turns so that the pointer cannons point at the cursor.
@@ -85,11 +86,23 @@ namespace ArmorFragments
     {
     }
 
-    // A turret of the mouse aim: a cannon the aim points at the cursor, in a turret group (every turret of a group is aimed at the same time,
-    // at the same point; they are equals). The screen shows where each one really points.
+    // A rotator or hinge whose top speed is set in degrees per second instead of the game's Speed slider (see RotatorSpeedPatch).
+    internal sealed class SpeedTag
+    {
+        public float DegreesPerSecond = 30f;   // s
+    }
+
+    // A cannon under the mouse aim (the designer's "Mouse aim" toggle on a cannon). With no group (g=0) it is one of the vehicle's main set: every
+    // such cannon follows the reticle and fires together. With a group number it is in that turret group (every turret of a group is aimed at the
+    // same time, at the same point; they are equals). The screen shows where each one really points.
     internal sealed class PointerTag
     {
-        public int Group = 1;   // g: the turret group's number (turrets with the same number are one group); 0 = in no group yet
+        public int Group = 1;   // g: the turret group's number (turrets with the same number are one group); 0 = no group: the main set
+        public int? Traverse;   // tr: id of the rotator that turns the gun left and right (none = left to the player's own controls)
+        public int? Elevation;  // el: id of the rotator or hinge that raises and lowers the gun (none = left to the player's own controls)
+        public string FireKey;  // fk: the key this cannon fires with when it fires by key (a Key name; null = the fire key in the config)
+        public bool GunAsSight; // gs: the gun's own barrel is its sight (sniper view from the muzzle, looking down the barrel)
+        public bool RangingGun; // rg: in a turret group whose guns share a Gun Sight, the gun that sight's range marks are worked out for
         public string Name;     // n: the group's name (letters, digits, _ - . ; null = the one its number gives, see GroupNames)
         public string TurretName; // t: this turret's own name (same characters as n; null = its number among the turrets, see TurretNames)
         public List<int> Rotators = new List<int>(); // r: ids of the rotators that turn this turret (none = the mod works out which ones move it)
@@ -148,7 +161,7 @@ namespace ArmorFragments
     {
         // [ARM t=20 h=100]   -> kind + a list of key=value pairs
         private static readonly Regex Block =
-            new Regex(@"\[(ARM|CAN|MOD|AMM|VNT|CRW|AIM|HOL|TUR|PTR)((?:\s+[a-z]+=[^\s\]]+)*)\s*\]");
+            new Regex(@"\[(ARM|CAN|MOD|AMM|VNT|CRW|AIM|HOL|TUR|PTR|SPD)((?:\s+[a-z]+=[^\s\]]+)*)\s*\]");
         private static readonly Regex Pair = new Regex(@"([a-z]+)=([^\s\]]+)");
         private static readonly Regex ExtraSpaces = new Regex(@"\s{2,}");
 
@@ -221,12 +234,21 @@ namespace ArmorFragments
                 {
                     tags.Turret = new TurretTag();
                 }
+                else if (kind == "SPD")
+                {
+                    tags.Speed = new SpeedTag { DegreesPerSecond = Mathf.Max(0f, Get(values, "s", 30f)) };
+                }
                 else if (kind == "PTR")
                 {
-                    float camera, group, byKey;
+                    float camera, group, byKey, traverse, elevation, gunSight, ranging;
                     tags.Pointer = new PointerTag
                     {
                         Group = values.TryGetValue("g", out group) && group >= 0f ? Mathf.RoundToInt(group) : 1,
+                        Traverse = values.TryGetValue("tr", out traverse) && traverse >= 0f ? Mathf.RoundToInt(traverse) : (int?)null,
+                        Elevation = values.TryGetValue("el", out elevation) && elevation >= 0f ? Mathf.RoundToInt(elevation) : (int?)null,
+                        FireKey = CleanKey(ReadText(block.Groups[2].Value, "fk")),
+                        GunAsSight = values.TryGetValue("gs", out gunSight) && gunSight > 0f,
+                        RangingGun = values.TryGetValue("rg", out ranging) && ranging > 0f,
                         Name = GroupNames.Clean(ReadText(block.Groups[2].Value, "n")),
                         TurretName = GroupNames.Clean(ReadText(block.Groups[2].Value, "t")),
                         Rotators = ReadIds(ReadText(block.Groups[2].Value, "r")),
@@ -301,7 +323,12 @@ namespace ArmorFragments
                        (GroupNames.Clean(tags.Pointer.TurretName) != null ? " t=" + GroupNames.Clean(tags.Pointer.TurretName) : "") +
                        IdsPair(tags.Pointer.Rotators, "r") +
                        (tags.Pointer.Camera.HasValue ? " c=" + tags.Pointer.Camera.Value.ToString(CultureInfo.InvariantCulture) : "") +
-                       (tags.Pointer.ByKey ? " f=1" : "") + IdsPair(tags.Pointer.Fixed, "x") + IdsPair(tags.Pointer.FixedByKey, "k") + "]");
+                       (tags.Pointer.ByKey ? " f=1" : "") + IdsPair(tags.Pointer.Fixed, "x") + IdsPair(tags.Pointer.FixedByKey, "k") +
+                       (tags.Pointer.Traverse.HasValue ? " tr=" + tags.Pointer.Traverse.Value.ToString(CultureInfo.InvariantCulture) : "") +
+                       (tags.Pointer.Elevation.HasValue ? " el=" + tags.Pointer.Elevation.Value.ToString(CultureInfo.InvariantCulture) : "") +
+                       (CleanKey(tags.Pointer.FireKey) != null ? " fk=" + CleanKey(tags.Pointer.FireKey) : "") + (tags.Pointer.GunAsSight ? " gs=1" : "") + (tags.Pointer.RangingGun ? " rg=1" : "") + "]");
+            if (tags.Speed != null)
+                Append(name, "[SPD s=" + Number(tags.Speed.DegreesPerSecond) + "]");
 
             return name.Length == 0 ? fallback : name.ToString();
         }
@@ -338,6 +365,28 @@ namespace ArmorFragments
             return text.Substring(0, block.Index) + "[PTR" + pairs + "]" + text.Substring(block.Index + block.Length);
         }
 
+        // The name with only the [PTR] block's tr= and el= (the traverse and elevation rotators) replaced; the rest is kept.
+        public static string WithPointerAxes(string name, int? traverse, int? elevation)
+        {
+            string text = name ?? "";
+            Match block = PointerBlock.Match(text);
+            if (!block.Success) return text;
+            string pairs = PointerAxisPair.Replace(block.Groups[1].Value, "") +
+                           (traverse.HasValue ? " tr=" + traverse.Value.ToString(CultureInfo.InvariantCulture) : "") +
+                           (elevation.HasValue ? " el=" + elevation.Value.ToString(CultureInfo.InvariantCulture) : "");
+            return text.Substring(0, block.Index) + "[PTR" + pairs + "]" + text.Substring(block.Index + block.Length);
+        }
+
+        // A key name as the tags keep it: letters and digits only (a Key of the input system: Space, F, Digit1, LeftCtrl...); null if empty.
+        public static string CleanKey(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            StringBuilder clean = new StringBuilder();
+            foreach (char c in text) if (char.IsLetterOrDigit(c) && c < 128) clean.Append(c);
+            return clean.Length > 0 ? clean.ToString() : null;
+        }
+
+        private static readonly Regex PointerAxisPair = new Regex(@"\s+(?:tr|el)=[^\s\]]+");
         private static readonly Regex PointerBlock = new Regex(@"\[PTR((?:\s+[a-z]+=[^\s\]]+)*)\s*\]");
         private static readonly Regex PointerIdPair = new Regex(@"\s+(?:c|x|k|a|s)=[^\s\]]+");
         private static readonly Regex PointerRotatorPair = new Regex(@"\s+r=[^\s\]]+");

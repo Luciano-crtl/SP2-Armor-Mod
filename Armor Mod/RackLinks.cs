@@ -34,6 +34,13 @@ namespace ArmorFragments
                 List<int> byKey = MapIds(pointer.FixedByKey, idMap, ref linksChanged);
                 List<int> rotators = MapIds(pointer.Rotators, idMap, ref linksChanged);
                 if (linksChanged) SetName(part, TagCodec.WithPointerLinks(part.Name, camera, fixedIds, byKey, rotators));
+
+                // The traverse and elevation rotators ([PTR tr= el=]).
+                int? traverse = pointer.Traverse, elevation = pointer.Elevation;
+                bool axesChanged = false;
+                if (traverse.HasValue && idMap.TryGetValue(traverse.Value, out mapped) && mapped != traverse.Value) { traverse = mapped; axesChanged = true; }
+                if (elevation.HasValue && idMap.TryGetValue(elevation.Value, out mapped) && mapped != elevation.Value) { elevation = mapped; axesChanged = true; }
+                if (axesChanged) SetName(part, TagCodec.WithPointerAxes(part.Name, traverse, elevation));
             }
 
             CannonTag cannon = TagCodec.Parse(part.Name).Cannon;
@@ -81,6 +88,9 @@ namespace ArmorFragments
                     rotators.Remove(removedId);
                     SetName(part, TagCodec.WithPointerLinks(part.Name, pointer.Camera == removedId ? null : pointer.Camera, fixedIds, byKey, rotators));
                 }
+                if (pointer != null && (pointer.Traverse == removedId || pointer.Elevation == removedId))
+                    SetName(part, TagCodec.WithPointerAxes(part.Name, pointer.Traverse == removedId ? null : pointer.Traverse,
+                                                           pointer.Elevation == removedId ? null : pointer.Elevation));
 
                 CannonTag cannon = TagCodec.Parse(part.Name).Cannon;
                 if (cannon == null || !cannon.Racks.Contains(removedId)) continue;

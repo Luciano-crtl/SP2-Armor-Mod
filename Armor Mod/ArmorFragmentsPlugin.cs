@@ -168,7 +168,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> TurretDerivative;
         internal static ConfigEntry<bool> TurretFireOnTarget, TurretLineOfFire, TurretShareHull;
         internal static ConfigEntry<float> TurretShareStrength, TurretErrorFilter;
-        internal static ConfigEntry<bool> TurretDirect, TurretAutoReach, TurretFreeCursor;
+        internal static ConfigEntry<bool> TurretDirect, TurretAutoReach, TurretFreeCursor, TurretAutoStart, TurretSightFollowsMouse;
         internal static ConfigEntry<float> TurretFreeCursorZone, TurretFreeCursorFollow, TurretFreeCursorSensitivity, TurretFreeCursorRecenter;
         internal static ConfigEntry<float> TurretDirectRamp, TurretDirectDeadband, TurretDirectGain, TurretDirectBrake;
         internal static ConfigEntry<bool> TurretGroupsHudEnabled;
@@ -178,8 +178,8 @@ namespace ArmorFragments
         internal static ConfigEntry<float> TurretAutoRange, TurretAutoAirAgl, TurretAutoAirSpeed;
         internal static ConfigEntry<bool> TurretObstacleStop;
         internal static ConfigEntry<float> TurretObstacleDegrees, TurretObstacleRetry;
-        internal static ConfigEntry<UnityEngine.InputSystem.Key> TurretSightKey;
-        internal static ConfigEntry<float> TurretSightZoom;
+        internal static ConfigEntry<UnityEngine.InputSystem.Key> TurretSightKey, TurretNextSightKey, TurretRangeLockKey;
+        internal static ConfigEntry<float> TurretSightZoom, TurretDirectBrakeRamp;
         internal static ConfigEntry<float> TurretSightSensitivity;
         internal static ConfigEntry<bool> TurretCrosshairFlipY;
 
@@ -195,7 +195,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> CrewSwitchSeconds;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.12.1";
+        public const string Version = "0.12.2";
 
         private float attachMenuAt = -1f;
 
@@ -230,6 +230,8 @@ namespace ArmorFragments
             TurretAim.Tick();
             AmmoHud.Tick();
             TurretGroupsHud.Tick();
+            MouseAimButton.Tick();
+            GunSightPart.Tick();
         }
 
         // The turret aim's circle and marker are drawn here (they invert the picture behind them).
@@ -353,7 +355,12 @@ namespace ArmorFragments
                 new ConfigDescription("When several turrets share a hull, the gap each one is closing is smoothed over this many seconds, so a hull that rocks (2 times a second) is not chased " +
                     "by the turrets, which would rock it more. In the model it lets the gain be 4 times higher for the same steadiness. 0 = off. A single turret is never smoothed.",
                     new AcceptableValueRange<float>(0f, 1.5f)));
-            TurretFreeCursor = Config.Bind("TurretAim", "FreeCursorEnabled", true,
+            TurretAutoStart = Config.Bind("TurretAim", "AutoStart", true,
+                "Mouse aim switches on by itself when you spawn a vehicle that has cannons marked Mouse aim. The mouse button at the bottom right of the flight screen (or the aim key) switches it off and on.");
+            TurretSightFollowsMouse = Config.Bind("TurretAim", "SightFollowsMouse", true,
+                "Through the sight camera the view turns with the mouse (the fixed crosshair is where you aim) and the gun circle shows where the gun really points, catching up as the turret turns. " +
+                "Off = the view stays locked to the gun and the aim point moves over it.");
+            TurretFreeCursor = Config.Bind("TurretAim", "FreeCursorWarThunder", true,
                 "In the orbit view the ring is a cursor the mouse moves over the screen, instead of being fixed at the middle: the turrets aim where the ring is. The camera does not follow " +
                 "at once: it starts turning once the ring is some way off the middle (FreeCursorZonePercent) and follows more and more as the ring goes further, so there is no hard edge, and the ring " +
                 "drifts back toward the middle as the camera catches up. The sight view, the free look (C) and Alt work as before. Off = the ring stays at the middle and the mouse turns the camera.");
@@ -377,10 +384,12 @@ namespace ArmorFragments
                 "bring the gun onto the aim, measured from where the barrel will settle), instead of closing a fraction of the gap every physics step. It speeds up over DirectRampSeconds, " +
                 "runs at the rotator's own top speed and slows down so as to arrive exactly. The hull stabilizer, the shared-hull gain division and the gap smoothing are not used. Off = the " +
                 "gain-based control, as before.");
-            TurretDirectRamp = Config.Bind("TurretAim", "DirectRampSeconds", 0.3f,
-                new ConfigDescription("With DirectControl: how long a rotator takes to go from rest to its top speed (and back). Shorter is faster to arrive and harder on the hull; with many " +
+            TurretDirectRamp = Config.Bind("TurretAim", "DirectRampSeconds", 0.5f,
+                new ConfigDescription("With DirectControl: how long a rotator takes to go from rest to its top speed (DirectBrakeRampSeconds is the way back down). Shorter is faster to arrive and harder on the hull; with many " +
                     "turrets on one hull a longer ramp is gentler.", new AcceptableValueRange<float>(0.05f, 2f)));
-            TurretDirectGain = Config.Bind("TurretAim", "DirectGain", 3f,
+            TurretDirectBrakeRamp = Config.Bind("TurretAim", "DirectBrakeRampSeconds", 0.15f,
+                new ConfigDescription("With DirectControl: how long a rotator takes to stop from its top speed. Shorter brakes later and harder, so the turret keeps its speed closer to the aim before it settles.", new AcceptableValueRange<float>(0.05f, 2f)));
+            TurretDirectGain = Config.Bind("TurretAim", "DirectGain", 4.5f,
                 new ConfigDescription("With DirectControl: near the aim a rotator's speed is this many times the angle it still has to turn (per second): 3 means 3 degrees a second for a degree to go. " +
                     "Farther away it follows the speed profile (speeds up, runs at top speed, slows to arrive). Without this zone the speed went to the top for a gap of a degree and a springy joint " +
                     "(its barrel ringing at 3 to 5 Hz) made the rotator swing back and forth: a recording showed the elevation swinging at 4.5 Hz. Lower is calmer and slower to settle.",
@@ -394,7 +403,7 @@ namespace ArmorFragments
             TurretDirectDeadband = Config.Bind("TurretAim", "DirectDeadbandDegrees", 0.05f,
                 new ConfigDescription("With DirectControl: a rotator whose angle still to go is smaller than this rests (the settled gap is noisy by about a tenth of a degree).",
                     new AcceptableValueRange<float>(0f, 1f)));
-            TurretFireOnTarget = Config.Bind("TurretAim", "FireOnlyOnTarget", true,
+            TurretFireOnTarget = Config.Bind("TurretAim", "FireOnlyOnTarget", false,
                 "In mouse aim, a turret fires only when its gun points within FireToleranceDegrees of where it should (the cursor). Turrets still turning, or stopped at their limit, hold fire while the others shoot.");
             TurretFireTolerance = Config.Bind("TurretAim", "FireToleranceDegrees", 2f,
                 new ConfigDescription("How far off the cursor a turret's gun may be and still fire (with FireOnlyOnTarget).", new AcceptableValueRange<float>(0.2f, 20f)));
@@ -434,6 +443,10 @@ namespace ArmorFragments
                 new ConfigDescription("How long a blocked rotator waits before it tries to turn further again (it also tries again at once if it backs off 2 degrees).", new AcceptableValueRange<float>(0.5f, 30f)));
             TurretFireKey = Config.Bind("TurretAim", "FireKey",UnityEngine.InputSystem.Key.Space,
                 "In mouse aim, the key that fires the cannons of the turret group that are set to fire by key in the designer (Pointer > Fire by key). 'None' disables it.");
+            TurretRangeLockKey = Config.Bind("TurretAim", "RangeLockKey", UnityEngine.InputSystem.Key.X,
+                "World of Tanks style: locks the range in use (the gun stays raised for that range) until it is pressed again, for leading a fast target.");
+            TurretNextSightKey = Config.Bind("TurretAim", "NextSightKey", UnityEngine.InputSystem.Key.V,
+                "In mouse aim: switches to the next gun sight of the guns being aimed, when they have more than one.");
             TurretSightKey = Config.Bind("TurretAim", "SightKey", UnityEngine.InputSystem.Key.LeftShift,
                 "Press it to switch to the pointer cannon's sight camera (picked in the designer: Pointer > Pick sight camera) and back. 'None' disables it.");
             TurretSightZoom = Config.Bind("TurretAim", "SightZoom", 6f,

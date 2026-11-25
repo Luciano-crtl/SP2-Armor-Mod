@@ -577,6 +577,14 @@ namespace ArmorFragments
             return feed.Available > 0;
         }
 
+        // The rounds a rack-fed cannon has left in its racks; -1 for a cannon that is not rack-fed (or whose racks are not measured yet).
+        public static int RoundsLeft(CannonScript cannon)
+        {
+            Feed feed;
+            if (cannon == null || !FeedOf.TryGetValue(cannon, out feed) || !feed.Craft.Measured) return -1;
+            return feed.Available;
+        }
+
         // What the flight screen shows for a rack (see AmmoHud): the round it holds, the rounds it has left and what it started with.
         internal struct RackHud
         {
@@ -590,18 +598,81 @@ namespace ArmorFragments
         internal static void HudRacks(AircraftScript aircraft, List<RackHud> into)
         {
             into.Clear();
+            if (aircraft == null) return;
             Craft craft;
-            if (aircraft == null || !Crafts.TryGetValue(aircraft, out craft) || !craft.Measured) return;
-            foreach (Rack rack in craft.Racks)
+            if (Crafts.TryGetValue(aircraft, out craft) && craft.Measured)
             {
-                if (!rack.HasRound || rack.Grid == null || rack.Grid.Problem != null || rack.Initial <= 0 || rack.HudName == null) continue;
+                foreach (Rack rack in craft.Racks)
+                {
+                    if (!rack.HasRound || rack.Grid == null || rack.Grid.Problem != null || rack.Initial <= 0 || rack.HudName == null) continue;
+                    into.Add(new RackHud
+                    {
+                        Id = rack.PartId,
+                        Name = rack.HudName,
+                        Rounds = rack.Exploded ? 0 : rack.Grid.Remaining,
+                        Start = rack.Initial,
+                        Warning = rack.Burning || rack.Exploded || rack.BrokenOff,
+                    });
+                }
+            }
+            HudLooseCannons(aircraft, into);
+        }
+
+        // Cannons that draw from no rack: a bar each too, named the same way ("120mm AP"), with the game's own Ammo Count (the rounds it had when
+        // first seen are its start). Cannons with unlimited ammo are left out.
+        private static readonly Dictionary<CannonScript, int> looseStart = new Dictionary<CannonScript, int>();
+        private static readonly List<CannonScript> looseCannons = new List<CannonScript>();   // the vehicle's cannons, looked up every 2 s
+        private static AircraftScript looseFor;
+        private static float looseNext;
+
+        private static void HudLooseCannons(AircraftScript aircraft, List<RackHud> into)
+        {
+            if (looseStart.Count > 64) looseStart.Clear();
+            if (aircraft != looseFor || Time.unscaledTime >= looseNext)
+            {
+                looseFor = aircraft;
+                looseNext = Time.unscaledTime + 2f;
+                looseCannons.Clear();
+                foreach (PartData each in aircraft.Aircraft.Assembly.Parts)
+                {
+                    CannonScript found = each != null && each.PartScript != null ? each.PartScript.GetModifier<CannonScript>() : null;
+                    if (found != null) looseCannons.Add(found);
+                }
+            }
+            foreach (CannonScript cannon in looseCannons)
+            {
+                if (cannon == null || cannon.PartScript == null || FeedOf.ContainsKey(cannon)) continue;
+                PartScript part = cannon.PartScript;
+                PartData data = part.Part;
+                Assets.Scripts.Flight.Combat.IWeapon weapon = cannon;
+                int rounds = weapon.CurrentAmmo;
+                if (rounds >= 100000 || rounds < 0) continue;
+                int start;
+                if (!looseStart.TryGetValue(cannon, out start) || rounds > start) looseStart[cannon] = start = rounds;
+                if (start <= 0) continue;
+
+                string name = "Cannon";
+                AmmoRound round;
+                if (AmmoRound.TryFromPart(part, out round))
+                {
+                    bool explosive = false;
+                    foreach (PartModifierData modifier in data.Modifiers)
+                    {
+                        CannonData cannonData = modifier as CannonData;
+                        if (cannonData == null) continue;
+                        explosive = cannonData.AmmoType == CannonData.ProjectileType.Explosive;
+                        break;
+                    }
+                    name = round.CaliberMm.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "mm " +
+                           Ammunition.NameOf(Ammunition.KindOf(explosive, TagCodec.Parse(data.Name).Cannon));
+                }
                 into.Add(new RackHud
                 {
-                    Id = rack.PartId,
-                    Name = rack.HudName,
-                    Rounds = rack.Exploded ? 0 : rack.Grid.Remaining,
-                    Start = rack.Initial,
-                    Warning = rack.Burning || rack.Exploded || rack.BrokenOff,
+                    Id = data.Id,
+                    Name = name,
+                    Rounds = weapon.IsDestroyed ? 0 : rounds,
+                    Start = start,
+                    Warning = weapon.IsDestroyed,
                 });
             }
         }

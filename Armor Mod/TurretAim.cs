@@ -20,6 +20,10 @@ namespace ArmorFragments
 {
     internal enum TurretFireMouse { Left, Middle }
 
+    // How mouse aim looks and zooms: World of Tanks (two-layer reticle, notched zoom, the wheel into the sight, the sight view turns with the
+    // mouse) or War Thunder (a ring and a dot per gun, smooth zoom, Shift into the sight, the right button zooms more, the sight view stays on
+    // the gun).
+
     // Mouse aim for turrets, in the style of War Thunder's third person view.
     //
     //  - Rotators marked [TUR] (the designer's "Turret" toggle) are turned by this code; cannons marked [PTR] ("Pointer" toggle)
@@ -136,6 +140,43 @@ namespace ArmorFragments
                 turret.Range = Mathf.Max(Mathf.Abs(turret.Low), Mathf.Abs(turret.High));
                 return turret;
             }
+            // A rotator picked as a gun's Traverse or Elevation: its limits are only the game's own sliders (Range, and the Min and Max of its input),
+            // or none at all when it is Unlimited (the game's shortest-angle mode). An expression on its input is for driving without mouse aim and is
+            // not read here.
+            public Turret WithStockLimits(PartScript part, JointRotatorScript script)
+            {
+                Turret turret = this;
+                float range = script.JointRotator.Range;
+                turret.Low = -range;
+                turret.High = range;
+                turret.Wraps = script.JointRotator.ShortestAngle;
+                turret.LimitSource = turret.Wraps ? "Unlimited" : "its Range";
+                if (!turret.Wraps)
+                {
+                    try
+                    {
+                        InputControllerScript controller = part != null ? part.GetModifier<InputControllerScript>() : null;
+                        InputControllerData input = controller != null ? controller.InputController : null;
+                        if (input != null)
+                        {
+                            float lo = -1f, hi = 1f;
+                            if (input.Invert && input.InvertType == InvertType.Axis) { float swap = lo; lo = -hi; hi = -swap; }
+                            float v1 = ControllerValue(input, lo), v2 = ControllerValue(input, hi);
+                            float low = Mathf.Min(Mathf.Min(v1, v2), 0f), high = Mathf.Max(Mathf.Max(v1, v2), 0f);
+                            turret.Low = low * range;
+                            turret.High = high * range;
+                            turret.LimitSource = "its Range and its input's Min and Max";
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        ArmorFragmentsPlugin.Log.LogWarning("Turret aim: couldn't read the input controller of '" + turret.Name + "' (" + e.Message + "); using its range");
+                    }
+                }
+                turret.Range = turret.Wraps ? Mathf.Max(180f, range) : Mathf.Max(Mathf.Abs(turret.Low), Mathf.Abs(turret.High));
+                return turret;
+            }
+
             public bool Solo;            // the batch test could not place it: it is turned alone
             public HashSet<int> Expect;  // the guns it should move, from the way the bodies are joined (null = can't tell)
             public readonly List<float> HistoryTime = new List<float>();    // the angle the rotator had, step by step (the last second)
@@ -169,9 +210,17 @@ namespace ArmorFragments
             public int GroupId;
             public string TurretName;  // the turret's own name (null = none)
             public HashSet<JointRotatorScript> Linked;   // the rotators the designer linked to this turret ([PTR r=]); null = none linked, the mod works out which ones move it
-            public bool FiresByKey;    // fires with the fire key instead of the mouse button
+            public bool FiresByKey;    // fires with a key instead of the mouse button
+            public Key FireKey;        // that key (its own, or the fire key of the config)
             public float NextFire;     // Time.time of the next shot
+            public float ReloadTotal;  // the wait set by the last shot (s), for the reload ring
+            public float RangeToHit = -1f;   // meters from the muzzle to what the barrel points at (-1 = nothing within reach), for the reticle
+            public float CircleRadius = -1f; // the reticle's gun circle, eased (pixels; -1 = not drawn yet)
             public CameraVantageScript Sight;
+            public bool GunAsSight;    // its own barrel is its sight (when it has no Sight)
+            public bool RangingGun;    // the gun a shared sight's range marks are worked out for
+            public float[] RangeDrop;  // War Thunder style range marks: how far (degrees) below the barrel line a target at each RangeSteps distance sits (-1 = out of reach)
+            public float Caliber;      // mm, for choosing a shared sight's ranging gun
             public readonly List<FixedCannon> FixedCannons = new List<FixedCannon>();
             public readonly List<Turret> Drivers = new List<Turret>();   // the rotators that turn this turret and no earlier turret of its group
             public readonly List<Turret> Chain = new List<Turret>();     // the rotators between this gun and the hull, the one nearest the gun first (found by FindHull)
@@ -204,6 +253,9 @@ namespace ArmorFragments
             public bool ByKey;
             public float NextFire;
         }
+
+        // The vehicle's main set: every Mouse aim gun that is in no group. It is aimed and fired like a group (and is the only one of a tank).
+        internal const int MainSet = 0;
 
         private static readonly List<int> groupIds = new List<int>();
         private static readonly Dictionary<int, string> groupNames = new Dictionary<int, string>();   // the name each group shows (from the tags)
@@ -377,6 +429,15 @@ namespace ArmorFragments
         // predictor that assumes about 130 ms ends the swing for every damping from 0.1 to 0.9 and costs a quarter of a second on a 5 degree move.
         private const float MinimumAssumedLag = 0.13f;
         private const float SmallestGapDegrees = 0.12f;   // below this gap the turret rests (the settled gap is noisy by about a tenth of a degree)
+
+        // The view's field of view (degrees), as of the last frame: when zoomed in, the turret settles finer than its usual rest band, so the gun
+        // stays on the middle of a narrow sight (at 50x the whole view is about a degree tall).
+        private static float viewFovDegrees = 60f;
+
+        private static float ZoomedRestDegrees(float shareOfView)
+        {
+            return Mathf.Max(viewFovDegrees * shareOfView, 0.0005f);
+        }
         private const float MicroStepDegrees = 0.02f;     // the least a step asks for above it
 
         // The braking term needs the gun's speed without much delay (a delay in it is what lets a swing grow): only a few physics steps of smoothing.
@@ -682,7 +743,21 @@ namespace ArmorFragments
                 }
                 if (mass > 0f) middle = sum / mass;
             }
-            pivot.transform.position = new Vector3(middle.x, pivotY, middle.z);
+            // The rise with the zoom step follows the camera's own distance, which the game eases toward the step.
+            float raise = SteppedZoom && !sight ? OrbitPivotRaise() : 0f;
+            pivot.transform.position = new Vector3(middle.x, pivotY + raise, middle.z);
+            PlaceBarrelPivot();
+        }
+
+        // A barrel sight: the orbit camera sits its distance behind the pivot, looking at it, so the pivot is put that far ahead of the muzzle
+        // along the aim: the camera is then at the muzzle, looking down the barrel's line.
+        private static void PlaceBarrelPivot()
+        {
+            if (!barrelSight || pivot == null || !Live(sightGun)) return;
+            CameraManagerScript cm = CameraManagerScript.Instance;
+            float distance = cm != null ? Mathf.Max(cm.SharedCameraDistance, 0.5f) : 1.5f;
+            Vector3 along = sightLook;   // the sight's own line of view (the mouse turns it; the gun catches up)
+            pivot.transform.position = sightGun.Cannon.TipPosition + along * (distance + 0.3f);
         }
 
         private static float pivotY;
@@ -697,7 +772,181 @@ namespace ArmorFragments
         private static CameraVantageScript sightScript;
         private static InteractiveCameraController sightController;
         private static bool sight;
-        private static float sightBase = -1f;   // the sight's normal field of view, set with the wheel (-1: the game's)
+        // World of Tanks style (stepped orbit zoom, two-layer reticle, automatic drop): switched off; the aim is War Thunder style.
+        // The stepped zoom (from the World of Tanks style, on in both): the wheel steps the orbit camera through fixed distances, the camera floats higher as it
+        // steps out, in from the closest goes into the gun sight and out below the sight's 2x comes back to the orbit view.
+        internal static bool SteppedZoom
+        {
+            get { return true; }
+        }
+
+        internal static bool WotStyle
+        {
+            get { return false; }
+        }
+
+        // World of Tanks style: the orbit camera's distances, stepped with the wheel (in from the closest goes into the gun sight).
+        private static readonly float[] OrbitDistances = { 3f, 5f, 8f, 13f, 20f, 32f };
+        private static int orbitLevel = 3;
+
+        private static void SetOrbitLevel(int level)
+        {
+            orbitLevel = Mathf.Clamp(level, 0, OrbitDistances.Length - 1);
+            if (controller == null) return;
+            if (targetDistanceRef == null)
+            {
+                try { targetDistanceRef = AccessTools.FieldRefAccess<InteractiveCameraController, float>("_targetDistance"); }
+                catch (Exception) { return; }
+            }
+            targetDistanceRef(controller) = OrbitDistances[orbitLevel];
+        }
+
+        // World of Tanks style: the game's own wheel zoom is left out (the mod steps the zoom itself).
+        internal static bool BlocksGameZoom(InteractiveCameraController instance)
+        {
+            if (!Active || instance == null) return false;
+            if (sight) return instance == sightController || instance == controller;   // the sight's zoom is stepped by the mod (a barrel sight is the orbit camera)
+            return SteppedZoom && instance == controller;
+        }
+
+        // War Thunder style: the sight's normal field of view, set with the wheel (-1: the game's).
+        private static float sightBase = -1f;
+
+        // World of Tanks style: where the sight camera looks (the mouse turns it); the gun aims at what that line meets.
+        private static Vector3 sightLook = Vector3.forward;
+
+        // The sight's magnifications, stepped with the wheel (doubling from 2x to 32x); sightZoom is the one in use, kept between visits.
+        private static readonly float[] SightMagnifications = { 2f, 4f, 8f, 16f, 32f };
+        private static int sightZoom;
+        private static bool sightWheelUsed;   // this frame's wheel already took the view into the sight
+
+        // The field of view that magnifies 'times' over the normal one.
+        private static float FovFor(float baseFov, float times)
+        {
+            return 2f * Mathf.Atan(Mathf.Tan(baseFov * 0.5f * Mathf.Deg2Rad) / Mathf.Max(times, 1f)) * Mathf.Rad2Deg;
+        }
+
+        // ---- World of Tanks style: ranging and shell drop ---------------------------------------------------------------------
+        //
+        // The range is that of what is under the reticle (the line of sight meets the ground, a building, a vehicle). The gun is then raised above
+        // the line of sight by as much as its shell falls on the way there (gravity and the shell's drag, flown like the game's physics does it:
+        // AutoAim.Solve), so the shell lands on the reticle. The range is held when the line of sight meets nothing (the sky) or jumps a long way
+        // (sweeping across a ridge): the last good range for a second, then it eases to the new one. The range lock key keeps the range as it is
+        // until it is pressed again (for leading a fast target, whose line of sight runs on to the ground far behind it).
+
+        private static bool wotRanging;           // this frame's aim was raised for the drop
+        private static float wotRange = -1f;      // the range in use (m)
+        private static float wotDrop;             // degrees the gun is raised above the line of sight
+        private static bool wotHeld, wotLocked;
+        private static float wotJumpSince = -1f, wotSkySince = -1f;
+        private static Vector3 wotLine = Vector3.forward;   // the line of sight from the muzzle, before the drop
+        private static Vector3 wotReticlePoint;            // what is under the reticle (world)
+        private static float nextDropLog;
+
+        private const float WotHoldSeconds = 1f;
+        private const float WotEaseSeconds = 0.4f;
+        private const float WotSkyRange = 2000f;  // what the range eases to when there is only sky under the reticle
+
+        private static void ApplyWotDrop(Gun lead, Vector3 muzzle, Keyboard keys)
+        {
+            if (!Live(lead)) { wotRanging = false; return; }
+            float now = Time.unscaledTime;
+            float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.1f);
+            wotLine = desired;
+            wotReticlePoint = muzzle + desired * aimDistance;
+            bool sky = aimDistance > 2900f;
+            float raw = aimDistance;
+
+            // The lock key: lock the range in use, or let it go.
+            Key lockKey = ArmorFragmentsPlugin.TurretRangeLockKey.Value;
+            if (keys != null && lockKey != Key.None && keys[lockKey].wasPressedThisFrame)
+            {
+                wotLocked = !wotLocked && wotRange > 0f;
+                Notice(wotLocked ? "range locked at " + RangeText(wotRange) : "range unlocked");
+            }
+
+            if (wotRange <= 0f) wotRange = sky ? WotSkyRange : raw;
+            wotHeld = false;
+            if (wotLocked) wotHeld = true;
+            else if (sky)
+            {
+                if (wotSkySince < 0f) wotSkySince = now;
+                wotHeld = true;
+                if (now - wotSkySince > WotHoldSeconds) wotRange = Mathf.Lerp(wotRange, WotSkyRange, 1f - Mathf.Exp(-dt / WotEaseSeconds));
+            }
+            else
+            {
+                wotSkySince = -1f;
+                bool jump = Mathf.Abs(raw - wotRange) > Mathf.Max(50f, 0.3f * wotRange);
+                if (!jump) { wotRange = raw; wotJumpSince = -1f; }
+                else
+                {
+                    if (wotJumpSince < 0f) wotJumpSince = now;
+                    wotHeld = true;
+                    if (now - wotJumpSince > WotHoldSeconds)
+                    {
+                        wotRange = Mathf.Lerp(wotRange, raw, 1f - Mathf.Exp(-dt / WotEaseSeconds));
+                        if (Mathf.Abs(raw - wotRange) < Mathf.Max(50f, 0.3f * wotRange)) wotJumpSince = -1f;
+                    }
+                }
+            }
+
+            // The gun raised for the drop at that range, along the line of sight.
+            ShellModel shell = AutoAim.ShellOf(lead.Cannon, Vector3.zero);
+            AimSolution solution = AutoAim.Solve(shell, muzzle + wotLine * Mathf.Max(wotRange, 5f), Vector3.zero, false, true);
+            wotRanging = solution.Ok;
+            if (!solution.Ok)
+            {
+                wotDrop = 0f;   // out of the shell's reach: aimed along the line of sight
+                return;
+            }
+            desired = solution.Direction;
+            aimDistance = solution.Range;
+            wotDrop = solution.DropDegrees;
+
+            // For checking that the elevation really follows: what the gun is told and where its barrel is, now and then in the log.
+            if (now >= nextDropLog && calibrated)
+            {
+                nextDropLog = now + 5f;
+                Vector3 barrel = lead.Cannon.transform.forward;
+                float barrelAbove = Mathf.Asin(Mathf.Clamp(barrel.y, -1f, 1f)) * Mathf.Rad2Deg - Mathf.Asin(Mathf.Clamp(wotLine.y, -1f, 1f)) * Mathf.Rad2Deg;
+                ArmorFragmentsPlugin.Log.LogInfo("Turret aim: range " + RangeText(wotRange) + (wotLocked ? " (locked)" : wotHeld ? " (held)" : "") + ", the gun should be " +
+                    wotDrop.ToString("F2") + " deg above the line of sight and its barrel is " + barrelAbove.ToString("F2") + " deg above it (aim error " + lead.AimError.ToString("F2") + " deg)");
+            }
+        }
+
+        // The barrel's direction turned down by the drop: where the shell is going, as a straight line to the range in use.
+        private static Vector3 Depressed(Vector3 barrel, float degrees)
+        {
+            Vector3 right = Vector3.Cross(Vector3.up, barrel);
+            if (right.sqrMagnitude < 1e-6f) return barrel;
+            return Quaternion.AngleAxis(degrees, right.normalized) * barrel;
+        }
+
+        // World of Tanks style, orbit view: the point the camera turns around rises as the camera steps out (none at the closest step, 10 m at the
+        // furthest), so the camera floats higher and looks over the tank: the reticle stays in the middle and far targets can be aimed at over
+        // its roof. Follows the camera's own distance, so it rises smoothly between the steps.
+        private const float OrbitPivotRaiseMax = 10f;
+
+        private static float OrbitPivotRaise()
+        {
+            CameraManagerScript cm = CameraManagerScript.Instance;
+            float distance = cm != null ? cm.SharedCameraDistance : OrbitDistances[orbitLevel];
+            float t = Mathf.Clamp01((distance - OrbitDistances[0]) / (OrbitDistances[OrbitDistances.Length - 1] - OrbitDistances[0]));
+            return OrbitPivotRaiseMax * t;
+        }
+
+        // The orbit camera is as close as it goes (the game stops it at 1.5 m).
+        private static bool OrbitAtClosest()
+        {
+            if (controller == null) return false;
+            if (targetDistanceRef == null)
+            {
+                try { targetDistanceRef = AccessTools.FieldRefAccess<InteractiveCameraController, float>("_targetDistance"); }
+                catch (Exception) { return false; }
+            }
+            return targetDistanceRef(controller) <= 1.6f;
+        }
         private static string notice;
         private static float noticeUntil;
 
@@ -716,16 +965,83 @@ namespace ArmorFragments
             return Active && ((sight && asked == sightController) || (!sight && ownsOrbitCursor && asked == controller));
         }
 
+        // The sights of the guns being aimed, one entry per sight (guns of one group that share a Gun Sight count once): a picked sight part, or
+        // the barrel of a gun marked "Gun as gun sight".
+        private static readonly List<Gun> sightChoices = new List<Gun>();
+        private static int sightIndex;
+        private static bool barrelSight;          // the sniper view is on the barrel: the orbit camera, pulled to the muzzle (see FollowSight)
+        private static float savedOrbitDistance = -1f;
+        private static AccessTools.FieldRef<InteractiveCameraController, float> targetDistanceRef;
+
+        private static List<Gun> SightChoices()
+        {
+            sightChoices.Clear();
+            HashSet<CameraVantageScript> seen = new HashSet<CameraVantageScript>();
+            foreach (Gun gun in guns)
+            {
+                if (!InActiveGroup(gun) || !Live(gun)) continue;
+                if (gun.Sight != null) { if (seen.Add(gun.Sight)) sightChoices.Add(gun); }
+                else if (gun.GunAsSight) sightChoices.Add(gun);
+            }
+            return sightChoices;
+        }
+
+        // The next sight key: the next gun sight of the guns being aimed (only when there is more than one).
+        private static void NextSight(CameraManagerScript cm)
+        {
+            int count = SightChoices().Count;
+            if (count < 2) { Notice(count == 0 ? "no gun sight on these guns" : "only one gun sight"); return; }
+            sightIndex = (sightIndex + 1) % count;
+            if (sight)
+            {
+                LeaveSight(cm, false);
+                EnterSight(cm);
+            }
+            else Notice("sight " + (sightIndex + 1) + " of " + count + " picked");
+        }
+
         private static void EnterSight(CameraManagerScript cm)
         {
-            // The first turret of the active group that has a sight camera.
-            Gun sightTurret = null;
-            foreach (Gun gun in guns)
-                if (InActiveGroup(gun) && Live(gun) && gun.Sight != null) { sightTurret = gun; break; }
-            sightScript = sightTurret != null ? sightTurret.Sight : null;
-            if (sightScript == null || vantageControllerRef == null || fovTargetRef == null)
+            List<Gun> choices = SightChoices();
+            if (choices.Count == 0)
             {
-                Notice("no sight camera on this group's turrets: pick one on a turret in the designer (Turret group > Pick sight camera)");
+                Notice("no gun sight on these guns: in the designer select the gun and pick a camera sight, or turn on Gun as gun sight");
+                return;
+            }
+            Gun sightTurret = choices[((sightIndex % choices.Count) + choices.Count) % choices.Count];
+
+            if (sightTurret.Sight == null)
+            {
+                // The barrel as the sight: the orbit camera stays, pulled in to its closest and moved to the muzzle every frame.
+                if (targetDistanceRef == null)
+                {
+                    try { targetDistanceRef = AccessTools.FieldRefAccess<InteractiveCameraController, float>("_targetDistance"); }
+                    catch (Exception e) { Notice("the barrel sight can't be used (" + e.Message + ")"); return; }
+                }
+                savedOrbitDistance = targetDistanceRef(controller);
+                targetDistanceRef(controller) = 1.5f;
+                sightScript = null;
+                sightController = controller;
+                sightGun = sightTurret;
+                sight = true;
+                barrelSight = true;
+                controller.MouseLook = false;
+                if (!haveDesired)
+                {
+                    desired = sightTurret.Cannon.transform.forward;
+                    haveDesired = true;
+                }
+                decoupled = returning = false; aimKnown = false;
+                fovVelocity = 0f;
+                sightLook = desired;
+                ArmorFragmentsPlugin.Log.LogInfo("Turret aim: looking down the barrel");
+                return;
+            }
+
+            sightScript = sightTurret.Sight;
+            if (vantageControllerRef == null || fovTargetRef == null)
+            {
+                Notice("the sight camera can't be used in this version of the game");
                 return;
             }
             InteractiveCameraController target = vantageControllerRef(sightScript) as InteractiveCameraController;
@@ -743,6 +1059,10 @@ namespace ArmorFragments
             sightController = target;
             sightGun = sightTurret;
             sight = true;
+            followBadSince = -1f;
+            // The sight starts looking at what the gun is aimed at.
+            Vector3 aimAt = haveDesired ? sightTurret.Cannon.TipPosition + desired * aimDistance : sightTurret.Cannon.TipPosition + sightTurret.Cannon.transform.forward * 500f;
+            sightLook = (aimAt - sightScript.transform.position).sqrMagnitude > 1f ? (aimAt - sightScript.transform.position).normalized : sightTurret.Cannon.transform.forward;
             target.MouseLook = false;
             rotationRef(target) = Vector2.zero;
             if (!haveDesired)
@@ -758,13 +1078,20 @@ namespace ArmorFragments
         // Back to the orbit view, looking where the gun is told to point.
         private static void LeaveSight(CameraManagerScript cm)
         {
+            LeaveSight(cm, true);
+        }
+
+        private static void LeaveSight(CameraManagerScript cm, bool log)
+        {
             if (!sight) return;
-            // The sight view goes back to looking along the gun for next time.
-            if (sightController != null)
+            // The sight view goes back to looking along the gun for next time (a barrel sight is the orbit camera itself: it is put back below).
+            if (sightController != null && !barrelSight)
             {
                 sightController.MouseLook = false;
                 rotationRef(sightController) = Vector2.zero;
             }
+            if (barrelSight && targetDistanceRef != null && savedOrbitDistance > 0f) targetDistanceRef(controller) = savedOrbitDistance;
+            barrelSight = false;
             decoupled = returning = false; aimKnown = false;
             sight = false;
             sightController = null;
@@ -772,7 +1099,7 @@ namespace ArmorFragments
             fovVelocity = 0f;
             try
             {
-                selectCamera.Invoke(cm, new object[] { controller, false, false });
+                if (cm.Controller != controller) selectCamera.Invoke(cm, new object[] { controller, false, false });
                 Vector3 direction = haveDesired ? desired : Vector3.forward;
                 Vector2 now = rotationRef(controller);
                 float yaw = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
@@ -784,7 +1111,7 @@ namespace ArmorFragments
             {
                 ArmorFragmentsPlugin.Log.LogWarning("Turret aim: could not leave the sight: " + e.Message);
             }
-            ArmorFragmentsPlugin.Log.LogInfo("Turret aim: back to the orbit view");
+            if (log) ArmorFragmentsPlugin.Log.LogInfo("Turret aim: back to the orbit view");
         }
 
         // ---- Switching on and off -------------------------------------------------------------------------------
@@ -801,12 +1128,17 @@ namespace ArmorFragments
             {
                 FlightSceneScript scene = FlightSceneScript.Instance;
                 AircraftScript aircraft = scene != null && scene.LocalPlayer != null ? scene.LocalPlayer.Aircraft : null;
-                if (aircraft == null) { Status = "Off: no vehicle in flight"; return; }
-                if (!EnsureRefs()) { Status = "Off: the game changed"; return; }
+                if (aircraft == null) { Refuse("no vehicle in flight"); return; }
+                if (!EnsureRefs()) { Refuse("the game changed, mouse aim can't run"); return; }
 
                 Collect(aircraft);
-                if (turrets.Count == 0) { Status = "Off: mark a rotator as Turret in the designer"; return; }
-                if (guns.Count == 0) { Status = "Off: create a turret group on a cannon in the designer"; return; }
+                if (guns.Count == 0) { Refuse("no gun has Mouse aim: in the designer select a cannon and turn on Mouse aim"); return; }
+                BuildRangeTables();
+                int unaimed = 0;
+                foreach (Gun gun in guns) if (gun.Linked == null) unaimed++;
+                string startNote = turrets.Count == 0 ? "no Traverse or Elevation picked on the guns: they fire on click and you aim them yourself"
+                    : unaimed > 0 ? unaimed + (unaimed == 1 ? " gun has" : " guns have") + " no Traverse or Elevation picked: aim " + (unaimed == 1 ? "it" : "them") + " yourself"
+                    : null;
                 controlled.Clear();
                 controlled.Add(groupIds[0]);
                 autoModes.Clear();
@@ -815,14 +1147,14 @@ namespace ArmorFragments
                 sightGun = null;
 
                 CameraManagerScript cm = CameraManagerScript.Instance;
-                if (cm == null) { Status = "Off: no camera"; return; }
+                if (cm == null) { Refuse("no camera"); return; }
                 previousController = cm.Controller;
                 cm.SelectCameraType<OrbitCameraController>();
                 controller = cm.Controller as InteractiveCameraController;
                 if (controller == null)
                 {
                     RestoreCamera(cm);
-                    Status = "Off: the camera view can't be mouse-aimed";
+                    Refuse("the camera view can't be mouse-aimed");
                     return;
                 }
 
@@ -851,20 +1183,99 @@ namespace ArmorFragments
                 fireMouse = fireKey = false;
                 fovVelocity = 0f;
                 atLimit = false;
+                wotRange = -1f; wotLocked = false; wotRanging = false; wotJumpSince = wotSkySince = -1f;
                 errorDegrees = 0f;
                 nextStatus = 0f;
                 controller.MouseLook = true;
+                if (SteppedZoom) SetOrbitLevel(3);
                 MakeHud();
                 Active = true;
                 Status = "Calibrating the turret...";
-                ArmorFragmentsPlugin.Log.LogInfo("Turret aim on: " + turrets.Count + " turret rotator(s), " + guns.Count + " turret(s) in " + groupIds.Count +
+                ArmorFragmentsPlugin.Log.LogInfo("Turret aim on: " + turrets.Count + " turret rotator(s), " + guns.Count + " gun(s) in " + groupIds.Count +
                                                  " group(s)");
+                if (startNote != null)
+                {
+                    Notice(startNote);
+                    ShowFlightMessage("Mouse aim: " + startNote);
+                }
             }
             catch (Exception e)
             {
                 ArmorFragmentsPlugin.Log.LogError("Turret aim could not start: " + e);
                 Deactivate("error");
             }
+        }
+
+        // Mouse aim could not start: the reason goes to the panel's status, the log and the flight screen.
+        private static void Refuse(string why)
+        {
+            Status = "Off: " + why;
+            ArmorFragmentsPlugin.Log.LogInfo("Turret aim can't start: " + why);
+            ShowFlightMessage("Mouse aim: " + why);
+        }
+
+        private static void ShowFlightMessage(string text)
+        {
+            try
+            {
+                FlightSceneScript scene = FlightSceneScript.Instance;
+                if (scene != null && scene.FlightUI != null) scene.FlightUI.ShowMessage(text);
+            }
+            catch (Exception) { }
+        }
+
+        // ---- Switching on by itself when a vehicle with Mouse aim guns is spawned -----------------------------------------------
+
+        private static AircraftScript autoStartedFor;   // the vehicle mouse aim last switched on for (or was switched off on) by itself
+        private static float autoStartAt = -1f;
+
+        // Called every frame while the aim is off: once per spawned vehicle, a moment after it appears, the aim is switched on if the vehicle has
+        // Mouse aim guns. Switching it off (the button or the key) is not undone until the next vehicle.
+        private static void TickAutoStart()
+        {
+            if (!ArmorFragmentsPlugin.TurretAutoStart.Value) return;
+            FlightSceneScript scene = FlightSceneScript.Instance;
+            AircraftScript aircraft = scene != null && scene.LocalPlayer != null ? scene.LocalPlayer.Aircraft : null;
+            if (aircraft == null || aircraft == autoStartedFor) { autoStartAt = -1f; return; }
+            if (autoStartAt < 0f) { autoStartAt = Time.unscaledTime + 1f; return; }   // let the vehicle settle (parts, joints, camera) first
+            if (Time.unscaledTime < autoStartAt) return;
+            autoStartAt = -1f;
+            autoStartedFor = aircraft;
+            bool any = false;
+            foreach (PartData data in aircraft.Aircraft.Assembly.Parts)
+                if (data != null && data.PartScript != null && TagCodec.Parse(data.Name).Pointer != null && data.PartScript.GetModifier<CannonScript>() != null) { any = true; break; }
+            if (!any) return;
+            ArmorFragmentsPlugin.Log.LogInfo("Turret aim: the vehicle has Mouse aim guns, switching the aim on");
+            Activate();
+        }
+
+        // The aim went off because the player switched the camera to another view (cockpit, chase...): it comes back as soon as the game's orbit
+        // view is back, for the same vehicle.
+        private static AircraftScript resumeFor;
+
+        private static void TickResume()
+        {
+            if (resumeFor == null || Active) return;
+            FlightSceneScript scene = FlightSceneScript.Instance;
+            CameraManagerScript cm = CameraManagerScript.Instance;
+            AircraftScript aircraft = scene != null && scene.LocalPlayer != null ? scene.LocalPlayer.Aircraft : null;
+            if (aircraft != resumeFor) { resumeFor = null; return; }
+            if (cm == null || !(cm.Controller is OrbitCameraController)) return;
+            resumeFor = null;
+            ArmorFragmentsPlugin.Log.LogInfo("Turret aim: back in the orbit view, switching the aim on again");
+            Activate();
+        }
+
+        // Calibration found no rotator that moves the guns: it measures again (see FinishCalibration).
+        private static int calibrationRetries;
+        private static float recalibrateAt;   // a new measurement waits until then
+
+        // The mouse button of the flight screen and the aim key: on or off. Off by hand counts as the player's choice for this vehicle.
+        public static void ToggleByHand()
+        {
+            FlightSceneScript scene = FlightSceneScript.Instance;
+            autoStartedFor = scene != null && scene.LocalPlayer != null ? scene.LocalPlayer.Aircraft : null;
+            Toggle();
         }
 
         // The inputs of the game that are plain axes from -1 to 1 (the others are Funky Trees expressions).
@@ -962,14 +1373,17 @@ namespace ArmorFragments
                             Marked = true,
                         }.WithLimits(part, script));
                 }
-                if (tags.Pointer != null && tags.Pointer.Group >= 1)   // a turret that is in no group is never aimed
+                if (tags.Pointer != null)   // a gun in no group is in the main set
                 {
                     CannonScript cannon = part.GetModifier<CannonScript>();
                     if (cannon != null)
                     {
-                        guns.Add(new Gun { Cannon = cannon, GroupId = Mathf.Max(1, tags.Pointer.Group), FiresByKey = tags.Pointer.ByKey, TurretName = tags.Pointer.TurretName });
-                        if (!groupNames.ContainsKey(Mathf.Max(1, tags.Pointer.Group)))
-                            groupNames[Mathf.Max(1, tags.Pointer.Group)] = GroupNames.Display(tags.Pointer.Name, Mathf.Max(1, tags.Pointer.Group));
+                        int groupId = tags.Pointer.Group >= 1 ? tags.Pointer.Group : MainSet;
+                        Key fireKey;
+                        if (!TryParseKey(tags.Pointer.FireKey, out fireKey)) fireKey = ArmorFragmentsPlugin.TurretFireKey.Value;
+                        guns.Add(new Gun { Cannon = cannon, GroupId = groupId, FiresByKey = tags.Pointer.ByKey, FireKey = fireKey, TurretName = tags.Pointer.TurretName });
+                        if (!groupNames.ContainsKey(groupId))
+                            groupNames[groupId] = groupId == MainSet ? "Main" : GroupNames.Display(tags.Pointer.Name, groupId);
                         pointerTags.Add(tags.Pointer);
                     }
                 }
@@ -985,6 +1399,25 @@ namespace ArmorFragments
                 PartData cameraPart;
                 if (tag.Camera.HasValue && byId.TryGetValue(tag.Camera.Value, out cameraPart) && cameraPart.PartScript != null)
                     gun.Sight = cameraPart.PartScript.GetModifier<CameraVantageScript>();
+                gun.GunAsSight = tag.GunAsSight;
+                gun.RangingGun = tag.RangingGun;
+                // The Traverse and Elevation slots: limited only by the rotators' own sliders.
+                foreach (int? slot in new[] { tag.Traverse, tag.Elevation })
+                {
+                    PartData rotatorPart;
+                    if (!slot.HasValue || !byId.TryGetValue(slot.Value, out rotatorPart) || rotatorPart.PartScript == null) continue;
+                    JointRotatorScript rotator = rotatorPart.PartScript.GetModifier<JointRotatorScript>();
+                    if (rotator == null || rotator.JointRotator == null) continue;
+                    if (gun.Linked == null) gun.Linked = new HashSet<JointRotatorScript>();
+                    gun.Linked.Add(rotator);
+                    if (!turrets.Exists(t => t.Script == rotator))
+                        turrets.Add(new Turret
+                        {
+                            Script = rotator,
+                            Name = string.IsNullOrEmpty(TagCodec.Parse(rotatorPart.Name).Label) ? rotatorPart.PartType.Name : TagCodec.Parse(rotatorPart.Name).Label,
+                        }.WithStockLimits(rotatorPart.PartScript, rotator));
+                }
+                // Rotators linked the older way ([PTR r=]): their limits are read as before, input expressions included.
                 foreach (int id in tag.Rotators)
                 {
                     PartData rotatorPart;
@@ -1165,14 +1598,16 @@ namespace ArmorFragments
             autoStates.Clear();
             try
             {
-                if (sight && sightController != null)
+                if (sight && sightController != null && !barrelSight)
                 {
                     sightController.MouseLook = false;
                     rotationRef(sightController) = Vector2.zero;
                 }
+                if (barrelSight && controller != null && targetDistanceRef != null && savedOrbitDistance > 0f) targetDistanceRef(controller) = savedOrbitDistance;
             }
             catch (Exception) { }
             sight = false;
+            barrelSight = false;
             sightController = null;
             sightGun = null;
             DestroyHud();
@@ -1238,6 +1673,27 @@ namespace ArmorFragments
             return capturing == entry ? "Press the new key... (Esc cancels)" : entry.Value.ToString();
         }
 
+        // A key typed as text: a key's name (Space, LeftCtrl, Tab, F), a single letter, or a single digit (the digit key of the top row).
+        public static bool TryParseKey(string text, out Key key)
+        {
+            key = Key.None;
+            string clean = TagCodec.CleanKey(text);
+            if (clean == null) return false;
+            if (clean.Length == 1 && char.IsDigit(clean[0])) clean = "Digit" + clean;
+            if (string.Equals(clean, "ctrl", StringComparison.OrdinalIgnoreCase) || string.Equals(clean, "control", StringComparison.OrdinalIgnoreCase)) clean = "LeftCtrl";
+            if (string.Equals(clean, "shift", StringComparison.OrdinalIgnoreCase)) clean = "LeftShift";
+            if (string.Equals(clean, "alt", StringComparison.OrdinalIgnoreCase)) clean = "LeftAlt";
+            try
+            {
+                key = (Key)Enum.Parse(typeof(Key), clean, true);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            return key != Key.None && Enum.IsDefined(typeof(Key), key);
+        }
+
         private static void TickCapture(Keyboard keyboard)
         {
             if (keyboard == null) return;
@@ -1251,6 +1707,24 @@ namespace ArmorFragments
                 }
                 capturing = null;
                 return;
+            }
+        }
+
+        // A menu of the flight screen (the menu, spawn craft, locations... the game's flyouts), a dialog, or one of the mod's panels is open: the
+        // player needs the cursor to use it, so the aim lets go of the mouse while it is open (as when Alt is held).
+        private static bool MenuWantsPointer()
+        {
+            try
+            {
+                if (UI.ArmorPanel.IsOpen || UI.ArmorPanel.MouseAimOpen) return true;
+                Assets.Scripts.Game game = Assets.Scripts.Game.Instance;
+                if (game != null && game.UserInterface != null && game.UserInterface.AnyDialogsOpen) return true;
+                FlightSceneScript scene = FlightSceneScript.Instance;
+                return scene != null && scene.FlightUI != null && scene.FlightUI.Flyouts != null && scene.FlightUI.Flyouts.Selected != null;
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
@@ -1287,13 +1761,18 @@ namespace ArmorFragments
                 if (keyboard != null)
                 {
                     Key key = ArmorFragmentsPlugin.TurretAimKey.Value;
-                    if (key != Key.None && keyboard[key].wasPressedThisFrame && !TextFieldFocused()) Toggle();
+                    if (key != Key.None && keyboard[key].wasPressedThisFrame && !TextFieldFocused()) ToggleByHand();
                 }
                 if (Active) Frame();
-                else if (Time.unscaledTime >= nextRepair)
+                else
                 {
-                    nextRepair = Time.unscaledTime + 2f;
-                    if (EnsureRefs()) RepairOrbitCamera(CameraManagerScript.Instance);
+                    TickAutoStart();
+                    TickResume();
+                    if (!Active && Time.unscaledTime >= nextRepair)
+                    {
+                        nextRepair = Time.unscaledTime + 2f;
+                        if (EnsureRefs()) RepairOrbitCamera(CameraManagerScript.Instance);
+                    }
                 }
             }
             catch (Exception e)
@@ -1314,7 +1793,8 @@ namespace ArmorFragments
             }
             if (cm.Controller != (sight ? (CameraController)sightController : controller))
             {
-                Deactivate("the camera view was changed");
+                resumeFor = craft;
+                Deactivate("the camera view was changed" + (cm.Controller != null ? " to " + cm.Controller.GetType().Name + (cm.Controller.CameraVantage != null && cm.Controller.CameraVantage.PartScript != null ? " (" + cm.Controller.CameraVantage.PartScript.Part.Name + ")" : "") : ""));
                 return;
             }
             if (ArmorFragmentsPlugin.TurretTestSingle.Value != testWasOn)
@@ -1324,11 +1804,23 @@ namespace ArmorFragments
             }
             Camera cam = cm.MainCamera;
             if (cam == null) return;
+            // The game's mouse-as-joystick (a saved setting the right button toggles in its other views) fights the mouse aim: off while the aim
+            // is on.
+            try
+            {
+                if (scene.FlightUI != null && scene.FlightUI.MouseAsJoystick)
+                {
+                    scene.FlightUI.MouseAsJoystick = false;
+                    Notice("mouse as joystick switched off (it fights the mouse aim)");
+                }
+            }
+            catch (Exception) { }
             UpdatePivot();
 
             Keyboard keyboard = Keyboard.current;
             Mouse mouse = Mouse.current;
-            bool alt = keyboard != null && (keyboard.leftAltKey.isPressed || keyboard.rightAltKey.isPressed);
+            // Alt, or a menu or panel open: the cursor is the player's (the mouse doesn't aim, the wheel doesn't zoom, nothing fires).
+            bool alt = (keyboard != null && (keyboard.leftAltKey.isPressed || keyboard.rightAltKey.isPressed)) || MenuWantsPointer();
             bool typing = TextFieldFocused();   // the chat (or any text box) has the keyboard: none of this code's keys act
             Key groupKey = ArmorFragmentsPlugin.TurretGroupKey.Value;
             if (keyboard != null && !typing && groupKey != Key.None && groupIds.Count > 1 && keyboard[groupKey].wasPressedThisFrame) NextGroup(cm);
@@ -1338,6 +1830,26 @@ namespace ArmorFragments
                 if (sight) LeaveSight(cm);
                 else EnterSight(cm);
                 if (!Active) return;
+            }
+            Key nextSightKey = ArmorFragmentsPlugin.TurretNextSightKey.Value;
+            if (keyboard != null && !typing && nextSightKey != Key.None && keyboard[nextSightKey].wasPressedThisFrame) NextSight(cm);
+
+            sightWheelUsed = false;
+            // World of Tanks style, orbit view: the wheel steps the camera's distance; in from the closest goes into the gun sight.
+            if (SteppedZoom && !sight && mouse != null && !alt && !PauseManager.Paused)
+            {
+                float scroll = mouse.scroll.ReadValue().y;
+                if (scroll > 0.01f)
+                {
+                    if (orbitLevel == 0) { if (SightChoices().Count > 0) EnterSight(cm); }
+                    else SetOrbitLevel(orbitLevel - 1);
+                    sightWheelUsed = true;
+                }
+                else if (scroll < -0.01f)
+                {
+                    SetOrbitLevel(orbitLevel + 1);
+                    sightWheelUsed = true;
+                }
             }
 
             // With no group controlled by hand there is no lead turret: the camera still orbits, and only the groups on automatic turn.
@@ -1360,7 +1872,9 @@ namespace ArmorFragments
             }
 
             Key lookKey = ArmorFragmentsPlugin.TurretLookKey.Value;
-            bool look = keyboard != null && !typing && lookKey != Key.None && keyboard[lookKey].isPressed;
+            // Free look: the look key (C); in World of Tanks style also the right mouse button, held (it does not zoom in that style).
+            bool look = (keyboard != null && !typing && lookKey != Key.None && keyboard[lookKey].isPressed)
+                        || (WotStyle && mouse != null && mouse.rightButton.isPressed && !alt);
             InteractiveCameraController viewer = sight ? sightController : controller;   // the view C frees
             bool paused = PauseManager.Paused;
             bool free = alt || paused;
@@ -1371,7 +1885,8 @@ namespace ArmorFragments
             {
                 decoupled = true;
                 returning = false;
-                savedRotation = sight ? Vector2.zero : rotationRef(controller);   // through the sight the view comes back to looking along the gun
+                // Where the view comes back to: along the sight part in War Thunder style (the view stays on the gun), else where it is now.
+                savedRotation = sight && followBroken && !barrelSight ? Vector2.zero : rotationRef(sight ? sightController : controller);
             }
             else if (!look && decoupled && !returning)
             {
@@ -1392,7 +1907,7 @@ namespace ArmorFragments
                 }
             }
 
-            bool cursorMode = ArmorFragmentsPlugin.TurretFreeCursor.Value && !sight && pointer != null;
+            bool cursorMode = ArmorFragmentsPlugin.TurretFreeCursor.Value && !WotStyle && !sight && pointer != null;   // World of Tanks: the reticle stays in the middle
             if (!cursorMode) aimKnown = false;
             if (!sight) sightDistanceAt = 0;   // the median of the sight's aim distances starts afresh with each visit
 
@@ -1427,28 +1942,44 @@ namespace ArmorFragments
 
             // The game reads the wheel only while its mouse look is on or the pointer is inside its view: with the free cursor the mouse look is
             // off and the cursor is locked, so the wheel would do nothing. Zoom the orbit camera here then, the way the game does.
-            if (!sight && !free && !returning && !controller.MouseLook) WheelZoom(controller);
+            if (!SteppedZoom && !sight && !free && !returning && !controller.MouseLook) WheelZoom(controller);
 
-            // Right button: gradual zoom (and a slower mouse while zoomed, so the aim stays fine).
+            // War Thunder style: the right button zooms in gradually while held (and the mouse is slower while zoomed, so the aim stays fine).
             float baseFov = cm.CurrentCameraFieldOfView;
-            bool zoom = mouse != null && mouse.rightButton.isPressed && !free && !returning;
+            // In the sight the wheel steps the zoom instead (the right button does not zoom there).
+            bool zoom = !WotStyle && !sight && mouse != null && mouse.rightButton.isPressed && !free && !returning;
             float restFov = baseFov;
+            float easeSeconds = 0.35f;
             if (sight)
             {
-                // Through the sight the wheel sets the normal zoom (it stays), and the right button zooms in further while it is held.
-                if (sightBase <= 0f || sightBase > baseFov) sightBase = baseFov;
-                float wheel = mouse != null && !free ? mouse.scroll.ReadValue().y : 0f;
-                if (Mathf.Abs(wheel) > 0.01f) sightBase = Mathf.Clamp(sightBase * (wheel > 0f ? 0.85f : 1f / 0.85f), 2f, baseFov);
-                restFov = sightBase;
+                float wheel = mouse != null && !free && !sightWheelUsed ? mouse.scroll.ReadValue().y : 0f;
+                // The wheel steps through the magnifications (2x, 4x, 8x, 16x, 32x), each a quick ease; in World of Tanks style out below the
+                // first goes back to the orbit view.
+                sightZoom = Mathf.Clamp(sightZoom, 0, SightMagnifications.Length - 1);
+                if (wheel > 0.01f) sightZoom = Mathf.Min(sightZoom + 1, SightMagnifications.Length - 1);
+                else if (wheel < -0.01f)
+                {
+                    if (sightZoom == 0 && SteppedZoom)
+                    {
+                        LeaveSight(cm);
+                        SetOrbitLevel(0);
+                        return;
+                    }
+                    sightZoom = Mathf.Max(sightZoom - 1, 0);
+                }
+                restFov = FovFor(baseFov, SightMagnifications[sightZoom]);
+                easeSeconds = 0.1f;
             }
             float zoomTimes = sight ? ArmorFragmentsPlugin.TurretSightZoom.Value : ArmorFragmentsPlugin.TurretZoom.Value;
             float targetFov = zoom ? Mathf.Max(restFov / zoomTimes, 2f) : restFov;
-            float fov = Mathf.SmoothDamp(cam.fieldOfView, targetFov, ref fovVelocity, 0.35f, float.PositiveInfinity, Time.unscaledDeltaTime);
+            // The sight jumps straight to its step; the orbit view's right-button zoom eases in and out.
+            float fov = sight ? targetFov : Mathf.SmoothDamp(cam.fieldOfView, targetFov, ref fovVelocity, easeSeconds, float.PositiveInfinity, Time.unscaledDeltaTime);
             cm.SetCameraFov(fov);
+            viewFovDegrees = fov;
             if (sight)
             {
                 fovTargetRef(sightController) = fov;   // the first-person view eases its own zoom toward this: keep it where it is
-                sensitivityRef(sightController) = Mathf.Clamp(fov / Mathf.Max(baseFov, 1f), 0.03f, 1f);   // for the free look
+                sensitivityRef(sightController) = Mathf.Clamp(fov / Mathf.Max(baseFov, 1f), 0.01f, 1f);   // for the free look
             }
             else sensitivityRef(controller) = Mathf.Clamp(fov / Mathf.Max(baseFov, 1f), 0.08f, 1f);
 
@@ -1458,9 +1989,9 @@ namespace ArmorFragments
             bool canFire = !free && !returning;
             ButtonControl fireButton = mouse == null ? null
                 : ArmorFragmentsPlugin.TurretFireMouseButton.Value == TurretFireMouse.Middle ? mouse.middleButton : mouse.leftButton;
-            Key fireKeyCode = ArmorFragmentsPlugin.TurretFireKey.Value;
             fireMouse = canFire && fireButton != null && fireButton.isPressed;
-            fireKey = canFire && keyboard != null && !typing && fireKeyCode != Key.None && keyboard[fireKeyCode].isPressed;
+            fireKeyboard = canFire && !typing ? keyboard : null;   // each gun that fires by key reads its own key from it
+            fireKey = AnyFireKeyHeld();
             if (fireMouse || fireKey) FireGuns();
             FireAuto();   // the groups on automatic aim fire by themselves (the player's fire input does not matter to them)
 
@@ -1475,14 +2006,34 @@ namespace ArmorFragments
             {
                 // Through the sight the mouse turns the wanted direction itself (the sight camera sits on the gun, so it can't say where to aim):
                 // right turns it right and up turns it up, about the sight camera's own axes, less when zoomed in.
+                // World of Tanks style (a Gun Sight part whose view follows the mouse): the mouse turns the sight's own line of view, and the gun
+                // aims from its muzzle at what that line meets, so the gun's circle lands exactly on the fixed sight in the middle of the view
+                // (a line parallel to the view, drawn from the muzzle, would miss it by the distance between the sight and the gun).
+                // The gun then catches up at its own speed, and each gun's ring shows where it really points.
+                bool lookAims = !barrelSight && !followBroken && sightScript != null;
+                // On the barrel: the mouse turns the line of sight too (in World of Tanks style the gun is raised above it for the drop).
+                bool barrelLook = barrelSight;
                 if (mouse != null && !free && !decoupled)
                 {
                     Vector2 delta = mouse.delta.ReadValue();
-                    float degrees = ArmorFragmentsPlugin.TurretSightSensitivity.Value * Mathf.Clamp(fov / Mathf.Max(baseFov, 1f), 0.03f, 1f);
+                    float degrees = ArmorFragmentsPlugin.TurretSightSensitivity.Value * Mathf.Clamp(fov / Mathf.Max(baseFov, 1f), 0.01f, 1f);
                     Transform view = cam.transform;
-                    desired = (Quaternion.AngleAxis(delta.x * degrees, view.up) * Quaternion.AngleAxis(-delta.y * degrees, view.right) * desired).normalized;
+                    Quaternion turn = Quaternion.AngleAxis(delta.x * degrees, view.up) * Quaternion.AngleAxis(-delta.y * degrees, view.right);
+                    if (lookAims || barrelLook) sightLook = (turn * sightLook).normalized;
+                    else desired = (turn * desired).normalized;
                 }
+                if (lookAims)
+                {
+                    Vector3 eye = sightScript.transform.position;
+                    Vector3 seen = AimPoint(eye, sightLook);
+                    Vector3 toSeen = seen - muzzle;
+                    if (toSeen.sqrMagnitude > 1f && Vector3.Dot(toSeen, sightLook) > 0f) desired = toSeen.normalized;
+                    else desired = sightLook;
+                }
+                else if (barrelLook) desired = sightLook;
+                else if (barrelSight) sightLook = desired;
                 haveDesired = true;
+                if (!decoupled && !returning) FollowSight(cam);
                 float rawDistance = Mathf.Max(5f, (AimPoint(muzzle, desired) - muzzle).magnitude);
                 sightDistances[sightDistanceAt++ % 3] = rawDistance;
                 if (sightDistanceAt < 3) { sightDistances[0] = sightDistances[1] = sightDistances[2] = rawDistance; sightDistanceAt = 3; }
@@ -1516,6 +2067,10 @@ namespace ArmorFragments
                 aimMax = Mathf.Max(aimMax, aimDistance);
             }
 
+            // World of Tanks style: the range of what is under the reticle, and the gun raised for its shell's drop at that range.
+            if (WotStyle && pointer != null && haveDesired && !decoupled) ApplyWotDrop(leadGun, muzzle, keyboard != null && !typing ? keyboard : null);
+            else if (!WotStyle) wotRanging = false;
+
             UpdateHud(cam, muzzle, look || returning);
 
             if (Time.unscaledTime >= nextStatus)
@@ -1531,6 +2086,49 @@ namespace ArmorFragments
                     : (leadGun != null && groupIds.Count > 1 ? "Group " + ControlledLabel + ": " : "") + (sight ? "Sight: " : "") + state;
             }
 
+        }
+
+        // SightFollowsMouse: the sight camera's view is turned (its own look-around, the one C uses) so that it looks along the wanted direction.
+        // The fixed crosshair in the middle of the view is then the aim, and the gun circle shows where the gun really is while it catches up.
+        // The look-around is pitch and yaw about the camera part. If the view still doesn't look where it is told after a second (the game's
+        // first-person view works differently than assumed), this is switched off for the session and the view stays on the gun.
+        private static bool followBroken;
+        private static float followBadSince = -1f;
+
+        private static void FollowSight(Camera cam)
+        {
+            if (barrelSight)
+            {
+                // The orbit camera's own angles (pitch down is +, yaw right is +, in the world), as when leaving the sight.
+                Vector2 now = rotationRef(controller);
+                Vector3 look = sightLook;   // the line of sight, not the gun (which catches up)
+                float yawWorld = Mathf.Atan2(look.x, look.z) * Mathf.Rad2Deg;
+                float pitchWorld = -Mathf.Asin(Mathf.Clamp(look.y, -1f, 1f)) * Mathf.Rad2Deg;
+                rotationRef(controller) = new Vector2(Mathf.Clamp(pitchWorld, -89f, 89f), now.y + Mathf.DeltaAngle(now.y, yawWorld));
+                PlaceBarrelPivot();
+                return;
+            }
+            if (followBroken || sightScript == null || sightController == null) return;
+            Vector3 local = Quaternion.Inverse(sightScript.transform.rotation) * sightLook;
+            float yaw = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
+            float pitch = -Mathf.Asin(Mathf.Clamp(local.y, -1f, 1f)) * Mathf.Rad2Deg;
+            rotationRef(sightController) = new Vector2(Mathf.Clamp(pitch, -89f, 89f), yaw);
+
+            // The check: the view should end up close to the wanted direction (it eases there, so give it time).
+            float off = Vector3.Angle(cam.transform.forward, sightLook);
+            if (off > 4f)
+            {
+                if (followBadSince < 0f) followBadSince = Time.unscaledTime;
+                else if (Time.unscaledTime - followBadSince > 1.5f)
+                {
+                    followBroken = true;
+                    rotationRef(sightController) = Vector2.zero;
+                    Notice("the sight view can't follow the mouse here: it stays on the gun");
+                    ArmorFragmentsPlugin.Log.LogWarning("Turret aim: the sight view stayed " + off.ToString("F1") + " deg off the aim while following the mouse (yaw " + yaw.ToString("F1") +
+                                                        ", pitch " + pitch.ToString("F1") + "); following is off for this session");
+                }
+            }
+            else followBadSince = -1f;
         }
 
         private static float Smooth01(float t)
@@ -1688,8 +2286,30 @@ namespace ArmorFragments
         {
             public CannonScript Cannon;
             public bool ByKey;
+            public Key Key;          // the key it fires with when ByKey
             public Gun Owner;
             public FixedCannon Fixed;
+        }
+
+        private static Keyboard fireKeyboard;   // this frame's keyboard when the fire keys may be read (null: not now)
+
+        private static bool KeyHeld(Key key)
+        {
+            return fireKeyboard != null && key != Key.None && fireKeyboard[key].isPressed;
+        }
+
+        // Is the key of any gun of the controlled groups that fires by key held?
+        private static bool AnyFireKeyHeld()
+        {
+            if (fireKeyboard == null) return false;
+            foreach (Gun gun in guns)
+            {
+                if (!InActiveGroup(gun)) continue;
+                if (gun.FiresByKey && KeyHeld(gun.FireKey)) return true;
+                foreach (FixedCannon fixedCannon in gun.FixedCannons)
+                    if (fixedCannon.ByKey && KeyHeld(ArmorFragmentsPlugin.TurretFireKey.Value)) return true;
+            }
+            return false;
         }
 
         private static readonly List<Shooter> shooters = new List<Shooter>();
@@ -1712,9 +2332,9 @@ namespace ArmorFragments
             foreach (Gun gun in guns)
             {
                 if (!InActiveGroup(gun)) continue;
-                shooters.Add(new Shooter { Cannon = gun.Cannon, ByKey = gun.FiresByKey, Owner = gun });
+                shooters.Add(new Shooter { Cannon = gun.Cannon, ByKey = gun.FiresByKey, Key = gun.FireKey, Owner = gun });
                 foreach (FixedCannon fixedCannon in gun.FixedCannons)
-                    shooters.Add(new Shooter { Cannon = fixedCannon.Cannon, ByKey = fixedCannon.ByKey, Owner = gun, Fixed = fixedCannon });
+                    shooters.Add(new Shooter { Cannon = fixedCannon.Cannon, ByKey = fixedCannon.ByKey, Key = ArmorFragmentsPlugin.TurretFireKey.Value, Owner = gun, Fixed = fixedCannon });
             }
             int count = shooters.Count;
             if (count == 0) return;
@@ -1724,7 +2344,7 @@ namespace ArmorFragments
             {
                 int index = (fireStart + k) % count;
                 Shooter shooter = shooters[index];
-                if (!(shooter.ByKey ? fireKey : fireMouse)) continue;
+                if (!(shooter.ByKey ? KeyHeld(shooter.Key) : fireMouse)) continue;
                 if (stagger > 0f && now < (shooter.ByKey ? gateKey : gateMouse)) continue;
                 bool fired = shooter.Fixed != null ? TryFire(shooter.Cannon, shooter.ByKey, shooter.Owner, now, ref shooter.Fixed.NextFire)
                                                    : TryFire(shooter.Cannon, shooter.ByKey, shooter.Owner, now, ref shooter.Owner.NextFire);
@@ -1749,9 +2369,24 @@ namespace ArmorFragments
         }
 
         // A turret may fire when its gun is within the tolerance of the cursor (the cannons fixed to it follow its turret's state).
+        // How far a gun is off where it should point, in degrees. A gun turned by a single rotator can only correct about that rotator's axis (a ring
+        // alone can't raise the gun), so only that part of the error counts: the rest is the player's (or the vehicle's) to fix.
+        private static float AimErrorOf(Gun gun, Vector3 want)
+        {
+            Vector3 barrel = gun.Cannon.transform.forward;
+            if (calibrated && gun.Drivers.Count == 1 && gun.Drivers[0].Script != null)
+            {
+                Vector3 axis = AxisOf(gun.Drivers[0].Script);
+                Vector3 a = Vector3.ProjectOnPlane(barrel, axis), b = Vector3.ProjectOnPlane(want, axis);
+                if (a.sqrMagnitude > 1e-6f && b.sqrMagnitude > 1e-6f) return Vector3.Angle(a, b);
+            }
+            return Vector3.Angle(barrel, want);
+        }
+
         private static bool OnTarget(Gun owner)
         {
             if (!ArmorFragmentsPlugin.TurretFireOnTarget.Value) return true;
+            if (calibrated && owner.Drivers.Count == 0) return true;   // nothing turns this gun: it fires when you click, aimed however you aim it
             return calibrated && Time.fixedTime - owner.AimStamp < 0.25f && owner.AimError <= ArmorFragmentsPlugin.TurretFireTolerance.Value;
         }
 
@@ -1778,7 +2413,7 @@ namespace ArmorFragments
         // 'automatic': a group on automatic aim fires without the fire input, and always only when on target.
         private static bool TryFire(CannonScript cannon, bool byKey, Gun owner, float now, ref float nextFire, bool automatic = false)
         {
-            if (cannon == null || cannon.PartScript == null || (!automatic && !(byKey ? fireKey : fireMouse))) return false;
+            if (cannon == null || cannon.PartScript == null) return false;
             if (now < nextFire) { refuseReload++; return false; }
             IWeapon weapon = cannon;
             if (weapon.IsDestroyed || weapon.CurrentAmmo <= 0 || !cannon.CanFire || !AmmoRacks.CanFire(cannon)) { refuseAmmo++; return false; }
@@ -1788,6 +2423,7 @@ namespace ArmorFragments
             {
                 weapon.Fire(null);
                 nextFire = now + Mathf.Max(cannon.FiringDelay * Crew.ReloadFactor(cannon), 0.02f);
+                if (owner != null && cannon == owner.Cannon) owner.ReloadTotal = nextFire - now;
                 return true;
             }
             catch (Exception e)
@@ -2169,7 +2805,7 @@ namespace ArmorFragments
                     if (toPoint.sqrMagnitude > 1f) want = toPoint.normalized;
                 }
                 gun.Want = want;
-                gun.AimError = Vector3.Angle(gun.Cannon.transform.forward, want);
+                gun.AimError = AimErrorOf(gun, want);
                 gun.AimStamp = now;
 
                 // The turrets of a group start one after another: each follows the aim as it was a few hundredths of a second earlier than the
@@ -2445,9 +3081,10 @@ namespace ArmorFragments
 
         // DirectControl: the speed (degrees a second of the rotator's angle) this step. 'gap' is the rotation (rad, about this rotator's axis) that
         // takes the barrel, as it will settle, onto the aim, so the angle still to go is that over the measured scale (degrees the barrel turns for a
-        // degree of the angle) with the calibrated sign. The speed is the one that arrives exactly with the acceleration the ramp allows
-        // (v = sqrt(2 a d)), never above the rotator's own top speed, never more than what ends the gap in one step, plus the rate the aim itself
-        // turns at (a target), and it changes by at most a * dt a step, so there is no jolt (the game's own rotator stops dead at its target).
+        // degree of the angle) with the calibrated sign. It speeds up gently (DirectRampSeconds from rest to top speed) and brakes late and hard
+        // (DirectBrakeRampSeconds from top speed to rest): the speed is the one that stops exactly with the braking (v = sqrt(2 a d)), never above
+        // the rotator's own top speed, never more than what ends the gap in one step, plus the rate the aim itself turns at (a target), and it
+        // changes by at most the ramp's acceleration a step, so there is no jolt (the game's own rotator stops dead at its target).
         private static float DirectVelocity(Turret turret, int index, float gap, float feed, float dt, float gainScale)
         {
             float scale = turret.Scales[index] > 0.05f ? Mathf.Clamp(turret.Scales[index], 0.3f, 3f) : 1f;
@@ -2455,14 +3092,15 @@ namespace ArmorFragments
             try { top = speedRef != null ? speedRef(turret.Script) : top; } catch (Exception) { }
             if (!(top > 0.5f)) top = 10f;
             float accel = top / Mathf.Max(ArmorFragmentsPlugin.TurretDirectRamp.Value, 0.02f);
+            float decel = top / Mathf.Max(ArmorFragmentsPlugin.TurretDirectBrakeRamp.Value, 0.02f);
             float remaining = turret.Signs[index] * gap * Mathf.Rad2Deg / scale;
             float feedDegrees = turret.Signs[index] * feed * Mathf.Rad2Deg;
             float distance = Mathf.Abs(remaining);
             float closing = 0f;
-            if (distance > ArmorFragmentsPlugin.TurretDirectDeadband.Value)
+            if (distance > Mathf.Min(ArmorFragmentsPlugin.TurretDirectDeadband.Value, ZoomedRestDegrees(0.001f)))
             {
-                // Near the aim the speed is a gain times the angle to go (a linear zone up to accel / gain^2); beyond it, the speed that arrives
-                // exactly with the allowed acceleration, joined to the linear part without a step. A pure square root has an unlimited gain at a
+                // Near the aim the speed is a gain times the angle to go (a linear zone up to decel / gain^2); beyond it, the speed that stops
+                // exactly with the braking, joined to the linear part without a step. A pure square root has an unlimited gain at a
                 // small gap: a springy joint whose barrel rings at 3-5 Hz showed a gap of a degree every few hundredths of a second, and the
                 // rotator was sent at its top speed back and forth (a recording: the elevation swinging at 4.5 Hz; a model reproduces it, and
                 // with this zone the swing is gone for joints from 2.5 to 4.5 Hz and a damping from 0.08 to 0.17).
@@ -2470,12 +3108,14 @@ namespace ArmorFragments
                 // detectors), never below 0.3 a second (or the configured value, if that is lower).
                 float configured = Mathf.Max(ArmorFragmentsPlugin.TurretDirectGain.Value, 0.1f);
                 float gain = Mathf.Max(configured * Mathf.Clamp01(gainScale), Mathf.Min(configured, 0.3f));
-                float linearDistance = accel / (gain * gain);
-                float speed = distance <= linearDistance ? gain * distance : Mathf.Sqrt(2f * accel * (distance - 0.5f * linearDistance));
+                float linearDistance = decel / (gain * gain);
+                float speed = distance <= linearDistance ? gain * distance : Mathf.Sqrt(2f * decel * (distance - 0.5f * linearDistance));
                 closing = Mathf.Sign(remaining) * Mathf.Min(Mathf.Min(top, speed), distance / Mathf.Max(dt, 1e-4f));
             }
             float wanted = Mathf.Clamp(feedDegrees + closing, -top, top);
-            turret.DirectV = Mathf.MoveTowards(turret.DirectV, wanted, accel * dt);
+            // Speeding up (the same way, faster) at the gentle ramp; slowing down or turning back at the braking one.
+            bool speedingUp = Mathf.Abs(wanted) > Mathf.Abs(turret.DirectV) && wanted * turret.DirectV >= 0f;
+            turret.DirectV = Mathf.MoveTowards(turret.DirectV, wanted, (speedingUp ? accel : decel) * dt);
             return turret.DirectV;
         }
 
@@ -2637,7 +3277,7 @@ namespace ArmorFragments
                 // Only when the turret has its hull to itself (or nearly): with many on a hull this step is a relay (always 2 degrees a second
                 // whichever way the gap points), and a relay on a rocking hull keeps it rocking (the recording of 14 turrets: the rings moved
                 // 0.3 degrees and the hull spun 23 degrees a second for as long as it lasted).
-                if (gun.Share <= 2 && Mathf.Abs(gap) > SmallestGapDegrees * Mathf.Deg2Rad && Mathf.Sign(step) == Mathf.Sign(gap) && Mathf.Abs(step) < MicroStepDegrees * Mathf.Deg2Rad)
+                if (gun.Share <= 2 && Mathf.Abs(gap) > Mathf.Min(SmallestGapDegrees, ZoomedRestDegrees(0.0015f)) * Mathf.Deg2Rad && Mathf.Sign(step) == Mathf.Sign(gap) && Mathf.Abs(step) < MicroStepDegrees * Mathf.Deg2Rad)
                     step = Mathf.Sign(gap) * Mathf.Min(Mathf.Abs(gap), MicroStepDegrees * Mathf.Deg2Rad);
                 float target = current + turret.Signs[index] * (step + (float)hull[i] * dt * share + (float)feed[i] * dt) * Mathf.Rad2Deg;
                 if (direct)
@@ -2895,6 +3535,7 @@ namespace ArmorFragments
 
         private static void Calibrate(float dt)
         {
+            if (Time.unscaledTime < recalibrateAt) return;   // waiting before measuring again
             if (calibration == null)
             {
                 if (!graphTried)
@@ -3080,7 +3721,7 @@ namespace ArmorFragments
                 }
                 else
                 {
-                    ArmorFragmentsPlugin.Log.LogWarning("Turret aim: rotator '" + turret.Name + "' did not move any of the cannons for " +
+                    if (calibrationRetries == 0 || calibrationRetries % 10 == 0) ArmorFragmentsPlugin.Log.LogWarning("Turret aim: rotator '" + turret.Name + "' did not move any of the cannons for " +
                         jog.Delta.ToString("F0") + " deg: it is left out");
                 }
             }
@@ -3168,7 +3809,31 @@ namespace ArmorFragments
                     else any = true;
                 }
             }
-            if (!any) { Deactivate("no marked rotator moves any turret cannon"); return; }
+            if (!any)
+            {
+                // Nothing moved the guns: the vehicle is likely still settling (a heavy one tipping over on spawn throws the measurement out).
+                // The aim stays on and measures again 2 seconds later, as long as it takes.
+                calibrationRetries++;
+                foreach (Turret turret in turrets)
+                {
+                    turret.Done = turret.Solo = turret.Usable = false;
+                    turret.Expect = null;
+                    if (turret.Signs != null) Array.Clear(turret.Signs, 0, turret.Signs.Length);
+                    if (turret.Scales != null) Array.Clear(turret.Scales, 0, turret.Scales.Length);
+                    if (turret.Lags != null) Array.Clear(turret.Lags, 0, turret.Lags.Length);
+                }
+                calibration = null;
+                calibrated = false;
+                graphTried = false;
+                edges = null;
+                calBase = null;
+                recalibrateAt = Time.unscaledTime + 2f;
+                Status = "Calibrating again: no rotator moved the guns (the vehicle may still be settling)";
+                if (calibrationRetries == 1 || calibrationRetries % 10 == 0)
+                    ArmorFragmentsPlugin.Log.LogInfo("Turret aim: no marked rotator moved the guns (the vehicle may still be settling); measuring again in 2 s (try " + calibrationRetries + ")");
+                return;
+            }
+            calibrationRetries = 0;
             FindHull();
         }
 
@@ -3352,57 +4017,458 @@ namespace ArmorFragments
             ringImage = markerImage = null;
         }
 
-        // The circle is where the turret is told to point (the aim point, seen from the camera); the marker is where the barrel really points at
-        // that distance. They meet when the gun is on target. Through the sight the camera sits on the gun, so the marker is not drawn.
-        // Both are drawn like the crosshair of Minecraft: not in a color of their own but inverting what is behind them, so they always stand
-        // out (see OnGui). The canvas pictures above are only the fallback if that can not be drawn.
-        private static bool hudRingShown, hudMarkerShown;
-        private static Vector2 hudRingAt, hudMarkerAt;   // screen pixels, y up
-        private static readonly List<Vector2> hudMarkers = new List<Vector2>();   // one for each turret of the active group
+        // ---- The reticle ---------------------------------------------------------------------------------------------
+        //
+        // Two layers, drawn over everything in OnGUI:
+        //  - the fixed sight: where you aim (the aim point seen from the camera; the middle of the screen unless the free cursor is on). Through the
+        //    sight camera it is a full gunsight (thick outer bars, thin inner lines, a few ticks, a chevron in the middle); in the orbit view only
+        //    its middle part.
+        //  - a gun circle for each gun being aimed: where that gun's barrel really points (the first thing along the barrel, or a far point). It
+        //    trails the fixed sight while the turret turns and sits on it when the gun is on target; it is bigger the further the gun is off.
+        //    In it, a small chevron that lights green when the gun is on target, and around it a ring of segments that fills as the gun reloads.
+        // Under the right wing of the fixed sight: the lead gun's reload countdown. Under each gun circle: its range. (The rounds left are on
+        // the ammo rack bars at the bottom left, AmmoHud.cs.)
+        // Every line and letter has a thin dark edge, so it reads on sky and on mud. Perfect aim: the circle shows no spread (there is none yet).
+
+        private sealed class GunMark
+        {
+            public Vector2 At;        // screen pixels, y up
+            public float Radius;
+            public bool Lit;          // on target
+            public float Reload;      // 0..1 (1 = ready)
+            public string Range;      // "850 m" ("" = nothing in reach)
+        }
+
+        private static readonly List<GunMark> gunMarks = new List<GunMark>();
+        private static bool hudRingShown;
+        private static Vector2 hudRingAt;   // the fixed sight, screen pixels, y up
+        private static bool hudSightView, hudFreeLook;
+        private static string hudReload = "", hudZoom = "";
+        private static bool hudReloading;
 
         private static void UpdateHud(Camera cam, Vector3 muzzle, bool freeLook)
         {
-            hudRingShown = hudMarkerShown = false;
-            hudMarkers.Clear();
+            hudRingShown = false;
+            hudSightView = sight;
+            hudFreeLook = freeLook;
+            gunMarks.Clear();
+            float now = Time.time;
+            float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.1f);
+
             if (haveDesired)
             {
-                Vector3 aimPoint = muzzle + desired * aimDistance;
-                Vector3 ring = cam.WorldToScreenPoint(aimPoint);
+                Vector3 ring = cam.WorldToScreenPoint(WotStyle && wotRanging ? wotReticlePoint : muzzle + desired * aimDistance);   // World of Tanks: the reticle is on the line of sight, the gun above it
                 hudRingShown = ring.z > 0f;
                 hudRingAt = new Vector2(ring.x, ring.y);
-                // Where each turret's barrel really points, at the distance of the aim point (not through the sight: the camera is on the gun).
-                if (!sight)
+            }
+            else if (Lead() == null)
+            {
+                hudRingShown = false;
+            }
+
+            // War Thunder style: only the ring and a dot per gun (where its barrel points at the aim's distance).
+            if (!WotStyle)
+            {
+                wtMarkers.Clear();
+                if (haveDesired)   // also in the sight: each gun's ring, catching up with the crosshair
                 {
+                    Vector3 aimPoint = muzzle + desired * aimDistance;
                     foreach (Gun gun in guns)
                     {
                         if (!InActiveGroup(gun) || !Live(gun)) continue;
                         Vector3 tip = gun.Cannon.TipPosition;
                         Vector3 marker = cam.WorldToScreenPoint(tip + gun.Cannon.transform.forward.normalized * Mathf.Max((aimPoint - tip).magnitude, 1f));
-                        if (marker.z > 0f) hudMarkers.Add(new Vector2(marker.x, marker.y));
+                        if (marker.z > 0f) wtMarkers.Add(new Vector2(marker.x, marker.y));
                     }
                 }
-                hudMarkerShown = hudMarkers.Count > 0;
-                if (hudMarkerShown) hudMarkerAt = hudMarkers[0];
+                UpdateRangeMarks(cam);
+                if (hudRoot != null && ringImage != null) { ringImage.enabled = false; markerImage.enabled = false; }
+                return;
             }
 
-            if (hudRoot == null || ringImage == null) return;
-            bool canvas = !InvertingCrosshairReady();
-            ringImage.enabled = canvas && hudRingShown;
-            markerImage.enabled = canvas && hudMarkerShown;
-            ringRect.position = new Vector3(hudRingAt.x, hudRingAt.y, 0f);
-            markerRect.position = new Vector3(hudMarkerAt.x, hudMarkerAt.y, 0f);
-            ringImage.color = freeLook ? new Color(0.45f, 0.85f, 1f, 0.9f) : new Color(1f, 1f, 1f, 0.85f);
-            markerImage.color = new Color(1f, 1f, 1f, 0.9f);
+            int raycasts = 0;
+            Gun lead = Lead();
+            foreach (Gun gun in guns)
+            {
+                if (!InActiveGroup(gun) || !Live(gun)) continue;
+                Vector3 tip = gun.Cannon.TipPosition;
+                Vector3 forward = gun.Cannon.transform.forward.normalized;
+                // Where the barrel points: the first thing along it (a few guns a frame), else the aim's distance.
+                Vector3 hit;
+                if (WotStyle && wotRanging)
+                {
+                    // Where the shell lands: the barrel turned down by the drop, out to the range in use (on the reticle when the gun is on).
+                    hit = tip + Depressed(forward, wotDrop) * Mathf.Max(wotRange, 5f);
+                    gun.RangeToHit = -1f;
+                }
+                else if (raycasts < 6)
+                {
+                    raycasts++;
+                    hit = AimPoint(tip, forward);
+                    float distance = (hit - tip).magnitude;
+                    gun.RangeToHit = distance < 2999f ? distance : -1f;
+                    if (gun.RangeToHit < 0f) hit = tip + forward * Mathf.Max(aimDistance, 50f);
+                }
+                else hit = tip + forward * Mathf.Max(aimDistance, 50f);
+                Vector3 screen = cam.WorldToScreenPoint(hit);
+                if (screen.z <= 0f) continue;
+
+                // Through the sight camera, which sits on the gun when it does not follow the mouse, the gun's own circle is the middle of the view.
+                float scale = Mathf.Max(Screen.height / 1080f, 0.6f);
+                float off = gun.Drivers.Count == 0 ? 0f : Mathf.Clamp(gun.AimError, 0f, 10f);
+                float target = (sight ? 26f : 18f) * scale + off * 3.5f * scale;
+                gun.CircleRadius = gun.CircleRadius < 0f ? target : Mathf.Lerp(gun.CircleRadius, target, 1f - Mathf.Exp(-dt / 0.12f));
+
+                float reload = gun.ReloadTotal > 0f && gun.NextFire > now ? 1f - (gun.NextFire - now) / gun.ReloadTotal : 1f;
+                gunMarks.Add(new GunMark
+                {
+                    At = new Vector2(screen.x, screen.y),
+                    Radius = gun.CircleRadius,
+                    Lit = calibrated && (gun.Drivers.Count == 0 || OnTargetStrict(gun)),
+                    Reload = Mathf.Clamp01(reload),
+                    Range = gun.RangeToHit > 0f ? RangeText(gun.RangeToHit) : "",
+                });
+            }
+
+            // The lead gun's reload, under the right wing of the fixed sight.
+            hudReloading = lead != null && lead.NextFire > now;
+            hudReload = lead == null ? "" : hudReloading ? (lead.NextFire - now).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " s" : "READY";
+            CameraManagerScript cm = CameraManagerScript.Instance;
+            float zoom = cm != null && cam.fieldOfView > 0.01f ? cm.CurrentCameraFieldOfView / cam.fieldOfView : 1f;
+            hudZoom = zoom.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "x";
+
+
+            if (hudRoot != null && ringImage != null)
+            {
+                ringImage.enabled = false;
+                markerImage.enabled = false;
+            }
         }
 
-        // ---- The crosshair that inverts what is behind it ------------------------------------------------------------
+        // ---- Drawing --------------------------------------------------------------------------------------------------
+
+        private static Material lineMaterial;
+        private static bool lineTried;
+
+        // The plain colored shader every Unity player has, blended by its alpha.
+        private static bool ReticleReady()
+        {
+            if (!lineTried)
+            {
+                lineTried = true;
+                try
+                {
+                    Shader shader = Shader.Find("Hidden/Internal-Colored");
+                    if (shader != null)
+                    {
+                        lineMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                        lineMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                        lineMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                        lineMaterial.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                        lineMaterial.SetInt("_ZWrite", 0);
+                        if (lineMaterial.HasProperty("_ZTest")) lineMaterial.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
+                    }
+                    ArmorFragmentsPlugin.Log.LogInfo("Turret aim HUD: " + (lineMaterial != null ? "the reticle is drawn with Hidden/Internal-Colored" : "Hidden/Internal-Colored is not in this build, no reticle"));
+                }
+                catch (Exception e)
+                {
+                    lineMaterial = null;
+                    ArmorFragmentsPlugin.Log.LogWarning("Turret aim HUD: the reticle could not be made (" + e.Message + ")");
+                }
+            }
+            return lineMaterial != null;
+        }
+
+        private static readonly Color Ink = new Color(0.96f, 0.95f, 0.90f, 0.95f);
+        private static readonly Color InkDim = new Color(0.96f, 0.95f, 0.90f, 0.25f);
+        private static readonly Color Edge2 = new Color(0f, 0f, 0f, 0.55f);
+        private static readonly Color LitGreen = new Color(0.49f, 0.89f, 0.55f, 1f);
+        private static readonly Color Amber = new Color(1f, 0.71f, 0.28f, 1f);
+        private static readonly Color Muted = new Color(0.79f, 0.78f, 0.73f, 0.9f);
+
+        // A straight stroke of width w (pixels, y down).
+        private static void Stroke(float x0, float y0, float x1, float y1, float w, Color color)
+        {
+            float dx = x1 - x0, dy = y1 - y0;
+            float length = Mathf.Sqrt(dx * dx + dy * dy);
+            if (length < 1e-4f) return;
+            float nx = -dy / length * w * 0.5f, ny = dx / length * w * 0.5f;
+            // Round-ish ends: the stroke runs half a width past each end.
+            float ex = dx / length * w * 0.5f, ey = dy / length * w * 0.5f;
+            GL.Color(color);
+            GL.Vertex3(x0 - ex + nx, y0 - ey + ny, 0f);
+            GL.Vertex3(x1 + ex + nx, y1 + ey + ny, 0f);
+            GL.Vertex3(x1 + ex - nx, y1 + ey - ny, 0f);
+            GL.Vertex3(x0 - ex + nx, y0 - ey + ny, 0f);
+            GL.Vertex3(x1 + ex - nx, y1 + ey - ny, 0f);
+            GL.Vertex3(x0 - ex - nx, y0 - ey - ny, 0f);
+        }
+
+        // An arc of a circle (angles in radians, 0 = up, clockwise on screen).
+        private static void ArcStroke(float cx, float cy, float r, float a0, float a1, float w, Color color)
+        {
+            int segments = Mathf.Max(2, Mathf.CeilToInt(Mathf.Abs(a1 - a0) / (Mathf.PI * 2f) * 64f));
+            float inner = r - w * 0.5f, outer = r + w * 0.5f;
+            GL.Color(color);
+            for (int i = 0; i < segments; i++)
+            {
+                float t0 = a0 + (a1 - a0) * i / segments, t1 = a0 + (a1 - a0) * (i + 1) / segments;
+                float s0 = Mathf.Sin(t0), c0 = -Mathf.Cos(t0), s1 = Mathf.Sin(t1), c1 = -Mathf.Cos(t1);
+                GL.Vertex3(cx + s0 * inner, cy + c0 * inner, 0f);
+                GL.Vertex3(cx + s1 * inner, cy + c1 * inner, 0f);
+                GL.Vertex3(cx + s1 * outer, cy + c1 * outer, 0f);
+                GL.Vertex3(cx + s0 * inner, cy + c0 * inner, 0f);
+                GL.Vertex3(cx + s1 * outer, cy + c1 * outer, 0f);
+                GL.Vertex3(cx + s0 * outer, cy + c0 * outer, 0f);
+            }
+        }
+
+        // The edge pass draws everything wider in dark, the ink pass on top.
+        private static bool edgePass;
+
+        private static void Line(float x0, float y0, float x1, float y1, float w, Color color)
+        {
+            if (edgePass) Stroke(x0, y0, x1, y1, w + 2.4f, Edge2);
+            else Stroke(x0, y0, x1, y1, w, color);
+        }
+
+        private static void Arc(float cx, float cy, float r, float a0, float a1, float w, Color color)
+        {
+            if (edgePass) ArcStroke(cx, cy, r, a0, a1, w + 2.4f, Edge2);
+            else ArcStroke(cx, cy, r, a0, a1, w, color);
+        }
+
+        private static void DrawFixedSight(float cx, float cy, float s, bool full)
+        {
+            // Middle: the chevron (its tip on the aim point) and the thin inner lines with a gap around it.
+            Line(cx - 9f * s, cy + 9f * s, cx, cy + 1f * s, 1.8f * s, Ink);
+            Line(cx, cy + 1f * s, cx + 9f * s, cy + 9f * s, 1.8f * s, Ink);
+            float inner = full ? 90f : 46f;
+            Line(cx - inner * s, cy, cx - 16f * s, cy, 1.4f * s, Ink);
+            Line(cx + 16f * s, cy, cx + inner * s, cy, 1.4f * s, Ink);
+            Line(cx, cy + 16f * s, cx, cy + inner * s, 1.4f * s, Ink);
+            if (!full) return;
+            // The gunsight: thick outer bars, ticks on the inner lines, and the drop ladder below.
+            Line(cx - 300f * s, cy, cx - 90f * s, cy, 4f * s, Ink);
+            Line(cx + 90f * s, cy, cx + 300f * s, cy, 4f * s, Ink);
+            Line(cx, cy + 90f * s, cx, cy + 260f * s, 4f * s, Ink);
+            foreach (float d in new[] { 40f, 65f })
+            {
+                Line(cx - d * s, cy - 5f * s, cx - d * s, cy + 5f * s, 1.4f * s, Ink);
+                Line(cx + d * s, cy - 5f * s, cx + d * s, cy + 5f * s, 1.4f * s, Ink);
+            }
+            foreach (float d in new[] { 40f, 65f })
+                Line(cx - 7f * s, cy + d * s, cx + 7f * s, cy + d * s, 1.4f * s, Ink);
+        }
+
+        private static void DrawGunMark(GunMark mark, float x, float y, float s)
+        {
+            float r = mark.Radius;
+            Arc(x, y, r, 0f, Mathf.PI * 2f, 1.6f * s, Ink);
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i * Mathf.PI / 4f, len = (i % 2 == 0 ? 5f : 3f) * s;
+                float sx = Mathf.Sin(a), sy = -Mathf.Cos(a);
+                Line(x + sx * (r + 3f * s), y + sy * (r + 3f * s), x + sx * (r + 3f * s + len), y + sy * (r + 3f * s + len), 1.4f * s, Ink);
+            }
+            // The reload ring: 24 segments, filled clockwise from the top.
+            const int Segments = 24;
+            float ringR = r + 13f * s, gap = 0.06f, step = Mathf.PI * 2f / Segments;
+            int filled = Mathf.FloorToInt(mark.Reload * Segments + 1e-4f);
+            for (int i = 0; i < Segments; i++)
+            {
+                Color color = mark.Reload >= 1f ? new Color(LitGreen.r, LitGreen.g, LitGreen.b, 0.75f) : i < filled ? Amber : InkDim;
+                Arc(x, y, ringR, i * step + gap, (i + 1) * step - gap, 2.2f * s, color);
+            }
+            // The small chevron: lit when the gun is on target.
+            Color chevron = mark.Lit ? LitGreen : Muted;
+            Line(x - 7f * s, y + 5f * s, x, y - 2f * s, 2.4f * s, chevron);
+            Line(x, y - 2f * s, x + 7f * s, y + 5f * s, 2.4f * s, chevron);
+        }
+
+        private static GUIStyle textStyle;
+
+        private static void Label(float x, float y, string text, int size, Color color, TextAnchor anchor)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            if (textStyle == null) textStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, wordWrap = false, clipping = TextClipping.Overflow };
+            textStyle.fontSize = size;
+            textStyle.alignment = anchor;
+            Rect rect = new Rect(x - 300f, y - size, 600f, size * 2f);
+            if (anchor == TextAnchor.MiddleLeft) rect = new Rect(x, y - size, 600f, size * 2f);
+            else if (anchor == TextAnchor.MiddleRight) rect = new Rect(x - 600f, y - size, 600f, size * 2f);
+            textStyle.normal.textColor = new Color(0f, 0f, 0f, 0.7f);
+            foreach (Vector2 o in new[] { new Vector2(1f, 1f), new Vector2(-1f, 1f), new Vector2(1f, -1f), new Vector2(-1f, -1f) })
+                GUI.Label(new Rect(rect.x + o.x, rect.y + o.y, rect.width, rect.height), text, textStyle);
+            textStyle.normal.textColor = color;
+            GUI.Label(rect, text, textStyle);
+        }
+
+        // ---- War Thunder style: the gunsight's range marks -----------------------------------------------------------------
+        //
+        // Through a sight, a crosshair on the line of the ranging gun's barrel, with a mark below it for each range: put the mark of the target's range
+        // on the target and the shell lands there. The marks come from the gun's own shell (its muzzle velocity, gravity and the shell's drag, flown
+        // like the game's physics does it, see AutoAim.Solve), worked out for each gun every time the aim starts (each spawn). On screen each mark is
+        // where that range really is from the sight: the barrel line turned down by the drop, at that distance, seen from the camera, so a sight that
+        // sits away from the gun (a ship's director) shows them in the right place too.
+        // The ranging gun: the sight's own gun; for a Gun Sight shared by the guns of a group, the one marked Ranging gun, else the biggest.
+
+        private static readonly float[] RangeSteps = BuildRangeSteps();
+
+        private static float[] BuildRangeSteps()
+        {
+            List<float> steps = new List<float>();
+            for (float r = 100f; r <= 2000f; r += 100f) steps.Add(r);
+            for (float r = 2500f; r <= 6000f; r += 500f) steps.Add(r);
+            return steps.ToArray();
+        }
+
+        private static void BuildRangeTables()
+        {
+            foreach (Gun gun in guns)
+            {
+                gun.RangeDrop = null;
+                gun.Caliber = 0f;
+                try
+                {
+                    AmmoRound round;
+                    if (gun.Cannon.PartScript != null && AmmoRound.TryFromPart(gun.Cannon.PartScript, out round)) gun.Caliber = round.CaliberMm;
+                    ShellModel shell = AutoAim.ShellOf(gun.Cannon, Vector3.zero);
+                    shell.Muzzle = Vector3.zero;
+                    if (shell.Speed < 1f) continue;
+                    float[] drop = new float[RangeSteps.Length];
+                    StringBuilder log = new StringBuilder();
+                    for (int i = 0; i < RangeSteps.Length; i++)
+                    {
+                        AimSolution solution = AutoAim.Solve(shell, Vector3.forward * RangeSteps[i], Vector3.zero, false, true);
+                        drop[i] = solution.Ok ? solution.DropDegrees : -1f;
+                        if (solution.Ok && (i == 4 || i == 9 || i == 19)) log.Append(RangeSteps[i].ToString("F0")).Append(" m ").Append(solution.DropDegrees.ToString("F2")).Append(" deg, ");
+                    }
+                    gun.RangeDrop = drop;
+                    ArmorFragmentsPlugin.Log.LogInfo("Turret aim: range marks for a " + gun.Caliber.ToString("F0") + " mm gun at " + shell.Speed.ToString("F0") + " m/s: " + log);
+                }
+                catch (Exception e)
+                {
+                    ArmorFragmentsPlugin.Log.LogWarning("Turret aim: no range marks for a gun (" + e.Message + ")");
+                }
+            }
+        }
+
+        // The gun the sight in use is ranged for.
+        private static Gun RangingGunOf(Gun sightOwner)
+        {
+            if (sightOwner == null || sightOwner.Sight == null) return sightOwner;
+            Gun marked = null, biggest = null;
+            foreach (Gun gun in guns)
+            {
+                if (gun.Sight != sightOwner.Sight || !Live(gun)) continue;
+                if (gun.RangingGun && marked == null) marked = gun;
+                if (biggest == null || gun.Caliber > biggest.Caliber) biggest = gun;
+            }
+            return marked ?? biggest ?? sightOwner;
+        }
+
+        private struct RangeMark
+        {
+            public Vector2 At;      // screen pixels, y up
+            public float Meters;
+        }
+
+        private static readonly List<RangeMark> rangeMarks = new List<RangeMark>();
+        private static Vector2 rangeCenter;   // the sight's line of view, far out (screen pixels, y up)
+        private static bool rangeShown;
+
+        private static void UpdateRangeMarks(Camera cam)
+        {
+            rangeMarks.Clear();
+            rangeShown = false;
+            if (!sight || hudFreeLook) return;
+            Gun gun = RangingGunOf(sightGun);
+            if (!Live(gun) || gun.RangeDrop == null) return;
+            // On the sight's own line of view (the middle of the scope): the guns aim at what it meets, so a mark put on the target, the shell lands there.
+            Vector3 tip = cam.transform.position;
+            Vector3 bore = cam.transform.forward.normalized;
+            Vector3 right = Vector3.Cross(Vector3.up, bore);
+            if (right.sqrMagnitude < 1e-4f) return;   // pointing straight up or down
+            right.Normalize();
+            Vector3 center = cam.WorldToScreenPoint(tip + bore * 3000f);
+            if (center.z <= 0f) return;
+            rangeCenter = new Vector2(center.x, center.y);
+            rangeShown = true;
+            for (int i = 0; i < RangeSteps.Length; i++)
+            {
+                float drop = gun.RangeDrop[i];
+                if (drop < 0f) break;
+                Vector3 line = Quaternion.AngleAxis(drop, right) * bore;
+                Vector3 at = cam.WorldToScreenPoint(tip + line * RangeSteps[i]);
+                if (at.z <= 0f) continue;
+                rangeMarks.Add(new RangeMark { At = new Vector2(at.x, at.y), Meters = RangeSteps[i] });
+            }
+        }
+
+        // The sight's crosshair and range marks (drawn with the plain alpha lines and a dark edge, like the World of Tanks reticle).
+        private static void DrawRangeSight(float height, bool flip)
+        {
+            if (!rangeShown || !ReticleReady()) return;
+            float s = Mathf.Max(height / 1080f, 0.6f);
+            float cx = rangeCenter.x, cy = flip ? rangeCenter.y : height - rangeCenter.y;
+            float bottom = cy + 40f * s;
+            foreach (RangeMark mark in rangeMarks) bottom = Mathf.Max(bottom, (flip ? mark.At.y : height - mark.At.y) + 12f * s);
+
+            GL.PushMatrix();
+            try
+            {
+                lineMaterial.SetPass(0);
+                GL.LoadPixelMatrix(0f, Screen.width, height, 0f);
+                GL.Begin(GL.TRIANGLES);
+                for (int pass = 0; pass < 2; pass++)
+                {
+                    edgePass = pass == 0;
+                    // The crosshair: a horizontal line with a gap round the middle, and the vertical line down through the marks.
+                    Line(cx - 220f * s, cy, cx - 12f * s, cy, 1.4f * s, Ink);
+                    Line(cx + 12f * s, cy, cx + 220f * s, cy, 1.4f * s, Ink);
+                    Line(cx, cy - 60f * s, cx, cy - 12f * s, 1.4f * s, Ink);
+                    Line(cx, cy + 12f * s, cx, bottom, 1.4f * s, InkDim);
+                    float lastY = float.NegativeInfinity;
+                    foreach (RangeMark mark in rangeMarks)
+                    {
+                        float x = mark.At.x, y = flip ? mark.At.y : height - mark.At.y;
+                        bool major = Mathf.Approximately(mark.Meters % 400f, 0f) || mark.Meters >= 2000f;
+                        if (y - lastY < (major ? 3f : 6f) * s) continue;   // marks too close together are left out
+                        lastY = y;
+                        float half = (major ? 14f : 7f) * s;
+                        Line(x - half, y, x + half, y, (major ? 1.6f : 1.1f) * s, Ink);
+                    }
+                }
+                GL.End();
+            }
+            finally
+            {
+                GL.PopMatrix();
+                edgePass = false;
+            }
+
+            int size = Mathf.RoundToInt(13f * s);
+            float labelY = float.NegativeInfinity;
+            foreach (RangeMark mark in rangeMarks)
+            {
+                bool major = Mathf.Approximately(mark.Meters % 400f, 0f) || mark.Meters >= 2000f;
+                if (!major) continue;
+                float y = flip ? mark.At.y : height - mark.At.y;
+                if (y - labelY < 14f * s) continue;
+                labelY = y;
+                Label(mark.At.x + 20f * s, y, (mark.Meters / 100f).ToString("F0"), size, Ink, TextAnchor.MiddleLeft);
+            }
+        }
+
+        // ---- War Thunder style: Luciano's crosshair ---------------------------------------------------------------
+        // A thin ring where you aim and a small dot where each gun's barrel points (at the aim's distance; not through the sight, where the
+        // camera is on the gun). Not in a color of their own: they invert what is behind them, like the crosshair of Minecraft.
 
         private static Material invertMaterial;
         private static bool invertTried;
 
-        // Blend (1 - what is there) x (this) + what is there x (1 - this): white inverts the color behind it, black leaves it alone, grays blend, so
-        // a soft edge (a color that falls to black) is anti-aliased. It uses the plain colored shader every Unity player has, with its blend set.
-        private static bool InvertingCrosshairReady()
+        private static bool InvertingReady()
         {
             if (!invertTried)
             {
@@ -3419,33 +4485,28 @@ namespace ArmorFragments
                         invertMaterial.SetInt("_ZWrite", 0);
                         if (invertMaterial.HasProperty("_ZTest")) invertMaterial.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
                     }
-                    ArmorFragmentsPlugin.Log.LogInfo("Turret aim HUD: " + (invertMaterial != null
-                        ? "the circle and the marker invert the picture behind them (Hidden/Internal-Colored)"
-                        : "Hidden/Internal-Colored is not in this build, plain white pictures are used"));
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
                     invertMaterial = null;
-                    ArmorFragmentsPlugin.Log.LogWarning("Turret aim HUD: the inverting crosshair could not be made (" + e.Message + "), plain white pictures are used");
                 }
             }
             return invertMaterial != null;
         }
 
-        private static void Vertex(float x, float y, float brightness)
+        private static void InvertVertex(float x, float y, float brightness)
         {
             GL.Color(new Color(brightness, brightness, brightness, 1f));
             GL.Vertex3(x, y, 0f);
         }
 
-        private static void Quad(float x0, float y0, float b0, float x1, float y1, float b1, float x2, float y2, float b2, float x3, float y3, float b3)
+        private static void InvertQuad(float x0, float y0, float b0, float x1, float y1, float b1, float x2, float y2, float b2, float x3, float y3, float b3)
         {
-            Vertex(x0, y0, b0); Vertex(x1, y1, b1); Vertex(x2, y2, b2);
-            Vertex(x0, y0, b0); Vertex(x2, y2, b2); Vertex(x3, y3, b3);
+            InvertVertex(x0, y0, b0); InvertVertex(x1, y1, b1); InvertVertex(x2, y2, b2);
+            InvertVertex(x0, y0, b0); InvertVertex(x2, y2, b2); InvertVertex(x3, y3, b3);
         }
 
-        // A thin ring: full white along the middle, falling to nothing a little to either side.
-        private static void DrawRing(float cx, float cy, float radius, float halfWidth)
+        private static void InvertRing(float cx, float cy, float radius, float halfWidth)
         {
             const int Segments = 72;
             for (int i = 0; i < Segments; i++)
@@ -3453,50 +4514,166 @@ namespace ArmorFragments
                 float a0 = i * Mathf.PI * 2f / Segments, a1 = (i + 1) * Mathf.PI * 2f / Segments;
                 float c0 = Mathf.Cos(a0), s0 = Mathf.Sin(a0), c1 = Mathf.Cos(a1), s1 = Mathf.Sin(a1);
                 float inner = radius - halfWidth, outer = radius + halfWidth;
-                Quad(cx + c0 * inner, cy + s0 * inner, 0f, cx + c1 * inner, cy + s1 * inner, 0f,
-                     cx + c1 * radius, cy + s1 * radius, 1f, cx + c0 * radius, cy + s0 * radius, 1f);
-                Quad(cx + c0 * radius, cy + s0 * radius, 1f, cx + c1 * radius, cy + s1 * radius, 1f,
-                     cx + c1 * outer, cy + s1 * outer, 0f, cx + c0 * outer, cy + s0 * outer, 0f);
+                InvertQuad(cx + c0 * inner, cy + s0 * inner, 0f, cx + c1 * inner, cy + s1 * inner, 0f,
+                           cx + c1 * radius, cy + s1 * radius, 1f, cx + c0 * radius, cy + s0 * radius, 1f);
+                InvertQuad(cx + c0 * radius, cy + s0 * radius, 1f, cx + c1 * radius, cy + s1 * radius, 1f,
+                           cx + c1 * outer, cy + s1 * outer, 0f, cx + c0 * outer, cy + s0 * outer, 0f);
             }
         }
 
-        // A small solid dot with a soft rim.
-        private static void DrawDot(float cx, float cy, float radius)
+        private static void InvertDot(float cx, float cy, float radius)
         {
             const int Segments = 20;
             for (int i = 0; i < Segments; i++)
             {
                 float a0 = i * Mathf.PI * 2f / Segments, a1 = (i + 1) * Mathf.PI * 2f / Segments;
                 float c0 = Mathf.Cos(a0), s0 = Mathf.Sin(a0), c1 = Mathf.Cos(a1), s1 = Mathf.Sin(a1);
-                Vertex(cx, cy, 1f); Vertex(cx + c0 * radius, cy + s0 * radius, 1f); Vertex(cx + c1 * radius, cy + s1 * radius, 1f);
-                Quad(cx + c0 * radius, cy + s0 * radius, 1f, cx + c1 * radius, cy + s1 * radius, 1f,
-                     cx + c1 * (radius + 1f), cy + s1 * (radius + 1f), 0f, cx + c0 * (radius + 1f), cy + s0 * (radius + 1f), 0f);
+                InvertVertex(cx, cy, 1f); InvertVertex(cx + c0 * radius, cy + s0 * radius, 1f); InvertVertex(cx + c1 * radius, cy + s1 * radius, 1f);
+                InvertQuad(cx + c0 * radius, cy + s0 * radius, 1f, cx + c1 * radius, cy + s1 * radius, 1f,
+                           cx + c1 * (radius + 1f), cy + s1 * (radius + 1f), 0f, cx + c0 * (radius + 1f), cy + s0 * (radius + 1f), 0f);
             }
         }
 
-        // Called by the plugin's OnGUI: the circle and the marker are drawn when the interface is (Repaint), over everything.
-        internal static void OnGui()
-        {
-            if (!Active) return;
-            Event current = Event.current;
-            if (current == null || current.type != EventType.Repaint) return;
-            if ((!hudRingShown && !hudMarkerShown) || !InvertingCrosshairReady()) return;
+        private static readonly List<Vector2> wtMarkers = new List<Vector2>();   // War Thunder style: where each gun points, at the aim's distance
 
-            float width = Screen.width, height = Screen.height;
-            bool flip = ArmorFragmentsPlugin.TurretCrosshairFlipY.Value;
+        private static void DrawWarThunder(float height, bool flip)
+        {
+            if (!InvertingReady()) return;
             GL.PushMatrix();
             try
             {
                 invertMaterial.SetPass(0);
-                GL.LoadPixelMatrix(0f, width, height, 0f);   // pixels, the origin at the top left
+                GL.LoadPixelMatrix(0f, Screen.width, height, 0f);
                 GL.Begin(GL.TRIANGLES);
-                if (hudRingShown) DrawRing(hudRingAt.x, flip ? hudRingAt.y : height - hudRingAt.y, 26f, 0.9f);
-                foreach (Vector2 marker in hudMarkers) DrawDot(marker.x, flip ? marker.y : height - marker.y, 2.6f);
+                if (hudSightView)
+                {
+                    // Through the sight: a ring for each gun where its barrel points, catching up with the scope's crosshair (a gun that can't turn
+                    // that far, or is still turning, stays off it).
+                    foreach (Vector2 marker in wtMarkers) InvertRing(marker.x, flip ? marker.y : height - marker.y, 22f, 0.9f);
+                }
+                else
+                {
+                    if (hudRingShown) InvertRing(hudRingAt.x, flip ? hudRingAt.y : height - hudRingAt.y, 26f, 0.9f);
+                    foreach (Vector2 marker in wtMarkers) InvertDot(marker.x, flip ? marker.y : height - marker.y, 2.6f);
+                }
                 GL.End();
             }
             finally
             {
                 GL.PopMatrix();
+            }
+        }
+
+        // Through the sight: the screen blacked out round a circle in the middle (the scope), its edge softened.
+        private static readonly Color ScopeBlack = new Color(0f, 0f, 0f, 1f);
+        private static readonly Color ScopeClear = new Color(0f, 0f, 0f, 0f);
+
+        private static void DrawScopeMask(float width, float height)
+        {
+            if (!ReticleReady()) return;
+            float cx = width * 0.5f, cy = height * 0.5f;
+            float radius = height * 0.47f;
+            float soft = radius * 0.9f;
+            float far = Mathf.Sqrt(width * width + height * height);   // past every corner
+            const int Segments = 96;
+            GL.PushMatrix();
+            try
+            {
+                lineMaterial.SetPass(0);
+                GL.LoadPixelMatrix(0f, width, height, 0f);
+                GL.Begin(GL.TRIANGLES);
+                for (int i = 0; i < Segments; i++)
+                {
+                    float a0 = i * Mathf.PI * 2f / Segments, a1 = (i + 1) * Mathf.PI * 2f / Segments;
+                    float c0 = Mathf.Cos(a0), s0 = Mathf.Sin(a0), c1 = Mathf.Cos(a1), s1 = Mathf.Sin(a1);
+                    // The soft edge: clear inside, black at the scope's rim.
+                    MaskQuad(cx + c0 * soft, cy + s0 * soft, cx + c1 * soft, cy + s1 * soft, ScopeClear,
+                             cx + c1 * radius, cy + s1 * radius, cx + c0 * radius, cy + s0 * radius, ScopeBlack);
+                    // Black from the rim out past the screen.
+                    MaskQuad(cx + c0 * radius, cy + s0 * radius, cx + c1 * radius, cy + s1 * radius, ScopeBlack,
+                             cx + c1 * far, cy + s1 * far, cx + c0 * far, cy + s0 * far, ScopeBlack);
+                }
+                GL.End();
+            }
+            finally
+            {
+                GL.PopMatrix();
+            }
+        }
+
+        // A quad of two triangles: the first two corners in one color, the last two in another.
+        private static void MaskQuad(float x0, float y0, float x1, float y1, Color inner, float x2, float y2, float x3, float y3, Color outer)
+        {
+            GL.Color(inner); GL.Vertex3(x0, y0, 0f);
+            GL.Color(inner); GL.Vertex3(x1, y1, 0f);
+            GL.Color(outer); GL.Vertex3(x2, y2, 0f);
+            GL.Color(inner); GL.Vertex3(x0, y0, 0f);
+            GL.Color(outer); GL.Vertex3(x2, y2, 0f);
+            GL.Color(outer); GL.Vertex3(x3, y3, 0f);
+        }
+
+        // Called by the plugin's OnGUI.
+        internal static void OnGui()
+        {
+            if (!Active) return;
+            Event current = Event.current;
+            if (current == null || current.type != EventType.Repaint) return;
+            // The game's pause menu or another menu or dialog open: nothing is drawn over it (the scope's black would hide it).
+            if (PauseManager.Paused || MenuWantsPointer()) return;
+            if (!WotStyle)
+            {
+                if (hudSightView && !hudFreeLook)
+                {
+                    DrawScopeMask(Screen.width, Screen.height);
+                    // The magnification, under the right side of the crosshair.
+                    float ms = Mathf.Max(Screen.height / 1080f, 0.6f);
+                    Label(Screen.width * 0.5f + 70f * ms, Screen.height * 0.5f + 24f * ms, SightMagnifications[Mathf.Clamp(sightZoom, 0, SightMagnifications.Length - 1)].ToString("0") + "x", Mathf.RoundToInt(18f * ms), Ink, TextAnchor.MiddleCenter);
+                }
+                DrawRangeSight(Screen.height, ArmorFragmentsPlugin.TurretCrosshairFlipY.Value);
+                DrawWarThunder(Screen.height, ArmorFragmentsPlugin.TurretCrosshairFlipY.Value);
+                return;
+            }
+            if (!ReticleReady()) return;
+
+            float width = Screen.width, height = Screen.height;
+            bool flip = ArmorFragmentsPlugin.TurretCrosshairFlipY.Value;
+            float s = Mathf.Max(height / 1080f, 0.6f);
+            float ringX = hudRingAt.x, ringY = flip ? hudRingAt.y : height - hudRingAt.y;
+            bool full = hudSightView;
+
+            GL.PushMatrix();
+            try
+            {
+                lineMaterial.SetPass(0);
+                GL.LoadPixelMatrix(0f, width, height, 0f);   // pixels, the origin at the top left
+                GL.Begin(GL.TRIANGLES);
+                for (int pass = 0; pass < 2; pass++)
+                {
+                    edgePass = pass == 0;
+                    if (hudRingShown && !hudFreeLook) DrawFixedSight(ringX, ringY, s, full);
+                    foreach (GunMark mark in gunMarks)
+                        DrawGunMark(mark, mark.At.x, flip ? mark.At.y : height - mark.At.y, s);
+                }
+                GL.End();
+            }
+            finally
+            {
+                GL.PopMatrix();
+                edgePass = false;
+            }
+
+            // The texts.
+            int small = Mathf.RoundToInt(15f * s), big = Mathf.RoundToInt(26f * s);
+            foreach (GunMark mark in gunMarks)
+                Label(mark.At.x, (flip ? mark.At.y : height - mark.At.y) + mark.Radius + 30f * s, mark.Range, small, Ink, TextAnchor.MiddleCenter);
+            if (hudRingShown && !hudFreeLook)
+            {
+                float wing = full ? 195f : 90f;
+                Label(ringX + wing * s, ringY + 24f * s, hudReload, full ? big : small, hudReloading ? Amber : LitGreen, TextAnchor.MiddleCenter);
+                if (full) Label(ringX - wing * s, ringY + 24f * s, hudZoom, big, Ink, TextAnchor.MiddleCenter);
+                // The range the gun is raised for: amber while locked, dim while it is held from an earlier reading.
+                if (wotRanging && wotRange > 0f)
+                    Label(ringX, ringY + (full ? 300f : 64f) * s, RangeText(wotRange) + (wotLocked ? "  LOCK" : ""), small, wotLocked ? Amber : wotHeld ? Muted : Ink, TextAnchor.MiddleCenter);
             }
         }
     }
@@ -3566,6 +4743,19 @@ namespace ArmorFragments
         private static void Prefix(JointRotatorScript __instance)
         {
             TurretAim.OnRotatorFixedUpdate(__instance);
+        }
+    }
+}
+
+namespace ArmorFragments
+{
+    // World of Tanks style: the game's own wheel zoom of the aim's cameras is left out; the mod steps the zoom itself.
+    [HarmonyPatch(typeof(Assets.Scripts.Flight.Cameras.InteractiveCameraController), "Zoom")]
+    internal static class TurretZoomPatch
+    {
+        private static bool Prefix(Assets.Scripts.Flight.Cameras.InteractiveCameraController __instance)
+        {
+            return !TurretAim.BlocksGameZoom(__instance);
         }
     }
 }

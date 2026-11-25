@@ -37,6 +37,11 @@ namespace ArmorFragments.UI
                 __result = ArmorPanel.BuildLayout();
                 return false;                                    // skip the original
             }
+            if (path == ArmorPanel.MouseAimXmlPath)
+            {
+                __result = ArmorPanel.BuildLayout("Mouse aim");
+                return false;
+            }
             if (path == DesignerSection.LayoutPath)
             {
                 __result = ArmorPanel.BuildDesignerSectionLayout();
