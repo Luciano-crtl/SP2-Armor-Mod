@@ -93,6 +93,7 @@ namespace ArmorFragments.UI
                 BuildRicochet();
                 BuildRays();
                 BuildTools();
+                BuildFluidSmoke();
                 BuildDamageMaps();
                 BuildLog();
             }
@@ -646,6 +647,64 @@ namespace ArmorFragments.UI
             });
         }
 
+        // The smoke of the cannons: a real fluid simulation on the GPU. Its look is the host's; only the performance is each player's own.
+        private void BuildFluidSmoke()
+        {
+            bool locked = NetSync.GlobalLocked;
+            builder.Header("Cannon smoke", collapsed: true);
+            TextControl status = builder.Text("Now", "");
+            refreshers.Add(() => status.ValueText.Text = (FluidSmoke.Failed ? "failed (see the log)" : FluidSmoke.Enabled ? "on" : "off")
+                + ", quality " + FluidSmoke.QualityName);
+            if (locked) builder.Text("Look", "set by the host");
+            else
+            {
+                ToggleSetting(ArmorFragmentsPlugin.SmokeEnabled, "Cannon smoke", "Cannons make smoke that flows around vehicles and the ground.");
+
+                builder.BeginSubsection("Look");
+                FloatSetting(ArmorFragmentsPlugin.SmokeDensity, "Smoke amount",
+                    "How much smoke and heat each shot makes. Applies to the next shot.", 0.05f, "x");
+                FloatSetting(ArmorFragmentsPlugin.SmokeLifetime, "Cloud lifetime",
+                    "Seconds a cloud lasts for a 75 mm gun.", 0.5f, " s");
+                FloatSetting(ArmorFragmentsPlugin.SmokeBlastDust, "Blast dust",
+                    "How much dust the blast lifts from the ground (spots along the line of fire and a fan from under the muzzle). 0 for none. Applies to the next shot.", 0.05f, "");
+
+                builder.BeginSubsection("Light and heat");
+                FloatSetting(ArmorFragmentsPlugin.SmokeFlashIntensity, "Flash brightness",
+                    "How bright the flash of light is.", 0.1f, "");
+                ToggleSetting(ArmorFragmentsPlugin.SmokeShadows, "Smoke casts shadows",
+                    "The smoke casts the sun's shadow on the ground and on vehicles (inside the game's shadow distance).");
+                FloatSetting(ArmorFragmentsPlugin.SmokeShadowStrength, "Shadow darkness",
+                    "How dark the shadow of dense smoke is.", 0.05f, "");
+                FloatSetting(ArmorFragmentsPlugin.SmokeHeatHaze, "Heat haze",
+                    "The shimmer of hot air behind the muzzle. 0 for none. Uses the game's colour texture (switched on by the mod if needed).", 0.1f, "");
+                ToggleSetting(ArmorFragmentsPlugin.SmokeBarrelHeat, "Barrels heat up and smoke",
+                    "Every shot heats the barrel, which cools by itself; gas left in the bore comes out after each shot and while the barrel is hot.");
+            }
+
+            builder.BeginSubsection("Performance", collapsed: !locked);
+            List<KeyValuePair<string, Action>> qualities = new List<KeyValuePair<string, Action>>();
+            for (int i = 0; i < FluidSmoke.QualityChoices.Length; i++)
+            {
+                int index = i;
+                qualities.Add(new KeyValuePair<string, Action>(FluidSmoke.QualityChoices[i], () =>
+                {
+                    FluidSmoke.SetQuality(index);
+                    NetSync.SaveConfig();
+                    rebuildRequested = true;   // the picked button changes
+                }));
+            }
+            builder.Text("Quality", "");
+            builder.Buttons(qualities, FluidSmoke.QualityIndex);
+            IntSetting(ArmorFragmentsPlugin.SmokeMaxClouds, "Most smoke clouds (0 = unlimited)",
+                "How many clouds of smoke may exist at once. 0 = no limit, which can fill the graphics memory in a long burst. At the limit the oldest cloud fades out quickly and the new one is made.");
+
+            builder.EndSubsection();
+
+            builder.Buttons(new List<KeyValuePair<string, Action>>
+            {
+                new KeyValuePair<string, Action>("Reset smoke to defaults", () => ResetSettings("Smoke")),
+            });
+        }
 
         private void BuildLog()
         {
@@ -675,10 +734,17 @@ namespace ArmorFragments.UI
 
         private void ResetToDefaults()
         {
+            ResetSettings(null);
+        }
+
+        // Back to the defaults: every setting, or only those of one section of the .cfg.
+        private void ResetSettings(string section)
+        {
             ConfigFile config = ArmorFragmentsPlugin.Instance.Config;
             foreach (KeyValuePair<ConfigDefinition, ConfigEntryBase> pair in
                      (IEnumerable<KeyValuePair<ConfigDefinition, ConfigEntryBase>>)config)
             {
+                if (section != null && pair.Key.Section != section) continue;
                 // On someone else's server the balance settings are the host's, not ours to reset.
                 if (NetSync.GlobalLocked && NetSync.IsGlobal(pair.Value)) continue;
                 pair.Value.BoxedValue = pair.Value.DefaultValue;

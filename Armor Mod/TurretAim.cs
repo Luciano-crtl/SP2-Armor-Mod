@@ -2411,6 +2411,11 @@ namespace ArmorFragments
         }
 
         // 'automatic': a group on automatic aim fires without the fire input, and always only when on target.
+        // The game shows the muzzle flash (and the sound, and the flash other players see) when a cannon's own update finds the barrel clear after
+        // having seen it occupied. A shell fired from here, after that update of the frame, has usually left the barrel by the next one and was
+        // never seen in it: no flash, no smoke. So the cannon is told that its barrel was not clear.
+        private static readonly System.Reflection.FieldInfo ClearedLastFrame = AccessTools.Field(typeof(CannonScript), "_projectileClearedLastFrame");
+
         private static bool TryFire(CannonScript cannon, bool byKey, Gun owner, float now, ref float nextFire, bool automatic = false)
         {
             if (cannon == null || cannon.PartScript == null) return false;
@@ -2422,6 +2427,7 @@ namespace ArmorFragments
             try
             {
                 weapon.Fire(null);
+                if (ClearedLastFrame != null) ClearedLastFrame.SetValue(cannon, false);
                 nextFire = now + Mathf.Max(cannon.FiringDelay * Crew.ReloadFactor(cannon), 0.02f);
                 if (owner != null && cannon == owner.Cannon) owner.ReloadTotal = nextFire - now;
                 return true;

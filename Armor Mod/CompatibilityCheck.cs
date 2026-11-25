@@ -63,6 +63,7 @@ namespace ArmorFragments
                 Member(typeof(CannonProjectileScript), "Owner", typeof(AircraftScript));
                 Member(typeof(CannonProjectileScript), "SelfDestructTimer", typeof(float));
                 Method(typeof(CannonScript), "PlayMuzzleFlash");
+                Member(typeof(CannonScript), "_projectileClearedLastFrame", typeof(bool));
                 Member(typeof(CannonScript), "_projectileSpawnPoint", typeof(Transform));
                 Member(typeof(CannonScript), "_projectilePrefab", typeof(GameObject));
                 Member(typeof(CannonData), "CaliberInMilimeters", typeof(float));

@@ -162,7 +162,11 @@ namespace ArmorFragments
             foreach (ConfigEntryBase entry in GlobalEntries)
             {
                 string value;
-                if (!values.TryGetValue(entry.Definition.Key, out value)) continue;
+                if (!values.TryGetValue(QualifiedKey(entry), out value))
+                {
+                    // A host with an older version names settings by the key alone: of those sharing one, the value is the last one's.
+                    if (SharesKeyWithLater(entry) || !values.TryGetValue(entry.Definition.Key, out value)) continue;
+                }
                 try
                 {
                     entry.SetSerializedValue(value);
@@ -275,13 +279,28 @@ namespace ArmorFragments
             return true;
         }
 
+        private static string QualifiedKey(ConfigEntryBase entry)
+        {
+            return entry.Definition.Section + "." + entry.Definition.Key;
+        }
+
+        // Another global setting after this one has the same key in another section (AmmoRacks/Enabled and Crew/Enabled).
+        private static bool SharesKeyWithLater(ConfigEntryBase entry)
+        {
+            for (int i = GlobalEntries.IndexOf(entry) + 1; i < GlobalEntries.Count; i++)
+                if (GlobalEntries[i].Definition.Key == entry.Definition.Key) return true;
+            return false;
+        }
+
+        // Settings go by their key alone, as older versions expect; one whose key a later setting also has goes with its section,
+        // so it has its own value (older versions ignore that name).
         private static string Encode()
         {
             StringBuilder text = new StringBuilder();
             foreach (ConfigEntryBase entry in GlobalEntries)
             {
                 if (text.Length > 0) text.Append(';');
-                text.Append(entry.Definition.Key).Append('=').Append(entry.GetSerializedValue());
+                text.Append(SharesKeyWithLater(entry) ? QualifiedKey(entry) : entry.Definition.Key).Append('=').Append(entry.GetSerializedValue());
             }
             return text.ToString();
         }

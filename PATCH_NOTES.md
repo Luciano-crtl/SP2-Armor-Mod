@@ -1,3 +1,14 @@
+# Cannon smoke
+
+0.13.0
+
+- Cannons now make real smoke: a fluid simulation on the graphics card that flows around vehicles, terrain and buildings, drifts with the wind, rises while hot and casts shadows. Every shot also lights up its surroundings and lifts dust in the colour of the ground.
+- The smoke follows the gun: its caliber, muzzle energy, barrel length and muzzle brake. Barrels heat up with every shot and keep smoking.
+- Propellers, rotors, jets and moving vehicles push the smoke.
+- New "Cannon smoke" section in the flight panel, with subsections. The host decides how the smoke looks for everyone with the mod; each player sets only the performance (quality and number of clouds). Players without the mod don't see it.
+- Fixed: cannons fired with mouse aim had no muzzle flash, sound or smoke, and other players did not see their flash.
+- Fixed: on a server, the host's crew on/off setting was also used for the ammo racks.
+
 # Crew
 
 0.10.0

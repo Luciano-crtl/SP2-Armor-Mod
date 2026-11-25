@@ -48,6 +48,34 @@ namespace ArmorFragments
         internal static ConfigEntry<float> ImpactCameraFov;
         internal static ConfigEntry<bool> ImpactCameraShadows;
         internal static ConfigEntry<bool> ImpactCameraXRay;
+        internal static ConfigEntry<bool> SmokeEnabled;             // global: the smoke of the cannons on or off
+        internal static ConfigEntry<string> SmokeQuality;           // local: Auto, Low, Medium, High or Ultra
+        internal static ConfigEntry<float> SmokeJetFocus;           // local: 0 round fireball .. 1 narrow jet along the barrel
+        internal static ConfigEntry<float> SmokeFlashIntensity;     // local: how bright it is
+        internal static ConfigEntry<int> SmokeMaxClouds;            // local: how many shots' smoke may exist at once (0 = no limit)
+        internal static ConfigEntry<float> SmokeJetSpeed;           // local: how fast the blast is thrown forward
+        internal static ConfigEntry<float> SmokeDensity;            // local: how much smoke and heat each shot makes
+        internal static ConfigEntry<float> SmokeLifetime;           // local: how long a cloud lives (75 mm)
+        internal static ConfigEntry<float> SmokeBlastDust;          // local: how much dust the blast lifts
+        internal static ConfigEntry<bool> SmokeShadows;             // local: the smoke casts shadows on the scene
+        internal static ConfigEntry<float> SmokeShadowStrength;     // local: how dark those shadows are
+        internal static ConfigEntry<float> SmokeBuoyancy;           // local: how strongly heat lifts the smoke (m/s^2 per unit of temperature)
+        internal static ConfigEntry<float> SmokeResidualHeat;       // local: how hot the propellant smoke is
+        internal static ConfigEntry<bool> SmokeBarrelHeat;          // local: barrels heat up with every shot and let go of smoke
+        internal static ConfigEntry<float> SmokeBarrelHeatScale;    // local: how much faster than real a barrel heats up
+        internal static ConfigEntry<float> SmokeHeatHaze;           // local: the shimmer of hot air
+        internal static ConfigEntry<float> SmokeSoftContact;        // local: smoke fades out near surfaces (m)
+        internal static ConfigEntry<float> SmokeRayStepCells;       // local: the longest step of a ray through the smoke, in cells
+        internal static ConfigEntry<int> SmokeRayStepMax;           // local: the most steps a ray takes through one box
+        internal static ConfigEntry<bool> SmokeCubicGrid;           // local: the smoke grid is read with a cubic B-spline
+        internal static ConfigEntry<float> SmokeCannonProfile;      // local: how much the cannon's own settings shape its smoke
+        internal static ConfigEntry<float> SmokeDustWeight;         // local: how fast dust settles
+        internal static ConfigEntry<bool> SmokeFastDrawing;         // local: skip empty blocks and look up the sun and shadow less often
+        internal static ConfigEntry<bool> SmokeFastSolids;          // local: measure the solids every second frame when nothing moves
+        internal static ConfigEntry<bool> SmokeHalfPrecision;       // local: ultra, high and medium keep their fields in 16 bits
+        internal static ConfigEntry<float> SmokeBoxSize;            // local: the size of the box the smoke is simulated in (1 = standard)
+        internal static ConfigEntry<float> SmokeWashStrength;       // local: how hard they blow
+        internal static ConfigEntry<float> SmokeWakeStrength;       // local: how much of its speed that air takes
         internal static ConfigEntry<bool> ImpactCameraDamageView;   // local: the damage map drawn over the plates in the impact camera
         internal static ConfigEntry<int> DamageMapsRelief;           // local: 0 normal map, 1 bump (height) map, 2 both
         internal static ConfigEntry<bool> UseGpu;                    // local: the impact simulation on the graphics card (OpenCL), the CPU if it cannot
@@ -195,7 +223,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> CrewSwitchSeconds;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.12.2";
+        public const string Version = "0.13.0";
 
         private float attachMenuAt = -1f;
 
@@ -269,6 +297,90 @@ namespace ArmorFragments
                 new ConfigDescription(
                     "When a real shell stops in a part that is not armor, a ballistic ray carries on this far (m) looking for armor.",
                     new AcceptableValueRange<float>(1f, 1000f)));
+            // The key is "SmokeEnabled" and not "Enabled": the host's message names settings by their key alone.
+            SmokeEnabled = Config.Bind("Smoke", "SmokeEnabled", true,
+                "Cannon smoke: on or off. On a server the host decides.");
+            SmokeQuality = Config.Bind("Smoke", "Quality", "Auto",
+                new ConfigDescription("Cannon smoke: how fine the simulation is. Auto lowers it when the frames get slow and never goes above High.",
+                    new AcceptableValueList<string>("Auto", "Low", "Medium", "High", "Ultra")));
+            SmokeJetFocus = Config.Bind("Smoke", "JetFocus", 0.5f,
+                new ConfigDescription("Cannon smoke: the shape of the blast. 0 is a round fireball that grows evenly in every direction; 1 is a narrow jet that shoots along the barrel and rolls up at its front.",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            SmokeFlashIntensity = Config.Bind("Smoke", "FlashIntensity", 4f,
+                new ConfigDescription("Cannon smoke: how bright the flash is (1 = normal).",
+                    new AcceptableValueRange<float>(0f, 4f)));
+            SmokeMaxClouds = Config.Bind("Smoke", "MaxClouds", 6,
+                new ConfigDescription("Cannon smoke: how many clouds of smoke (each one a shot, or a burst of shots from one place) may exist at the same time. 0 = no limit (every cloud takes memory on the graphics card: hundreds of megabytes each in high quality, so a long burst from many guns can fill it). When the limit is reached the oldest cloud fades out in a second and the new one is made.",
+                    new AcceptableValueRange<int>(0, 40)));
+            SmokeJetSpeed = Config.Bind("Smoke", "JetSpeed", 1f,
+                new ConfigDescription("Cannon smoke: how fast the fireball and the smoke are thrown forward from the muzzle (1 = the old, too long tube of smoke). Applies to the next shot.",
+                    new AcceptableValueRange<float>(0.2f, 1.5f)));
+            SmokeDensity = Config.Bind("Smoke", "Density", 1f,
+                new ConfigDescription("Cannon smoke: how much smoke and heat each shot makes (1 = the old amount, which was too thick for smokeless powder). The dust is separate. Applies to the next shot.",
+                    new AcceptableValueRange<float>(0.1f, 2f)));
+            SmokeLifetime = Config.Bind("Smoke", "Lifetime", 6f,
+                new ConfigDescription("Cannon smoke: how many seconds a cloud lasts for a 75 mm gun (more for big guns, less for small ones).",
+                    new AcceptableValueRange<float>(2f, 20f)));
+            SmokeBlastDust = Config.Bind("Smoke", "BlastDust", 1f,
+                new ConfigDescription("Cannon smoke: how much dust the blast lifts from the ground: spots along the line of fire and a fan that runs out from under the muzzle, stronger the lower the barrel is. 0 for none.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            SmokeShadows = Config.Bind("Smoke", "Shadows", true,
+                "Cannon smoke: the smoke casts shadows on the ground and on vehicles (only the sun's shadow, and only inside the game's shadow distance).");
+            SmokeShadowStrength = Config.Bind("Smoke", "ShadowDarkness", 0.5f,
+                new ConfigDescription("Cannon smoke: how dark the shadow of dense smoke is (0 = none, 1 = as dark as any shadow).",
+                    new AcceptableValueRange<float>(0f, 1f)));
+            SmokeBuoyancy = Config.Bind("Smoke", "Buoyancy", 15f,
+                new ConfigDescription("Cannon smoke: how strongly heat lifts the smoke, in m/s^2 per unit of temperature (the propellant smoke has up to 0.35). 10 lifts a puff about 2 m in 5 s; with more, the smoke rises as a column and spreads at the top; with 0 it only drifts.",
+                    new AcceptableValueRange<float>(0f, 30f)));
+            SmokeResidualHeat = Config.Bind("Smoke", "ResidualHeat", 0.3f,
+                new ConfigDescription("Cannon smoke: how hot the propellant smoke is after the flame (0 to 0.35; above that it also glows orange). Applies to the next shot.",
+                    new AcceptableValueRange<float>(0f, 0.35f)));
+            SmokeBarrelHeat = Config.Bind("Smoke", "BarrelHeat", true,
+                "Cannon smoke: every shot heats the barrel (5% of the muzzle energy over the heat of the steel, from the game's own mass of the cannon) and it cools by itself (a time constant of 40 s for a .50, more for bigger guns). The gas left in the bore comes out as a puff after each shot and as a thread of thin smoke from the muzzle for as long as the barrel is hot, and a hot bore makes up to 40% more smoke on the next shot.");
+            SmokeBarrelHeatScale = Config.Bind("Smoke", "BarrelHeatScale", 6f,
+                new ConfigDescription("Cannon smoke: how many times faster than a real barrel the barrel heats up (real ones take hundreds of shots to get hot). 1 = real.",
+                    new AcceptableValueRange<float>(0.1f, 50f)));
+            SmokeHeatHaze = Config.Bind("Smoke", "HeatHaze", 1f,
+                new ConfigDescription("Cannon smoke: the shimmer of hot air behind the muzzle, which bends the picture of what is behind it. 0 for none. It needs the game's colour texture; the mod switches it on if it is off (the log says so).",
+                    new AcceptableValueRange<float>(0f, 3f)));
+            SmokeSoftContact = Config.Bind("Smoke", "SoftContact", 0.35f,
+                new ConfigDescription("Cannon smoke: the distance (m) over which smoke fades out before it meets the ground or a wall, instead of ending in a hard line. 0 for a hard edge.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            SmokeRayStepCells = Config.Bind("Smoke", "RayStepCells", 1.5f,
+                new ConfigDescription("Cannon smoke: the longest step a ray takes through the smoke, in cells of the simulation (0 = always the same number of steps through the whole box, however big it is). A ray through a big box (the boxes the smoke flows into are up to 120 m) with a fixed number of steps jumps metres at a time and the detail noise turns into grain.",
+                    new AcceptableValueRange<float>(0f, 6f)));
+            SmokeRayStepMax = Config.Bind("Smoke", "RayStepMax", 64,
+                new ConfigDescription("Cannon smoke: the most steps a ray may take through one box when the step length above asks for more. More steps = smoother smoke and more time per frame.",
+                    new AcceptableValueRange<int>(16, 96)));
+            SmokeCubicGrid = Config.Bind("Smoke", "CubicGrid", true,
+                "Cannon smoke: the density grid is read with a cubic B-spline (8 reads) instead of the straight blend between cells, so the cloud shows no blocks along the grid. A little softer; costs a few more reads when drawing.");
+            SmokeCannonProfile = Config.Bind("Smoke", "CannonProfile", 1f,
+                new ConfigDescription("Cannon smoke: how much the cannon's own settings shape its smoke on top of its calibre: the energy at the muzzle (projectile mass and velocity: more smoke, harder jets, a bigger fireball), the length of the barrel in calibres (a short barrel has a bigger flash and a stronger blast), the muzzle brake (plumes to the sides, a weaker jet ahead) and the flash scale. 0 = only the calibre counts, 1 = normal, 2 = twice as strong. Applies to the next shot.",
+                    new AcceptableValueRange<float>(0f, 2f)));
+            SmokeDustWeight = Config.Bind("Smoke", "DustWeight", 4f,
+                new ConfigDescription("Cannon smoke: how fast dust settles, in m/s^2 of sinking per unit of dust (heat lifts the smoke, dust falls out of the air). 0 = dust floats like the smoke.",
+                    new AcceptableValueRange<float>(0f, 10f)));
+            SmokeFastDrawing = Config.Bind("Smoke", "FastDrawing", true,
+                "Cannon smoke: draw it faster: blocks with no smoke are skipped, and the light of the sun and the game's shadows are looked up on every second sample of smoke instead of every one. Measured about a third faster to draw; the picture hardly changes.");
+            SmokeFastSolids = Config.Bind("Smoke", "FastSolids", true,
+                "Cannon smoke: once the blast is over and nothing near the cloud moves, the solid shapes of vehicles and ground are measured every second frame instead of every frame.");
+            SmokeHalfPrecision = Config.Bind("Smoke", "HalfPrecision", true,
+                "Cannon smoke: the ultra, high and medium quality levels keep the speed, smoke and heat of the air in 16-bit numbers. That takes half the memory and about 40% of the time of a step, and the clouds look the same. A graphics card that cannot do it uses 32 bits. Applies to the next cloud.");
+            SmokeBoxSize = Config.Bind("Smoke", "BoxSize", 1.8f,
+                new ConfigDescription("Cannon smoke: how big the box the smoke is simulated in is (1 = standard, 18 x 9 x 9 m for a 75 mm gun). Smoke that leaves the box vanishes. The number of cells is fixed by the quality level, so a bigger box has coarser cells (less fine detail). Applies to the next shot.",
+                    new AcceptableValueRange<float>(0.5f, 3f)));
+            SmokeWashStrength = Config.Bind("Smoke", "PropWashStrength", 1f,
+                new ConfigDescription("Cannon smoke: how hard propellers and rotors blow (1 = what their thrust gives by the theory of an actuator disc, about 20 m/s for a small plane's propeller).",
+                    new AcceptableValueRange<float>(0f, 3f)));
+            SmokeWakeStrength = Config.Bind("Smoke", "VehicleWakeStrength", 0.4f,
+                new ConfigDescription("Cannon smoke: the share of the vehicle's speed that the air next to it takes (at most 30 m/s).",
+                    new AcceptableValueRange<float>(0f, 1.5f)));
+            // The look and the amount of smoke come from the host, so nobody sees through smoke others are blinded by. What only costs
+            // performance (quality, number of clouds, drawing) stays each player's own.
+            NetSync.RegisterGlobal(
+                SmokeEnabled, SmokeDensity, SmokeLifetime, SmokeBlastDust, SmokeFlashIntensity, SmokeShadows, SmokeShadowStrength,
+                SmokeHeatHaze, SmokeBarrelHeat, SmokeBarrelHeatScale, SmokeJetFocus, SmokeJetSpeed, SmokeBuoyancy, SmokeResidualHeat,
+                SmokeCannonProfile, SmokeDustWeight, SmokeWashStrength, SmokeWakeStrength);
             DrawRays = Config.Bind("Debug", "DrawRays", true,
                 "If true, draws each fragment ray in the world (red = hit a part, yellow = hit nothing).");
             HideRaysOutsideViews = Config.Bind("Debug", "HideRaysOutsideViews", true,
