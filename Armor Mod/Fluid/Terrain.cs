@@ -16,7 +16,7 @@ namespace ArmorFragments
     //    such colliders) are solid shapes like the parts are.
     internal static partial class FluidSmoke
     {
-        public static bool WorldSolids { get { return ArmorFragmentsPlugin.SmokeTerrain == null || ArmorFragmentsPlugin.SmokeTerrain.Value; } }
+        public static bool WorldSolids { get { return true; } }
 
         private const int GroundN = 24;                  // the height map has this many samples along each side of the box's floor
         private const int GroundHits = 4;

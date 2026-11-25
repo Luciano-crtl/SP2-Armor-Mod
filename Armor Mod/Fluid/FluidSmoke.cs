@@ -38,7 +38,9 @@ namespace ArmorFragments
     // Cost control: three quality levels (cell count and ray steps), chosen by distance and, in the automatic mode, by the frame time.
     internal static partial class FluidSmoke
     {
-        public static bool Enabled = true;
+        private static bool failed;                    // an error switched the smoke off for this session (never written to the settings)
+        public static bool Failed { get { return failed; } }
+        public static bool Enabled { get { return !failed && (ArmorFragmentsPlugin.SmokeEnabled == null || ArmorFragmentsPlugin.SmokeEnabled.Value); } }
         // Simulations of shots running at once (Smoke/MaxClouds; 0 = no limit). Past it the oldest cloud is made to fade away quickly and the new
         // one is made at once.
         public static int MaxActive { get { int v = ArmorFragmentsPlugin.SmokeMaxClouds != null ? ArmorFragmentsPlugin.SmokeMaxClouds.Value : 6; return v <= 0 ? 100000 : v; } }
@@ -50,7 +52,6 @@ namespace ArmorFragments
         public const float BlastBrake = 7f;
         public const float BlastSeconds = 0.3f;
         public const float LateBrake = 0.4f;
-        public static bool SmokeGroundDust { get { return ArmorFragmentsPlugin.SmokeGroundDust == null || ArmorFragmentsPlugin.SmokeGroundDust.Value; } }
         // How much bigger (or smaller) than the standard the box of a new cloud is, in every direction. The number of cells is limited by the
         // quality level, so a bigger box has coarser cells.
         public static float BoxSize { get { return ArmorFragmentsPlugin.SmokeBoxSize != null ? Mathf.Clamp(ArmorFragmentsPlugin.SmokeBoxSize.Value, 0.5f, 3f) : 1f; } }
@@ -72,7 +73,8 @@ namespace ArmorFragments
         public static string LastProfileText = "no shot yet";      // how the last new cloud's cannon shaped its smoke (shown in the panel)
         public const float MuzzleSparksStrength = 1f;
         public static float HeatHazeStrength { get { return ArmorFragmentsPlugin.SmokeHeatHaze != null ? ArmorFragmentsPlugin.SmokeHeatHaze.Value : 1f; } }
-        public static bool SmokeShadows { get { return ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value; } }
+        public static bool SmokeShadows { get { return (ArmorFragmentsPlugin.SmokeShadows == null || ArmorFragmentsPlugin.SmokeShadows.Value)
+            && (ArmorFragmentsPlugin.SmokeShadowStrength == null || ArmorFragmentsPlugin.SmokeShadowStrength.Value > 0.001f); } }
         public static float ShadowStrength { get { return ArmorFragmentsPlugin.SmokeShadowStrength != null ? ArmorFragmentsPlugin.SmokeShadowStrength.Value : 0.45f; } }
         private static void ReadBlastSettings()
         {
@@ -103,8 +105,11 @@ namespace ArmorFragments
             new QualityLevel { nx = 96, ny = 56, nz = 56, cellMultiplier = 1.000f, steps = 32, cycles = 2, name = "low" },
         };
         private const int AutoBest = 1;                // the best level the automatic mode uses: high
-        public static int Chosen = AutoBest;
-        public static bool Auto = true;
+        public static readonly string[] QualityChoices = { "Auto", "Low", "Medium", "High", "Ultra" };
+        // The position of the player's choice in QualityChoices.
+        public static int QualityIndex { get { return ArmorFragmentsPlugin.SmokeQuality == null ? 0 : Mathf.Max(0, System.Array.IndexOf(QualityChoices, ArmorFragmentsPlugin.SmokeQuality.Value)); } }
+        public static bool Auto { get { return QualityIndex == 0; } }
+        public static int Chosen { get { int i = QualityIndex; return i == 0 ? AutoBest : Levels.Length - i; } }
         private static int autoLevel = AutoBest;       // what the automatic mode currently allows
         private const float BaseCell = 0.125f;
         public static readonly int[] CellBudget = { 2400000, 1500000, 900000, 450000 };   // most cells a cloud of each quality may have
@@ -222,19 +227,10 @@ namespace ArmorFragments
 
         public static string QualityName { get { return Auto ? "auto (now " + Levels[autoLevel].name + ")" : Levels[Chosen].name; } }
 
-        public static void Toggle()
+        public static void SetQuality(int index)
         {
-            Enabled = !Enabled;
-            ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid muzzle smoke " + (Enabled ? "on" : "off"));
-        }
-
-        // auto -> high -> medium -> low -> auto
-        public static void CycleQuality()
-        {
-            if (Auto) { Auto = false; Chosen = 0; }
-            else if (Chosen < Levels.Length - 1) Chosen++;
-            else { Auto = true; Chosen = AutoBest; }
-            autoLevel = Chosen;
+            ArmorFragmentsPlugin.SmokeQuality.Value = QualityChoices[index];
+            autoLevel = AutoBest;
             ArmorFragmentsPlugin.Log.LogInfo("[VFXBUNDLE] fluid smoke quality: " + QualityName);
         }
 
@@ -398,7 +394,7 @@ namespace ArmorFragments
             }
             catch (System.Exception e)
             {
-                Enabled = false;
+                failed = true;
                 ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] fluid smoke failed and is now off: " + e);
             }
         }
@@ -460,7 +456,7 @@ namespace ArmorFragments
             Camera cam = Camera.main;
             Watch.Restart();
             try { UpdateOverflow(frame); }
-            catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] smoke overflow failed and is off: " + e); if (ArmorFragmentsPlugin.SmokeOverflow != null) ArmorFragmentsPlugin.SmokeOverflow.Value = false; }
+            catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] smoke overflow failed and is off: " + e); overflowFailed = true; }
             for (int i = Active.Count - 1; i >= 0; i--)
             {
                 Cloud c = Active[i];
@@ -561,7 +557,7 @@ namespace ArmorFragments
                     m.SetFloat("_Distort", haze > 0.01f && OpaqueTextureAvailable() ? haze : 0f);
                     m.SetFloat("_SoftContact", ArmorFragmentsPlugin.SmokeSoftContact != null ? ArmorFragmentsPlugin.SmokeSoftContact.Value : 0.35f);
                     m.SetFloat("_Cubic", ArmorFragmentsPlugin.SmokeCubicGrid == null || ArmorFragmentsPlugin.SmokeCubicGrid.Value ? 1f : 0f);
-                    m.SetFloat("_FogOn", ArmorFragmentsPlugin.SmokeFog == null || ArmorFragmentsPlugin.SmokeFog.Value ? 1f : 0f);
+                    m.SetFloat("_FogOn", 1f);
                     m.SetFloat("_MultiScatter", 0.6f);
                     m.SetFloat("_NoiseRotate", 1f);       // the detail noise: three turned octaves, so its tile does not repeat in a line
                     m.SetFloat("_NoiseContrast", 1.2f);   // stretched back to the contrast the two octaves had
@@ -572,7 +568,7 @@ namespace ArmorFragments
                     if (c.shots.Count > 0)
                     {
                         Shot latest = c.shots[c.shots.Count - 1];
-                        float flashLevel = MuzzleFlash.Enabled ? MuzzleFlash.Level(c.age - latest.start, c.timeScale) * MuzzleFlash.Intensity : 0f;
+                        float flashLevel = MuzzleFlash.Level(c.age - latest.start, c.timeScale) * MuzzleFlash.Intensity;
                         m.SetVector("_FlashPos", new Vector4(latest.flashWorld.x, latest.flashWorld.y, latest.flashWorld.z, 4f * flashLevel));
                     }
                     else m.SetVector("_FlashPos", Vector4.zero);
@@ -597,7 +593,7 @@ namespace ArmorFragments
                 }
                 catch (System.Exception e)
                 {
-                    Enabled = false;
+                    failed = true;
                     ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] fluid smoke failed and is now off: " + e);
                     Retire(c);
                     Active.RemoveAt(i);
@@ -1158,7 +1154,7 @@ namespace ArmorFragments
                 shot.footWorld = hit.point;
                 shot.height = Mathf.Max(Vector3.Dot(tip - hit.point, normal), 0f);
                 Color ground;
-                if (SmokeGroundDust && GroundColor.TryGet(hit, out ground)) { shot.hasColor = true; shot.groundColor = ground; }
+                if (GroundColor.TryGet(hit, out ground)) { shot.hasColor = true; shot.groundColor = ground; }
             }
             // Dust is lifted where the line of fire passes close above the ground: a few spots along it.
             for (int i = 0; i < 4; i++)
@@ -1173,7 +1169,7 @@ namespace ArmorFragments
                 shot.dustWorld[shot.dustCount] = spot.point;
                 shot.dustAmount[shot.dustCount] = amount;
                 shot.dustCount++;
-                if (!shot.hasColor && SmokeGroundDust)
+                if (!shot.hasColor)
                 {
                     Color ground;
                     if (GroundColor.TryGet(spot, out ground)) { shot.hasColor = true; shot.groundColor = ground; }

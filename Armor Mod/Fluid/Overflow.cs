@@ -11,7 +11,8 @@ namespace ArmorFragments
     // of cutting it off at a flat lid. At most two such boxes live at a time, and they do not make boxes of their own.
     internal static partial class FluidSmoke
     {
-        public static bool Overflow { get { return ArmorFragmentsPlugin.SmokeOverflow == null || ArmorFragmentsPlugin.SmokeOverflow.Value; } }
+        private static bool overflowFailed;
+        public static bool Overflow { get { return !overflowFailed; } }
         private const int MaxOverflow = 2;
         private const float OverflowCellFactor = 1.6f;      // its cells are this much bigger, and so is its box, with the same number of cells
         private static int overflowLogged;

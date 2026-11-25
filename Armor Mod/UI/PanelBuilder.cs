@@ -36,15 +36,46 @@ namespace ArmorFragments.UI
         // is hidden when the player collapses it.
         public void Header(string title, bool collapsed = false)
         {
+            EndSubsection();   // a subsection never reaches past its section
+            sectionTitle = title;
+            AddHeader(title, title, collapsed);
+        }
+
+        private Widget root;            // the panel itself while a subsection is open
+        private string sectionTitle = "";
+
+        // A section inside the section: its own header and rows in a container of their own. The game's header hides the widgets after it under
+        // the same parent, so the outer header hides the whole container and the inner one only what is in it.
+        public void BeginSubsection(string title, bool collapsed = true)
+        {
+            EndSubsection();
+            Widget container = Parent.Context.CreateWidget(new XElement("VerticalLayout",
+                new XAttribute("class", "vertical-layout"),
+                new XAttribute("padding", "16 0 0 0"),
+                new XAttribute("spacing", "@Spacing")), Parent, Parent.Stylesheet);
+            root = Parent;
+            Parent = container;
+            AddHeader(title, sectionTitle + "/" + title, collapsed);
+        }
+
+        public void EndSubsection()
+        {
+            if (root == null) return;
+            Parent = root;
+            root = null;
+        }
+
+        private void AddHeader(string title, string key, bool collapsed)
+        {
             HeaderScript header = Template("control-header").GetComponentInChildren<HeaderScript>();
             header.LabelText = title;
 
             bool wasCollapsed;
-            header.StartCollapsed = CollapsedSections.TryGetValue(title, out wasCollapsed)
+            header.StartCollapsed = CollapsedSections.TryGetValue(key, out wasCollapsed)
                 ? wasCollapsed : collapsed;
             header.CollapsedStateChanged += (object sender, HeaderScript.CollapsedStateChangedEventArgs e) =>
             {
-                CollapsedSections[title] = e.IsCollapsed;
+                CollapsedSections[key] = e.IsCollapsed;
             };
         }
 

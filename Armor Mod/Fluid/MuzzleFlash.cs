@@ -21,7 +21,6 @@ namespace ArmorFragments.Fluid
         private static int extraLights = -2;        // -2 not asked yet, -1 unknown, 0 off, 1 per vertex, 2 per pixel
         private static bool warned;
 
-        public static bool Enabled { get { return ArmorFragmentsPlugin.SmokeFlash != null ? ArmorFragmentsPlugin.SmokeFlash.Value : true; } }
         public static float Intensity { get { return ArmorFragmentsPlugin.SmokeFlashIntensity != null ? ArmorFragmentsPlugin.SmokeFlashIntensity.Value : 1f; } }
 
         // How bright the flash still is `age` seconds after the shot (1 at the shot, a quick fall).
@@ -56,7 +55,7 @@ namespace ArmorFragments.Fluid
         // A flash at `position` (the world), for a blast of this size.
         public static void Spawn(Vector3 position, float scale, float timeScale)
         {
-            if (!Enabled || Intensity <= 0.01f) return;
+            if (Intensity <= 0.01f) return;
             if (ExtraLights() == 0) { WarnOnce(); return; }
             try
             {

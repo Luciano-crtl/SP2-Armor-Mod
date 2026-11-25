@@ -54,8 +54,8 @@ namespace ArmorFragments.Fluid
         private const float MaxWashSpeed = 45f;               // m/s
         private const float MaxWakeSpeed = 30f;               // m/s
 
-        public static bool WashOn { get { return ArmorFragmentsPlugin.SmokeWash == null || ArmorFragmentsPlugin.SmokeWash.Value; } }
-        public static bool WakeOn { get { return ArmorFragmentsPlugin.SmokeWake == null || ArmorFragmentsPlugin.SmokeWake.Value; } }
+        public static bool WashOn { get { return true; } }
+        public static bool WakeOn { get { return true; } }
         public static float WashStrength { get { return ArmorFragmentsPlugin.SmokeWashStrength != null ? ArmorFragmentsPlugin.SmokeWashStrength.Value : 1f; } }
         public static float WakeStrength { get { return ArmorFragmentsPlugin.SmokeWakeStrength != null ? ArmorFragmentsPlugin.SmokeWakeStrength.Value : 0.4f; } }
 
