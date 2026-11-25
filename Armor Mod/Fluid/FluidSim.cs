@@ -68,7 +68,8 @@ namespace ArmorFragments.Fluid
             public float turbulence;       // m/s^2 of weak, endless swirling everywhere in the box (0 = still air)
             public float dustWeight;       // m/s^2 of sinking per unit of dust (0 = dust floats like the smoke)
             public float detail;           // m/s^2 of small eddies inside the smoke (0 = none)
-            public float dissipate;        // per second: the density thins as exp(-dissipate * t)
+            public float dissipate;        // per second: the smoke thins as exp(-dissipate * t)
+            public float dissipateDust;    // per second: the same for the dust
             public float drag;             // per second
             public float edgeMeters;       // thickness of the absorbing edge
             public int cycles;             // multigrid cycles per step
@@ -78,7 +79,7 @@ namespace ArmorFragments.Fluid
                 get
                 {
                     return new Settings { buoyDir = Vector3.up, buoyancy = 0.6f, weight = 0f, vorticity = 1.2f, cool = 1.7f, coolHot = 1.7f, turbulence = 0f,
-                                          dissipate = 0.04f, drag = 0.15f, edgeMeters = 1.0f, cycles = 2, windFollow = 1.2f };
+                                          dissipate = 0.04f, dissipateDust = 0.04f, drag = 0.15f, edgeMeters = 1.0f, cycles = 2, windFollow = 1.2f };
                 }
             }
         }
@@ -634,6 +635,7 @@ namespace ArmorFragments.Fluid
             cs.SetFloat("DetailAmp", s.detail);
             cs.SetFloat("DetailFreq", 1.4f);
             cs.SetFloat("Diss", Mathf.Exp(-s.dissipate * dt));
+            cs.SetFloat("DissDust", Mathf.Exp(-s.dissipateDust * dt));
             cs.SetFloat("Drag", Mathf.Exp(-s.drag * dt));
             cs.SetTexture(kDamp, "Solid", levels[0].solid); cs.SetTexture(kDamp, "SolidVel", solidVel);
             cs.SetTexture(kDamp, "VelIn", velA); cs.SetTexture(kDamp, "ScalIn", scalA);

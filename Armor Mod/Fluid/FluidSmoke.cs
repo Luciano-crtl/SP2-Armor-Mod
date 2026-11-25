@@ -62,9 +62,12 @@ namespace ArmorFragments
         // Balancing the smoke by calibre (Smoke/SizeThinning, Smoke/SizeCooling): a small gun makes a thin puff (the less gas, the shorter the
         // path the light takes through it and the less opaque it is), and its heat is lost faster (the smaller the puff, the faster it mixes
         // with the air), so it does not rise as far or last as long as a big gun's. The scale is calibre / 75 mm.
-        public const float SizeThinning = 0.45f;
-        public const float SizeCooling = 0.8f;
+        public const float SizeThinning = 1f;
+        public const float SizeCooling = 1f;
         public static float CaliberAmount(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.05f), SizeThinning), 0.1f, 1.4f); }
+        // Smokeless powder (guns of 1930 to today): the propellant smoke thins out in seconds. A 75 mm gun's keeps 11% of its density after 4 s.
+        public const float SmokelessPerSecond = 0.55f;
+        public static float SmokelessRate(float loss, float timeScale) { return Mathf.Min(SmokelessPerSecond * loss / Mathf.Max(timeScale, 0.3f), 1.5f); }
         public static float CaliberLoss(float scale) { return Mathf.Clamp(Mathf.Pow(Mathf.Max(scale, 0.2f), -SizeCooling), 0.6f, 5f); }
         public static string LastProfileText = "no shot yet";      // how the last new cloud's cannon shaped its smoke (shown in the panel)
         public const float MuzzleSparksStrength = 1f;
@@ -363,6 +366,8 @@ namespace ArmorFragments
                 cloud.material.SetFloat("_Extinction", 5f);          // how opaque the smoke is (8 made a dense cloud black)
                 cloud.material.SetFloat("_AmbientScale", 1.8f);      // how much sky light the shaded side gets (1 left it nearly black)
                 cloud.material.SetFloat("_Erosion", 0.55f);
+                cloud.material.SetColor("_Tint", new Color(0.80f, 0.80f, 0.81f));            // smokeless powder: pale grey smoke
+                cloud.material.SetColor("_SootColor", new Color(0.36f, 0.34f, 0.32f));       // and little soot while it is hot
                 cloud.material.SetFloat("_NoiseScale", 1.1f / scale);
                 cloud.material.SetFloat("_UsePhi", 1f);
                 cloud.material.SetColor("_DustColor", DustColor(cloud));
@@ -471,7 +476,9 @@ namespace ArmorFragments
                         if (ArmorFragmentsPlugin.SmokeBuoyancy != null) c.sim.Params.buoyancy = ArmorFragmentsPlugin.SmokeBuoyancy.Value;
                         float loss = CaliberLoss(c.scale);
                         c.sim.Params.cool = 0.3f * loss;
-                        c.sim.Params.dissipate = 0.04f * loss;
+                        c.sim.Params.dissipate = SmokelessRate(loss, c.timeScale);
+                        c.sim.Params.dissipateDust = 0.04f * loss;
+                        c.sim.UseBfecc = true;
                         if (ArmorFragmentsPlugin.SmokeDustWeight != null) c.sim.Params.dustWeight = ArmorFragmentsPlugin.SmokeDustWeight.Value * 2f;     // dust settles twice as fast as the setting says (it hung in the air as a disc)
                         c.sim.Params.detail = 0.6f;
                         UpdateWind(c, wind, frame);

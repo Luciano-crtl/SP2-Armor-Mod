@@ -10,7 +10,8 @@ namespace ArmorFragments.Fluid
     internal static class SmokeBlast
     {
         public static float Focus = 0.7f;           // 0 = the old round fireball, 1 = a narrow jet that shoots along the barrel
-        public static float MuzzleBrake = 0.3f;     // 0..1: how much of the gas leaves sideways, as through a muzzle brake
+        public static float SmokeSeconds = 0.6f;    // how long the propellant smoke keeps coming out of the barrel (smokeless powder, guns of 1930 to today; black powder would be 1.2 or more)
+        public static float MuzzleBrake = 1f;       // 0..1: how much of the gas leaves sideways, as through a muzzle brake
         public static float BlastDust = 1f;         // multiplier of the dust the blast lifts
         public static float JetSpeed = 0.65f;       // multiplier of how fast the fireball and the smoke are thrown forward (a long tube of smoke comes of too much)
         public static float Density = 0.65f;        // multiplier of the smoke and the heat of every shot (the smoke of a smokeless powder is thin)
@@ -37,10 +38,12 @@ namespace ArmorFragments.Fluid
         public static void Build(List<FluidSim.Blob> list, float t, float s, float T, Vector3 muzzle, Ground ground, float amount = 1f, float push = 1f, float shock = 1f, float brakeScale = 1f, int seed = 0)
         {
             float focus = Mathf.Clamp01(Focus), brake = Mathf.Clamp01(MuzzleBrake * brakeScale);
-            float fire = 0.12f * T, smoke = 1.2f * T, dust = 0.35f * T;
+            float fire = 0.12f * T, smoke = SmokeSeconds * T, dust = 0.35f * T;
             // Every shot has its own seed (the same for all the frames of that shot): the angles and the strength of the rings below are
             // drawn from it, so the rings of two shots differ and none is a regular star.
+            // The air ring and the ground ring have their own generators: the first is drawn only at the very start, and must not move the second.
             System.Random rng = new System.Random(seed * 7919 + 13);
+            System.Random groundRng = new System.Random(seed * 7919 + 14);
             float amountAll = amount;                  // the dust keeps its own scale
             amount *= Density;
 
@@ -161,15 +164,15 @@ namespace ArmorFragments.Fluid
                     // The pressure wave runs out over the ground in a ring all around the muzzle, thicker in front of the barrel.
                     float travel = Mathf.Min(7f * s, 9f * T * t + 0.8f * s);       // how far the front of the ring has run
                     const int arc = 28;
-                    float groundPhase = (float)rng.NextDouble() * 6.2832f;
-                    float lobePhase = (float)rng.NextDouble() * 6.2832f, lobePhase2 = (float)rng.NextDouble() * 6.2832f;
+                    float groundPhase = (float)groundRng.NextDouble() * 6.2832f;
+                    float lobePhase = (float)groundRng.NextDouble() * 6.2832f, lobePhase2 = (float)groundRng.NextDouble() * 6.2832f;
                     float circle = 2f * Mathf.PI * Mathf.Max(travel, 0.5f * s);       // the length of the ring
                     for (int j = 0; j < arc; j++)
                     {
-                        float angle = groundPhase + (j + ((float)rng.NextDouble() - 0.5f) * 0.9f) / arc * 2f * Mathf.PI;
+                        float angle = groundPhase + (j + ((float)groundRng.NextDouble() - 0.5f) * 0.9f) / arc * 2f * Mathf.PI;
                         // the strength of the ring changes slowly round it, and by a little from one blob to the next
                         float lobes = 1f + 0.25f * Mathf.Sin(angle * 2f + lobePhase) + 0.18f * Mathf.Sin(angle * 3f + lobePhase2);
-                        float jitter = 0.8f + 0.4f * (float)rng.NextDouble();
+                        float jitter = 0.8f + 0.4f * (float)groundRng.NextDouble();
                         Vector3 direction = along * Mathf.Cos(angle) + across * Mathf.Sin(angle);
                         list.Add(new FluidSim.Blob
                         {
