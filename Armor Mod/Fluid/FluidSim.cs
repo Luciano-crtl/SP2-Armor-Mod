@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -116,8 +116,11 @@ namespace ArmorFragments.Fluid
         private RenderTexture velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel, solidPrev;
         public static int DisplacePasses = 5;        // how far (in cells) the smoke of a covered cell can be handed on in one frame
         public static bool DisplaceSmoke = true;     // the smoke a solid moves into is pushed aside, not deleted
+        // Set by the caller before SetObstacles: false when nothing in the box moves (no solid cell can be new), so the passes that push the
+        // smoke out of new solid cells are skipped (they were most of the cost of the solids).
+        public bool SolidsMoving = true;
         public static int MaskMode = 0;     // 1 = leave solid cells out of the advection read, 2 = and out of the limiter (experiments)
-        private ComputeBuffer blobBuffer, shapeBuffer, planeBuffer;
+        private ComputeBuffer blobBuffer, shapeBuffer, planeBuffer, boundsBuffer;
         private int planeCapacity;
         private Texture3D windTexture;      // 4 x 4 x 4 ambient velocities over the box
         private readonly Color[] windColors = new Color[64];
@@ -128,7 +131,7 @@ namespace ArmorFragments.Fluid
         private int seed = 1;
         private bool disposed;
 
-        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace, kShift, kShiftSolid, kCapPhi, kCapture, kCut, kOccupancy, kBfeccPre, kTestInit;
+        private readonly int kBuoyancy, kCurl, kVortForce, kDivergence, kSmooth, kResidual, kRestrict, kProlong, kSubGrad, kAdv, kMac, kDamp, kBlobs, kClear, kClearP, kInitPhi, kObstacles, kMaskRestrict, kWind, kDisplace, kShift, kShiftSolid, kCapPhi, kCapture, kCut, kOccupancy, kBfeccPre, kTestInit, kShadow;
 
         // The texture to draw: R = density, G = temperature (0..1 above the air).
         public RenderTexture Scalars { get { return scalA; } }
@@ -161,6 +164,7 @@ namespace ArmorFragments.Fluid
             kAdv = cs.FindKernel("AdvBack"); kMac = cs.FindKernel("MacLimit"); kDamp = cs.FindKernel("Damp");
             kBlobs = cs.FindKernel("AddBlobs"); kClear = cs.FindKernel("ClearAll"); kClearP = cs.FindKernel("ClearP"); kInitPhi = cs.FindKernel("InitPhi"); kObstacles = cs.FindKernel("Obstacles"); kMaskRestrict = cs.FindKernel("MaskRestrict"); kDisplace = cs.FindKernel("Displace"); kWind = cs.FindKernel("ApplyWind");
             kShift = cs.FindKernel("Shift"); kShiftSolid = cs.FindKernel("ShiftSolid"); kCapPhi = cs.FindKernel("CapturePhi"); kCapture = cs.FindKernel("Capture"); kCut = cs.FindKernel("Cut"); kOccupancy = cs.FindKernel("Occupancy"); kBfeccPre = cs.FindKernel("BfeccPre"); kTestInit = cs.FindKernel("TestInit");
+            kShadow = cs.HasKernel("ShadowDepth") ? cs.FindKernel("ShadowDepth") : -1;     // an older effects bundle has no shadow map
 
             IsHalf = HalfFields;
             velA = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat); velB = Make(nx, ny, nz, HalfFields ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGBFloat);
@@ -216,11 +220,12 @@ namespace ArmorFragments.Fluid
         {
             if (disposed) return;
             disposed = true;
-            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel, solidPrev, occupancy })
+            foreach (RenderTexture rt in new[] { velA, velB, scalA, scalB, hat, tilde, vort, phiA, phiB, phiTmp, solidVel, solidPrev, occupancy, shadowMap })
                 if (rt != null) rt.Release();
             foreach (Level L in levels) { L.p.Release(); L.rhs.Release(); L.res.Release(); L.solid.Release(); }
             if (shapeBuffer != null) shapeBuffer.Release();
             if (planeBuffer != null) planeBuffer.Release();
+            if (boundsBuffer != null) boundsBuffer.Release();
             if (windTexture != null) { if (Application.isPlaying) UnityEngine.Object.Destroy(windTexture); else UnityEngine.Object.DestroyImmediate(windTexture); }
             if (blobBuffer != null) blobBuffer.Release();
         }
@@ -293,6 +298,7 @@ namespace ArmorFragments.Fluid
                 if (shapeBuffer == null) { shapeCapacity = 16; shapeBuffer = new ComputeBuffer(shapeCapacity, Shape.Stride); }
                 cs.SetBuffer(kObstacles, "Shapes", shapeBuffer);
             }
+            if (kShadow >= 0) SetBounds(shapes, count);
             int planeCount = planes == null ? 0 : planes.Count;
             if (planeBuffer == null || planeCapacity < planeCount)
             {
@@ -319,7 +325,7 @@ namespace ArmorFragments.Fluid
             cs.SetTexture(kObstacles, "SolidOut", levels[0].solid);
             cs.SetTexture(kObstacles, "SolidVelOut", solidVel);
             Dispatch(kObstacles, Dims);
-            if (DisplaceSmoke && count > 0)
+            if (DisplaceSmoke && count > 0 && SolidsMoving)
             {
                 cs.SetTexture(kDisplace, "Solid", levels[0].solid); cs.SetTexture(kDisplace, "SolidPrev", solidPrev); cs.SetTexture(kDisplace, "SolidVel", solidVel);
                 cs.SetTexture(kDisplace, "ScalIn", scalA); cs.SetTexture(kDisplace, "ScalOut", scalB);
@@ -337,6 +343,88 @@ namespace ArmorFragments.Fluid
                 cs.SetTexture(kMaskRestrict, "SolidOut", levels[i].solid);
                 Dispatch(kMaskRestrict, levels[i].dims);
             }
+        }
+
+        // The box around each shape in the box's space (two corners per shape): each group of cells of the solver only tests the shapes
+        // whose box reaches it.
+        public static bool BoundsEverywhere;      // for the laboratory only: every shape tested in every cell, as before 0.13.1
+        private Vector4[] boundsArray;
+        private void SetBounds(IList<Shape> shapes, int count)
+        {
+            int need = Mathf.Max(32, 2 * count);
+            if (boundsBuffer == null || boundsBuffer.count < need)
+            {
+                if (boundsBuffer != null) boundsBuffer.Release();
+                boundsBuffer = new ComputeBuffer(need, 16);
+                boundsArray = new Vector4[need];
+            }
+            for (int i = 0; i < count; i++)
+            {
+                Shape sh = shapes[i];
+                int kind = (int)(sh.halfKind.w + 0.5f);
+                Vector3 lo, hi;
+                if (kind == 2 || BoundsEverywhere) { lo = Vector3.one * -1e6f; hi = Vector3.one * 1e6f; }       // a half-space: everywhere
+                else
+                {
+                    Vector3 h = kind == 1 ? Vector3.one * sh.halfKind.x : (Vector3)sh.halfKind;
+                    Matrix4x4 toBox = sh.toLocal.inverse;
+                    Vector3 c = toBox.MultiplyPoint3x4(Vector3.zero);
+                    Vector3 ext = Vector3.zero;
+                    for (int r = 0; r < 3; r++)
+                        ext[r] = Mathf.Abs(toBox[r, 0]) * h.x + Mathf.Abs(toBox[r, 1]) * h.y + Mathf.Abs(toBox[r, 2]) * h.z;
+                    lo = c - ext - Vector3.one * Cell; hi = c + ext + Vector3.one * Cell;
+                }
+                boundsArray[2 * i] = lo; boundsArray[2 * i + 1] = hi;
+            }
+            if (count > 0) boundsBuffer.SetData(boundsArray, 0, 0, 2 * count);
+            cs.SetBuffer(kObstacles, "ShapeBounds", boundsBuffer);
+        }
+
+        // ---- the shadow of the smoke ------------------------------------------------------------------------------------------------
+        // A small 2D map over a plane across the sun's rays (see ShadowDepth in the compute shader): how much smoke each ray crosses and
+        // where the smoke ends along it. The drawing's shadow pass reads it instead of walking the grid in every pixel of the shadow map.
+        public const int ShadowRes = 128;
+        private RenderTexture shadowMap;
+        public RenderTexture ShadowMap { get { return shadowMap; } }
+        public bool HasShadowMap { get { return kShadow >= 0; } }
+
+        // `away` = the direction away from the sun, in the box's own space. Out: what the material needs to read the map.
+        public bool UpdateShadowMap(Vector3 away, out Vector4 axisU, out Vector4 axisV, out Vector4 scale)
+        {
+            axisU = axisV = scale = Vector4.zero;
+            if (kShadow < 0 || away.sqrMagnitude < 1e-6f) return false;
+            Vector3 L = away.normalized;
+            Vector3 U = Vector3.Cross(L, Mathf.Abs(L.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Vector3 V = Vector3.Cross(U, L);
+            Vector3 ext = new Vector3(Dims.x, Dims.y, Dims.z) * Cell;
+            float u0 = float.MaxValue, u1 = float.MinValue, v0 = float.MaxValue, v1 = float.MinValue;
+            for (int k = 0; k < 8; k++)
+            {
+                Vector3 corner = new Vector3((k & 1) != 0 ? ext.x : 0f, (k & 2) != 0 ? ext.y : 0f, (k & 4) != 0 ? ext.z : 0f);
+                float u = Vector3.Dot(corner, U), v = Vector3.Dot(corner, V);
+                u0 = Mathf.Min(u0, u); u1 = Mathf.Max(u1, u); v0 = Mathf.Min(v0, v); v1 = Mathf.Max(v1, v);
+            }
+            if (shadowMap == null)
+            {
+                shadowMap = new RenderTexture(ShadowRes, ShadowRes, 0, RenderTextureFormat.RGFloat)
+                { enableRandomWrite = true, filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+                shadowMap.Create();
+            }
+            float du = (u1 - u0) / ShadowRes, dv = (v1 - v0) / ShadowRes;
+            cs.SetInts("Dim", Dims.x, Dims.y, Dims.z);
+            cs.SetFloat("Hh", Cell);
+            cs.SetVector("ShU", new Vector4(U.x, U.y, U.z, u0));
+            cs.SetVector("ShV", new Vector4(V.x, V.y, V.z, v0));
+            cs.SetVector("ShL", new Vector4(L.x, L.y, L.z, Cell * 1.5f));
+            cs.SetVector("ShSize", new Vector4(du, dv, ShadowRes, ShadowRes));
+            cs.SetInt("ShMaxSteps", 160);
+            cs.SetTexture(kShadow, "Src", scalA);
+            cs.SetTexture(kShadow, "ShadowOut", shadowMap);
+            cs.Dispatch(kShadow, (ShadowRes + 7) / 8, (ShadowRes + 7) / 8, 1);
+            axisU = new Vector4(U.x, U.y, U.z, u0);
+            axisV = new Vector4(V.x, V.y, V.z, v0);
+            scale = new Vector4(1f / Mathf.Max(u1 - u0, 1e-3f), 1f / Mathf.Max(v1 - v0, 1e-3f), Mathf.Max(ext.x, Mathf.Max(ext.y, ext.z)) / 24f, 0f);     // z: how far the end of the smoke is spread (one step of the old walk)
+            return true;
         }
 
         // ---- a box that follows something, and boxes that hand smoke to each other ---------------------------------------------

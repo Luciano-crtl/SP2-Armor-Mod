@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Diagnostics;
 using ArmorFragments.Fluid;
 using Assets.Scripts.Craft;
@@ -522,11 +522,15 @@ namespace ArmorFragments
                         SmokeBenchmark.CpuLap(0);
                         // The solids: every frame, or every second frame when the cloud is past its blast and nothing near it moves.
                         bool skipSolids = FastSolids && c.sim.HasSolids && c.age > 1.6f * c.timeScale && c.lastPeakSpeed < 0.5f && ((c.solidFrame++ & 1) == 1);
+                        // A box the smoke flowed into (coarse, away from the blast): every second frame, every fourth when nothing near it moves.
+                        if (c.isOverflow && c.sim.HasSolids && !bench) skipSolids = (Time.frameCount % (c.lastPeakSpeed < 0.5f ? 4 : 2)) != 0;
                         if (bench) skipSolids = !SmokeBenchmark.SolidsOn;
                         if (!skipSolids)
                         {
+                            int shapesBefore = c.shapesSent;
                             List<FluidSim.Shape> shapes = Obstacles(c);
                             SmokeBenchmark.CpuLap(1);
+                            c.sim.SolidsMoving = peakSpeed > 0.3f || c.drift.sqrMagnitude > 0.09f || c.shapesSent != shapesBefore;
                             c.sim.SetObstacles(shapes, PlaneBuffer);
                             SmokeBenchmark.CpuLap(2);
                             c.lastPeakSpeed = peakSpeed;
@@ -626,6 +630,19 @@ namespace ArmorFragments
                     bool shadows = SmokeShadows && (!bench || SmokeBenchmark.ShadowOn);
                     if (c.boxRenderer != null && c.boxRenderer.enabled != (!bench || SmokeBenchmark.DrawOn)) c.boxRenderer.enabled = !bench || SmokeBenchmark.DrawOn;
                     m.SetFloat("_ShadowStrength", shadows ? ShadowStrength : 0f);
+                    // The shadow is worked out once per frame into a small map (the game's shadow pass then reads one texel per pixel).
+                    Vector4 shU, shV, shScale;
+                    Light sun = shadows && (!bench || SmokeBenchmark.ShadowMapOn) ? Sun() : null;
+                    if (sun != null && c.sim.UpdateShadowMap(Quaternion.Inverse(c.rotation) * sun.transform.forward, out shU, out shV, out shScale))
+                    {
+                        m.SetTexture("_ShadowTau", c.sim.ShadowMap);
+                        m.SetVector("_ShU", shU);
+                        m.SetVector("_ShV", shV);
+                        m.SetVector("_ShScale", shScale);
+                        Vector3 away = (Quaternion.Inverse(c.rotation) * sun.transform.forward).normalized;
+                        m.SetVector("_ShL", new Vector4(away.x, away.y, away.z, 1f));
+                    }
+                    else m.SetVector("_ShL", Vector4.zero);
                     if (c.boxRenderer != null)
                     {
                         UnityEngine.Rendering.ShadowCastingMode wanted = shadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -653,6 +670,22 @@ namespace ArmorFragments
             SortBoxes(cam);
             Watch.Stop();
             if (Active.Count > 0) { cpuMsSum += (float)Watch.Elapsed.TotalMilliseconds; cpuMsCount++; }
+        }
+
+        // The light the game's main shadow comes from: the scene's sun, or else the brightest directional light (looked for every 2 s).
+        private static Light sunLight;
+        private static float sunSearchAt;
+        private static Light Sun()
+        {
+            Light sun = RenderSettings.sun;
+            if (sun != null && sun.isActiveAndEnabled && sun.type == LightType.Directional) return sun;
+            if (sunLight != null && sunLight.isActiveAndEnabled && Time.unscaledTime < sunSearchAt) return sunLight;
+            sunSearchAt = Time.unscaledTime + 2f;
+            sunLight = null;
+            float best = -1f;
+            foreach (Light l in UnityEngine.Object.FindObjectsOfType<Light>())
+                if (l.type == LightType.Directional && l.isActiveAndEnabled && l.intensity > best) { best = l.intensity; sunLight = l; }
+            return sunLight;
         }
 
         // Overlapping boxes (a cloud and its overflow) are drawn from the farthest to the nearest: the order Unity picks by itself
@@ -949,6 +982,27 @@ namespace ArmorFragments
 
         // The solid things inside the box: the parts of vehicles (the shooter's own too, except its cannon) and the ground. Each is a box,
         // an ellipsoid or a half-space in the box's own space (see Fluid.compute).
+        // What a collider is (the part it belongs to, a shell, a piece of the world), looked up once and kept for a few seconds: looking it
+        // up for every collider in every box every frame (GetComponentInParent, three times) was most of the processor time of the smoke.
+        private struct ColliderInfo { public PartScript part; public bool hadPart, projectile, world; }
+        private static readonly Dictionary<int, ColliderInfo> ColliderInfos = new Dictionary<int, ColliderInfo>();
+        private static float colliderInfosClearAt;
+
+        private static ColliderInfo InfoOf(Collider col)
+        {
+            if (Time.unscaledTime > colliderInfosClearAt || ColliderInfos.Count > 8192) { ColliderInfos.Clear(); colliderInfosClearAt = Time.unscaledTime + 3f; }
+            int id = col.GetInstanceID();
+            ColliderInfo info;
+            // A part that has been destroyed since: look again.
+            if (ColliderInfos.TryGetValue(id, out info) && (!info.hadPart || info.part != null)) return info;
+            info.part = col.GetComponentInParent<PartScript>();
+            info.hadPart = info.part != null;
+            info.projectile = col.GetComponentInParent<CannonProjectileScript>() != null;
+            info.world = !info.hadPart && IsWorldShape(col);
+            ColliderInfos[id] = info;
+            return info;
+        }
+
         private static List<FluidSim.Shape> Obstacles(Cloud c)
         {
             ShapeBuffer.Clear();
@@ -980,11 +1034,12 @@ namespace ArmorFragments
             {
                 Collider col = Overlaps[i];
                 if (col == null) continue;
-                PartScript part = col.GetComponentInParent<PartScript>();
+                ColliderInfo info = InfoOf(col);
+                PartScript part = info.part;
                 if (part == null)
                 {
                     // Things standing on the ground (walls, buildings, rocks): solid like the parts, a little less important than them.
-                    if (!WorldSolids || !IsWorldShape(col) || col.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                    if (!WorldSolids || !info.world || info.projectile) continue;
                     Bounds wb = col.bounds;
                     float worldSize = wb.size.magnitude;
                     if (worldSize < c.sim.Cell) continue;
@@ -1000,7 +1055,7 @@ namespace ArmorFragments
                     else c.crafts[owner] = col.bounds;
                 }
                 if (part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
-                if (col.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                if (info.projectile) continue;
                 // The parts that matter most come first: big ones and ones near the muzzle (the distance from the surface of the part's box,
                 // less half its size). Specks smaller than a cell of the box do not matter to the gas at all.
                 Bounds bb = col.bounds;
@@ -1013,7 +1068,7 @@ namespace ArmorFragments
             {
                 Collider col = Overlaps[Candidates[k].Value];
                 FluidSim.Shape shape;
-                if (ShapeOf(col, col.GetComponentInParent<PartScript>(), c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
+                if (ShapeOf(col, InfoOf(col).part, c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
             }
             c.shapesSent = ShapeBuffer.Count;
             c.shapePeak = Mathf.Max(c.shapePeak, peakSpeed);

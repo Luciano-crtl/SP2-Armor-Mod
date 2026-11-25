@@ -21,7 +21,7 @@ namespace ArmorFragments
     {
         // What the smoke's own Tick reads while a cloud is frozen.
         public static bool Frozen;
-        public static bool StepOn, SolidsOn, DrawOn, ShadowOn, HazeOn, CubicOn, LongRays;
+        public static bool StepOn, SolidsOn, DrawOn, ShadowOn, HazeOn, CubicOn, LongRays, ShadowMapOn = true;
         public static string Status = "not run";
 
         // Processor time of the parts of the smoke's Tick, in ms (added up while the benchmark counts).
@@ -57,6 +57,7 @@ namespace ArmorFragments
         public static void Stop(string status)
         {
             Frozen = false;
+            ShadowMapOn = true;
             if (changedRate) { QualitySettings.vSyncCount = oldVSync; Application.targetFrameRate = oldRate; changedRate = false; }
             if (bench != null) { bench.Dispose(); bench = null; }
             if (runner != null) UnityEngine.Object.Destroy(runner.gameObject);
@@ -207,33 +208,38 @@ namespace ArmorFragments
             if (fence == null) { Line("the cloud was gone before it could be measured"); Finish(); yield break; }
             Frozen = true;
 
+            // The parts of the drawing are measured with the shadow off, so that the shadow's cost does not hide in them.
             string[] names =
             {
-                "no smoke at all", "drawn", "drawn, no shadow", "drawn, no heat haze", "drawn, no cubic grid", "drawn, ray steps not lengthened", "no smoke at all (again)",
+                "no smoke at all", "drawn", "drawn, shadow walked in every pixel (as in 0.13.0)", "drawn, no shadow",
+                "drawn, no shadow, no heat haze", "drawn, no shadow, no cubic grid", "drawn, no shadow, ray steps not lengthened", "no smoke at all (again)",
                 "solids only", "steps only", "steps and solids", "everything", "no smoke at all (last)"
             };
-            //            draw  shadow haze  cubic long  solids step
+            //            draw  shadow haze  cubic long  solids step  map
             bool[][] on =
             {
-                new[] { false, false, false, false, false, false, false },
-                new[] { true, true, true, true, true, false, false },
-                new[] { true, false, true, true, true, false, false },
-                new[] { true, true, false, true, true, false, false },
-                new[] { true, true, true, false, true, false, false },
-                new[] { true, true, true, true, false, false, false },
-                new[] { false, false, false, false, false, false, false },
-                new[] { false, false, false, false, false, true, false },
-                new[] { false, false, false, false, false, false, true },
-                new[] { false, false, false, false, false, true, true },
-                new[] { true, true, true, true, true, true, true },
-                new[] { false, false, false, false, false, false, false },
+                new[] { false, false, false, false, false, false, false, true },
+                new[] { true, true, true, true, true, false, false, true },
+                new[] { true, true, true, true, true, false, false, false },
+                new[] { true, false, true, true, true, false, false, true },
+                new[] { true, false, false, true, true, false, false, true },
+                new[] { true, false, true, false, true, false, false, true },
+                new[] { true, false, true, true, false, false, false, true },
+                new[] { false, false, false, false, false, false, false, true },
+                new[] { false, false, false, false, false, true, false, true },
+                new[] { false, false, false, false, false, false, true, true },
+                new[] { false, false, false, false, false, true, true, true },
+                new[] { true, true, true, true, true, true, true, true },
+                new[] { false, false, false, false, false, false, false, true },
             };
+            int[] calmRows = { 0, 7, 12 };
+            const int everything = 11;
             double[] frames = new double[names.Length];
             double[] cpu = null;
             for (int k = 0; k < names.Length; k++)
             {
                 Status = "measuring the cloud: " + (k + 1) + " of " + names.Length + " (keep the camera still)";
-                DrawOn = on[k][0]; ShadowOn = on[k][1]; HazeOn = on[k][2]; CubicOn = on[k][3]; LongRays = on[k][4]; SolidsOn = on[k][5]; StepOn = on[k][6];
+                DrawOn = on[k][0]; ShadowOn = on[k][1]; HazeOn = on[k][2]; CubicOn = on[k][3]; LongRays = on[k][4]; SolidsOn = on[k][5]; StepOn = on[k][6]; ShadowMapOn = on[k][7];
                 List<double> times = new List<double>();
                 for (int f = 0; f < 70; f++)
                 {
@@ -244,17 +250,18 @@ namespace ArmorFragments
                     if (f >= 10) times.Add(Time.unscaledDeltaTime * 1000.0);
                 }
                 frames[k] = Median(times);
-                if (k == 10) { cpu = new double[CpuMs.Length]; for (int i = 0; i < cpu.Length; i++) cpu[i] = CpuMs[i] / 60.0; }
+                if (k == everything) { cpu = new double[CpuMs.Length]; for (int i = 0; i < cpu.Length; i++) cpu[i] = CpuMs[i] / 60.0; }
             }
             Frozen = false;
+            ShadowMapOn = true;
 
             Line("-- The real cloud (whole frames, the card waited for every frame; the difference to no smoke) --");
-            double calm = (frames[0] + frames[6] + frames[11]) / 3.0;
-            for (int k = 0; k < names.Length; k++) Line(names[k] + ": frame " + Ms(frames[k]) + (k == 0 || k == 6 || k == 11 ? "" : ", +" + Ms(frames[k] - calm)));
+            double calm = (frames[calmRows[0]] + frames[calmRows[1]] + frames[calmRows[2]]) / 3.0;
+            for (int k = 0; k < names.Length; k++) Line(names[k] + ": frame " + Ms(frames[k]) + (Array.IndexOf(calmRows, k) >= 0 ? "" : ", +" + Ms(frames[k] - calm)));
             StringBuilder c = new StringBuilder();
             for (int i = 0; i < cpu.Length; i++) c.Append(i > 0 ? ", " : "").Append(CpuNames[i]).Append(' ').Append(Ms(cpu[i]));
             Line("processor time of the smoke in a frame: " + c);
-            double spread = Math.Max(frames[0], Math.Max(frames[6], frames[11])) - Math.Min(frames[0], Math.Min(frames[6], frames[11]));
+            double spread = Math.Max(frames[calmRows[0]], Math.Max(frames[calmRows[1]], frames[calmRows[2]])) - Math.Min(frames[calmRows[0]], Math.Min(frames[calmRows[1]], frames[calmRows[2]]));
             Line("noise: the frames without smoke differed by " + Ms(spread) + "; differences smaller than that mean nothing");
             Finish();
         }
