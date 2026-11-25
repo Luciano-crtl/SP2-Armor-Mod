@@ -149,6 +149,14 @@ def make_release_tree():
         for file in files:
             if file.endswith(".cs") and strip_file(os.path.join(folder, file)):
                 changed += 1
+                path = os.path.join(folder, file)
+                with open(path, encoding="utf-8-sig") as handle:
+                    empty = not handle.read().strip()
+                if empty:
+                    os.remove(path)                   # the whole file was development-only
+    for folder, folders, files in os.walk(os.path.join(EXPORT, "Armor Mod"), topdown=False):
+        if not os.listdir(folder):
+            os.rmdir(folder)
     print("stripped %d source files" % changed)
 
     problems = []
