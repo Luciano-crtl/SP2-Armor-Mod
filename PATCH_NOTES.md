@@ -1,5 +1,11 @@
 # Cannon smoke
 
+0.13.1
+
+- Much faster smoke shadows: the shadow is worked out once per frame into a small map instead of in every pixel of the game's shadow map. It looks the same and costs a small fraction of what it did (it was most of the frame drop on many PCs).
+- Vehicles, walls and the ground cost the smoke much less, especially when nothing moves.
+- "Measure smoke cost" now also compares the new shadow with the old one and measures the drawing without the shadow.
+
 0.13.0
 
 - Cannons now make real smoke: a fluid simulation on the graphics card that flows around vehicles, terrain and buildings, drifts with the wind, rises while hot and casts shadows. Every shot also lights up its surroundings and lifts dust in the colour of the ground.

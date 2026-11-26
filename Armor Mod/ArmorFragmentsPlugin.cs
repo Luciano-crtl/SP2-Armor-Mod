@@ -223,7 +223,7 @@ namespace ArmorFragments
         internal static ConfigEntry<float> CrewSwitchSeconds;
 
         // Shown in the log and the panel, to tell which build the game is really running.
-        public const string Version = "0.13.0";
+        public const string Version = "0.13.1";
 
         private float attachMenuAt = -1f;
 

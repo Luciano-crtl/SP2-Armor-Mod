@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Diagnostics;
 using ArmorFragments.Fluid;
 using Assets.Scripts.Craft;
@@ -243,7 +243,7 @@ namespace ArmorFragments
 
         public static void OnShot(CannonScript cannon)
         {
-            if (!Enabled || cannon == null) return;
+            if (!Enabled || cannon == null || SmokeBenchmark.Frozen) return;
             try
             {
                 float heatBefore = BarrelHeat.HeatOf(cannon);
@@ -441,6 +441,45 @@ namespace ArmorFragments
                 + " was reached: the oldest cloud (" + c.age.ToString("F1") + " s old) fades out in " + EvictSeconds.ToString("F1") + " s");
         }
 
+        // ---- For the benchmark (SmokeBenchmark) ---------------------------------------------------------
+        public static FluidSim MakeForBenchmark(float caliber, int level)
+        {
+            ComputeShader cs = VfxBundleTest.Compute("fluid");
+            if (cs == null) return null;
+            Sizing size = SizeFor(caliber, level);
+            FluidSim sim = Acquire(cs, size.dims, size.cell, Levels[level].half);
+            sim.Cell = size.cell;
+            sim.Clear();
+            sim.Params.cycles = Levels[level].cycles;
+            sim.Params.drag = LateBrake;
+            sim.Params.turbulence = 0.2f;
+            sim.Params.detail = 0.6f;
+            sim.UseBfecc = true;
+            sim.CoarseSweeps = 10;
+            return sim;
+        }
+
+        public static float YoungestShotAge()
+        {
+            float age = float.MaxValue;
+            foreach (Cloud c in Active) if (!c.isOverflow && !c.evicted) age = Mathf.Min(age, c.age);
+            return age;
+        }
+
+        public static RenderTexture AnyScalars()
+        {
+            return Active.Count > 0 && Active[0].sim != null ? Active[0].sim.Scalars : null;
+        }
+
+        public static void LiveText(System.Action<string> line)
+        {
+            Camera cam = Camera.main;
+            foreach (Cloud c in Active)
+                line((c.isOverflow ? "box it flowed into" : "cloud") + ": " + Levels[c.level].name + ", " + c.extent.x.ToString("F0") + " x " + c.extent.y.ToString("F0") + " x " + c.extent.z.ToString("F0")
+                    + " m, " + c.sim.Dims.x + "x" + c.sim.Dims.y + "x" + c.sim.Dims.z + " cells of " + (c.sim.Cell * 100f).ToString("F0") + " cm, " + c.overlapsSeen + " colliders, " + c.shapesSent + " solids"
+                    + (cam != null ? ", camera " + (cam.transform.position - c.box.transform.position).magnitude.ToString("F0") + " m from its corner" : ""));
+        }
+
         // Called every frame while a cloud lives.
         private static void Tick()
         {
@@ -454,7 +493,8 @@ namespace ArmorFragments
             WindQueryManager wind = WindQueryManager.Instance;
             Camera cam = Camera.main;
             Watch.Restart();
-            try { UpdateOverflow(frame); }
+            bool bench = SmokeBenchmark.Frozen;
+            try { if (!bench) UpdateOverflow(frame); }
             catch (System.Exception e) { ArmorFragmentsPlugin.Log.LogError("[VFXBUNDLE] smoke overflow failed and is off: " + e); overflowFailed = true; }
             for (int i = Active.Count - 1; i >= 0; i--)
             {
@@ -476,20 +516,31 @@ namespace ArmorFragments
                         c.sim.UseBfecc = true;
                         if (ArmorFragmentsPlugin.SmokeDustWeight != null) c.sim.Params.dustWeight = ArmorFragmentsPlugin.SmokeDustWeight.Value * 2f;     // dust settles twice as fast as the setting says (it hung in the air as a disc)
                         c.sim.Params.detail = 0.6f;
+                        SmokeBenchmark.CpuStart();
                         UpdateWind(c, wind, frame);
                         RefreshGround(c);
+                        SmokeBenchmark.CpuLap(0);
                         // The solids: every frame, or every second frame when the cloud is past its blast and nothing near it moves.
                         bool skipSolids = FastSolids && c.sim.HasSolids && c.age > 1.6f * c.timeScale && c.lastPeakSpeed < 0.5f && ((c.solidFrame++ & 1) == 1);
+                        // A box the smoke flowed into (coarse, away from the blast): every second frame, every fourth when nothing near it moves.
+                        if (c.isOverflow && c.sim.HasSolids && !bench) skipSolids = (Time.frameCount % (c.lastPeakSpeed < 0.5f ? 4 : 2)) != 0;
+                        if (bench) skipSolids = !SmokeBenchmark.SolidsOn;
                         if (!skipSolids)
                         {
-                            c.sim.SetObstacles(Obstacles(c), PlaneBuffer);
+                            int shapesBefore = c.shapesSent;
+                            List<FluidSim.Shape> shapes = Obstacles(c);
+                            SmokeBenchmark.CpuLap(1);
+                            c.sim.SolidsMoving = peakSpeed > 0.3f || c.drift.sqrMagnitude > 0.09f || c.shapesSent != shapesBefore;
+                            c.sim.SetObstacles(shapes, PlaneBuffer);
+                            SmokeBenchmark.CpuLap(2);
                             c.lastPeakSpeed = peakSpeed;
                         }
 
                         // A cloud past the middle of its life changes slowly: it is stepped every other frame, twice as long.
                         float step = frame;
                         bool run = true;
-                        if (c.age > 0.45f * c.end)
+                        if (bench) run = SmokeBenchmark.StepOn;
+                        else if (c.age > 0.45f * c.end)
                         {
                             c.accumulated += frame;
                             c.frameCounter++;
@@ -510,10 +561,11 @@ namespace ArmorFragments
                                 c.sim.Step(dt);
                             }
                         }
-                        c.age += frame;
+                        SmokeBenchmark.CpuLap(3);
+                        if (!bench) c.age += frame;
 
                         // Once the shot is over the box drifts with the wind (the smoke inside it moves with the box).
-                        if (wind != null && c.drift.sqrMagnitude > 1e-6f)
+                        if (!bench && wind != null && c.drift.sqrMagnitude > 1e-6f)
                         {
                             c.origin += c.drift * frame;
                             Place(c);
@@ -544,18 +596,20 @@ namespace ArmorFragments
                     m.SetTexture("_PhiB", c.sim.PhiB);
                     m.SetTexture("_Solid", c.sim.Solid);
                     bool fast = FastDrawing;
+                    SmokeBenchmark.CpuStart();
                     if (fast)
                     {
-                        c.sim.UpdateOccupancy();
+                        if (!bench || SmokeBenchmark.DrawOn) c.sim.UpdateOccupancy();
+                        SmokeBenchmark.CpuLap(4);
                         m.SetTexture("_Occ", c.sim.Occupancy);
                         Vector3Int od = c.sim.OccupancyDims;
                         m.SetVector("_OccDim", new Vector4(od.x, od.y, od.z, 0f));
                     }
                     m.SetFloat("_UseOcc", fast ? 1f : 0f);
-                    float haze = HeatHazeStrength;
+                    float haze = bench && !SmokeBenchmark.HazeOn ? 0f : HeatHazeStrength;
                     m.SetFloat("_Distort", haze > 0.01f && OpaqueTextureAvailable() ? haze : 0f);
                     m.SetFloat("_SoftContact", ArmorFragmentsPlugin.SmokeSoftContact != null ? ArmorFragmentsPlugin.SmokeSoftContact.Value : 0.35f);
-                    m.SetFloat("_Cubic", ArmorFragmentsPlugin.SmokeCubicGrid == null || ArmorFragmentsPlugin.SmokeCubicGrid.Value ? 1f : 0f);
+                    m.SetFloat("_Cubic", bench && !SmokeBenchmark.CubicOn ? 0f : ArmorFragmentsPlugin.SmokeCubicGrid == null || ArmorFragmentsPlugin.SmokeCubicGrid.Value ? 1f : 0f);
                     m.SetFloat("_FogOn", 1f);
                     m.SetFloat("_MultiScatter", 0.6f);
                     m.SetFloat("_NoiseRotate", 1f);       // the detail noise: three turned octaves, so its tile does not repeat in a line
@@ -573,8 +627,22 @@ namespace ArmorFragments
                     else m.SetVector("_FlashPos", Vector4.zero);
                     m.SetColor("_FlashColor", new Color(1f, 0.62f, 0.3f, 1f));
                     m.SetFloat("_FlashRange", 3f * c.scale);
-                    bool shadows = SmokeShadows;
+                    bool shadows = SmokeShadows && (!bench || SmokeBenchmark.ShadowOn);
+                    if (c.boxRenderer != null && c.boxRenderer.enabled != (!bench || SmokeBenchmark.DrawOn)) c.boxRenderer.enabled = !bench || SmokeBenchmark.DrawOn;
                     m.SetFloat("_ShadowStrength", shadows ? ShadowStrength : 0f);
+                    // The shadow is worked out once per frame into a small map (the game's shadow pass then reads one texel per pixel).
+                    Vector4 shU, shV, shScale;
+                    Light sun = shadows && (!bench || SmokeBenchmark.ShadowMapOn) ? Sun() : null;
+                    if (sun != null && c.sim.UpdateShadowMap(Quaternion.Inverse(c.rotation) * sun.transform.forward, out shU, out shV, out shScale))
+                    {
+                        m.SetTexture("_ShadowTau", c.sim.ShadowMap);
+                        m.SetVector("_ShU", shU);
+                        m.SetVector("_ShV", shV);
+                        m.SetVector("_ShScale", shScale);
+                        Vector3 away = (Quaternion.Inverse(c.rotation) * sun.transform.forward).normalized;
+                        m.SetVector("_ShL", new Vector4(away.x, away.y, away.z, 1f));
+                    }
+                    else m.SetVector("_ShL", Vector4.zero);
                     if (c.boxRenderer != null)
                     {
                         UnityEngine.Rendering.ShadowCastingMode wanted = shadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -587,8 +655,9 @@ namespace ArmorFragments
                     float distance = cam != null ? (cam.transform.position - c.box.transform.position).magnitude : 0f;
                     m.SetFloat("_Steps", Levels[c.level].steps * (distance > 120f ? 0.75f : 1f));
                     float stepCells = ArmorFragmentsPlugin.SmokeRayStepCells != null ? ArmorFragmentsPlugin.SmokeRayStepCells.Value : 1.5f;
-                    m.SetFloat("_StepMeters", stepCells * c.sim.Cell);
+                    m.SetFloat("_StepMeters", bench && !SmokeBenchmark.LongRays ? 0f : stepCells * c.sim.Cell);
                     m.SetFloat("_StepMax", ArmorFragmentsPlugin.SmokeRayStepMax != null ? ArmorFragmentsPlugin.SmokeRayStepMax.Value : 64);
+                    SmokeBenchmark.CpuLap(5);
                 }
                 catch (System.Exception e)
                 {
@@ -601,6 +670,22 @@ namespace ArmorFragments
             SortBoxes(cam);
             Watch.Stop();
             if (Active.Count > 0) { cpuMsSum += (float)Watch.Elapsed.TotalMilliseconds; cpuMsCount++; }
+        }
+
+        // The light the game's main shadow comes from: the scene's sun, or else the brightest directional light (looked for every 2 s).
+        private static Light sunLight;
+        private static float sunSearchAt;
+        private static Light Sun()
+        {
+            Light sun = RenderSettings.sun;
+            if (sun != null && sun.isActiveAndEnabled && sun.type == LightType.Directional) return sun;
+            if (sunLight != null && sunLight.isActiveAndEnabled && Time.unscaledTime < sunSearchAt) return sunLight;
+            sunSearchAt = Time.unscaledTime + 2f;
+            sunLight = null;
+            float best = -1f;
+            foreach (Light l in UnityEngine.Object.FindObjectsOfType<Light>())
+                if (l.type == LightType.Directional && l.isActiveAndEnabled && l.intensity > best) { best = l.intensity; sunLight = l; }
+            return sunLight;
         }
 
         // Overlapping boxes (a cloud and its overflow) are drawn from the farthest to the nearest: the order Unity picks by itself
@@ -897,6 +982,27 @@ namespace ArmorFragments
 
         // The solid things inside the box: the parts of vehicles (the shooter's own too, except its cannon) and the ground. Each is a box,
         // an ellipsoid or a half-space in the box's own space (see Fluid.compute).
+        // What a collider is (the part it belongs to, a shell, a piece of the world), looked up once and kept for a few seconds: looking it
+        // up for every collider in every box every frame (GetComponentInParent, three times) was most of the processor time of the smoke.
+        private struct ColliderInfo { public PartScript part; public bool hadPart, projectile, world; }
+        private static readonly Dictionary<int, ColliderInfo> ColliderInfos = new Dictionary<int, ColliderInfo>();
+        private static float colliderInfosClearAt;
+
+        private static ColliderInfo InfoOf(Collider col)
+        {
+            if (Time.unscaledTime > colliderInfosClearAt || ColliderInfos.Count > 8192) { ColliderInfos.Clear(); colliderInfosClearAt = Time.unscaledTime + 3f; }
+            int id = col.GetInstanceID();
+            ColliderInfo info;
+            // A part that has been destroyed since: look again.
+            if (ColliderInfos.TryGetValue(id, out info) && (!info.hadPart || info.part != null)) return info;
+            info.part = col.GetComponentInParent<PartScript>();
+            info.hadPart = info.part != null;
+            info.projectile = col.GetComponentInParent<CannonProjectileScript>() != null;
+            info.world = !info.hadPart && IsWorldShape(col);
+            ColliderInfos[id] = info;
+            return info;
+        }
+
         private static List<FluidSim.Shape> Obstacles(Cloud c)
         {
             ShapeBuffer.Clear();
@@ -928,11 +1034,12 @@ namespace ArmorFragments
             {
                 Collider col = Overlaps[i];
                 if (col == null) continue;
-                PartScript part = col.GetComponentInParent<PartScript>();
+                ColliderInfo info = InfoOf(col);
+                PartScript part = info.part;
                 if (part == null)
                 {
                     // Things standing on the ground (walls, buildings, rocks): solid like the parts, a little less important than them.
-                    if (!WorldSolids || !IsWorldShape(col) || col.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                    if (!WorldSolids || !info.world || info.projectile) continue;
                     Bounds wb = col.bounds;
                     float worldSize = wb.size.magnitude;
                     if (worldSize < c.sim.Cell) continue;
@@ -948,7 +1055,7 @@ namespace ArmorFragments
                     else c.crafts[owner] = col.bounds;
                 }
                 if (part == c.cannonPart) continue;     // only vehicles; the cannon that fired does not block itself
-                if (col.GetComponentInParent<CannonProjectileScript>() != null) continue;
+                if (info.projectile) continue;
                 // The parts that matter most come first: big ones and ones near the muzzle (the distance from the surface of the part's box,
                 // less half its size). Specks smaller than a cell of the box do not matter to the gas at all.
                 Bounds bb = col.bounds;
@@ -961,7 +1068,7 @@ namespace ArmorFragments
             {
                 Collider col = Overlaps[Candidates[k].Value];
                 FluidSim.Shape shape;
-                if (ShapeOf(col, col.GetComponentInParent<PartScript>(), c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
+                if (ShapeOf(col, InfoOf(col).part, c, gridToWorld, toGrid, out shape)) ShapeBuffer.Add(shape);
             }
             c.shapesSent = ShapeBuffer.Count;
             c.shapePeak = Mathf.Max(c.shapePeak, peakSpeed);
