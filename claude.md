@@ -1,4 +1,4 @@
-# Contexto do projeto: mod de blindagem para SimplePlanes 2
+﻿# Contexto do projeto: mod de blindagem para SimplePlanes 2
 
 Nov 6, 2026 · @Luciano
 
@@ -1048,7 +1048,10 @@ Pedido do usuário: tirar a opção "Both" (ambos = Ground e Air acesos juntos) 
 
 - **Mouse aim atirava sem clarão, som nem fumaça (relato do usuário; log: no mouse aim os tiros saem mas `PlayMuzzleFlash` nunca roda; só compilado, NÃO testado no jogo):** o jogo toca `PlayMuzzleFlash` quando `CannonScript.OnUpdate` vê o cano livre depois de tê-lo visto ocupado; o mod atira no `Update` do plugin, depois do passo do canhão, e no passo seguinte o projétil já saiu. `TryFire` agora põe `_projectileClearedLastFrame = false` depois de `Fire`. Isso também afeta o clarão que os outros jogadores recebem e, por ele, o registro de disparos do host.
 
-## v0.13.0 (versão atual): a fumaça vai para o master
+## v0.13.1 (versão atual)
+Sombra da fumaça pré-calculada e sólidos mais baratos (ver a nota de 2026-11-25 na seção da fumaça). Teste do usuário em ultra: sombra de ~37 ms para ~2,5 ms, sólidos de 14,6 para 2,7 ms.
+
+## v0.13.0: a fumaça vai para o master
 As marcas `RELEASE-STRIP` saíram de `Fluid/`, `ImpactEffects`, `VfxBundleTest` e das chaves `Smoke`; só a subseção Developer do painel continua só de desenvolvimento. O bundle `armorvfx` fica em `Armor Mod/Assets/armorvfx` e vai EMBUTIDO na DLL (o jogador copia um arquivo só); um `armorvfx` em `BepInEx/scripts` tem prioridade (desenvolvimento). Ao refazer o bundle, copie-o também para `Assets`. `BoxSize` padrão 1,8. Clarão e fumaça no mouse aim confirmados no jogo pelo usuário; o carregamento embutido do bundle ainda não foi testado no jogo.
 
 - **Medição da fumaça por etapa (relato: RTX 4060 Ti cai de 60+ para 20 FPS; só compilado, NÃO testado no jogo):** `Fluid/SmokeBenchmark.cs`, botão "Measure smoke cost" (Cannon smoke > Performance, vai no release). (1) Solver de 75 mm nos 4 níveis: cada etapa isolada (`SkipParts`), sólidos, fontes e ocupação, com espera da placa por leitura de 1 texel (custo = (10 vezes − 2 vezes) ÷ 8, mediana de 5). (2) O próximo tiro é congelado aos 2,2 s (`Frozen`) e as partes são ligadas uma a uma (desenho, sombra, distorção, tricúbica, passos, sólidos, passos da simulação), com vsync desligado e a placa esvaziada a cada quadro; mais o tempo de CPU por parte. Relatório em `BepInEx/smoke-benchmark.txt` e `[SMOKEBENCH]`. Suspeita vista no código: `Monitor` só reduz a qualidade automática se `baselineEma > 0`; com 0 (log: 6 nuvens a 73 ms, "without clouds 0.0") ele não baixa nunca.
